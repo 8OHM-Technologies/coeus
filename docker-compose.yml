@@ -1,0 +1,143 @@
+x-common-env: &common-env
+  POSTGRES_USER: coeus_admin
+  POSTGRES_PASSWORD: super_secret_password
+  POSTGRES_DB: coeus_mining_db
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  HF_TOKEN: ${HF_TOKEN:-""}
+
+services:
+  # ---------------------------------------------------------
+  # 1. Reverse Proxy (Routing & Local DNS)
+  # ---------------------------------------------------------
+  traefik:
+    image: traefik:latest
+    container_name: coeus-traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.endpoint=tcp://host.docker.internal:2375"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    networks:
+      - coeus_network
+
+  # ---------------------------------------------------------
+  # 2. Data Storage
+  # ---------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: coeus-postgres
+    environment:
+      POSTGRES_USER: coeus_admin
+      POSTGRES_PASSWORD: super_secret_password
+      POSTGRES_DB: coeus_mining_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - coeus_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coeus_admin -d coeus_mining_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------
+  # 3. Control Plane / Orchestration UI
+  # ---------------------------------------------------------
+  control_plane:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: coeus-control-plane
+    image: coeus_control_plane_image
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-env
+      DJANGO_SUPERUSER_USERNAME: admin
+      DJANGO_SUPERUSER_EMAIL: admin@coeus.local
+      DJANGO_SUPERUSER_PASSWORD: admin
+    volumes:
+      - ./:/app/
+      - //var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - coeus_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.control-plane.rule=Host(`coeus.localhost`)"
+      - "traefik.http.services.control-plane.loadbalancer.server.port=8000"
+      - "traefik.docker.network=coeus_network"
+    command: >
+      bash -c "python control_plane/manage.py makemigrations &&
+                python control_plane/manage.py migrate &&
+                python control_plane/manage.py createsuperuser --noinput || true &&
+                python control_plane/manage.py runserver 0.0.0.0:8000"
+
+  # ---------------------------------------------------------
+  # 4. Ingestion & Extraction Worker (Playwright + OpenAI)
+  # ---------------------------------------------------------
+  pipeline_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: coeus-worker
+    image: coeus_worker_image
+    environment:
+      <<: *common-env
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    volumes:
+      - ./:/app/
+      - ./scraped_pdfs:/app/scraped_pdfs
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - coeus_network
+    command: tail -f /dev/null
+
+  # ---------------------------------------------------------
+  # 5. Orchestration (Apache Airflow Standalone)
+  # ---------------------------------------------------------
+  airflow:
+    image: apache/airflow:2.9.1-python3.11
+    container_name: coeus-airflow
+    entrypoint: >
+      /bin/bash -c "
+      airflow standalone &
+      echo 'Waiting for Airflow to boot...' &&
+      sleep 25 &&
+      airflow users reset-password --username admin --password admin &&
+      echo 'Admin password forced to: admin' &&
+      wait"
+    environment:
+      <<: *common-env
+      AIRFLOW__CORE__LOAD_EXAMPLES: False
+      HOST_SCRAPED_PDFS_PATH: ${PWD}/scraped_pdfs
+      COEUS_API_URL: http://coeus-control-plane:8000/api/pipelines/active/
+    ports:
+      - "9000:8080"
+    volumes:
+      - ./orchestration/airflow_dags:/opt/airflow/dags
+      - //var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - coeus_network
+
+volumes:
+  postgres_data:
+  huggingface_cache:
+
+networks:
+  coeus_network:
+    name: coeus_network
+    driver: bridge

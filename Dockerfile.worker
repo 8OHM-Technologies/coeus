@@ -1,0 +1,18 @@
+FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN pip install --upgrade pip
+COPY requirements-worker.txt .
+RUN pip install --no-cache-dir -r requirements-worker.txt
+RUN playwright install --with-deps chromium
+
+RUN mkdir -p /app/scraped_pdfs
+
+COPY . .
+
+# CMD ["celery", "-A", "coeus", "worker"]
+CMD ["tail", "-f", "/dev/null"]

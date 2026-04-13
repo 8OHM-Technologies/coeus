@@ -1,0 +1,66 @@
+import os
+from datetime import datetime, timedelta
+
+import requests
+from airflow import DAG
+from airflow.providers.docker.operators.docker import DockerOperator
+from docker.types import Mount
+
+API_URL = os.getenv(
+    "COEUS_API_URL", "http://coeus-control-plane:8000/api/pipelines/active/"
+)
+HOST_PDF_PATH = os.getenv("HOST_SCRAPED_PDFS_PATH")
+
+if not HOST_PDF_PATH:
+    raise ValueError("Environment variable HOST_SCRAPED_PDFS_PATH is not set.")
+
+try:
+    response = requests.get(API_URL, timeout=10)
+    response.raise_for_status()
+    blueprints = response.json().get("pipelines", [])
+except Exception:
+    blueprints = []
+
+default_args = {
+    "owner": "data_engineering",
+    "retries": 1,
+    "retry_delay": timedelta(minutes=2),
+}
+
+for blueprint in blueprints:
+    dag_id = f"extract_{blueprint['pipeline_id']}"
+
+    dag = DAG(
+        dag_id=dag_id,
+        default_args=default_args,
+        schedule=blueprint["schedule"],
+        start_date=datetime(2024, 1, 1),
+        catchup=False,
+        tags=["dynamic_extraction"],
+    )
+
+    scrape_task = DockerOperator(
+        task_id="run_playwright_scraper",
+        image="coeus_worker_image:latest",
+        container_name=f"ephemeral_scraper_{blueprint['pipeline_id']}",
+        docker_url="unix://var/run/docker.sock",
+        network_mode="coeus_network",
+        environment={
+            "PYTHONPATH": "/app:/app/solver/src",
+            "HF_TOKEN": os.environ.get("HUGGINGFACE_TOKEN", ""),
+        },
+        command=f"python /app/extraction_worker/scraper.py --url '{blueprint['phase_1_ingestion']['start_url']}'",
+        auto_remove="force",
+        mount_tmp_dir=False,
+        mounts=[
+            Mount(source=HOST_PDF_PATH, target="/app/scraped_pdfs", type="bind"),
+            Mount(
+                source="huggingface_cache",
+                target="/root/.cache/huggingface",
+                type="volume",
+            ),
+        ],
+        dag=dag,
+    )
+
+    globals()[dag_id] = dag
