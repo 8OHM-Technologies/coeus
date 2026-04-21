@@ -1,6 +1,6 @@
 # 🌌 Project COEUS: Dynamic PDF Intelligence Pipeline
 
-Project Codename: **COEUS** (named after the Greek Titan god of intellect, heavenly axis, and inquisitive mind - and I like codenames) is a showcase of a distributed data platform designed to automate the extraction and analysis of complex regulatory filings (NI 43-101 technical reports).
+Project Codename: **COEUS** (named after the Greek Titan god of intellect, heavenly axis, and inquisitive mind - and I like codenames) is a showcase of a distributed data platform designed to automate the extraction and analysis of complex regulatory filings (NI 43-101 technical reports). Includes a custom built hCaptcha solver using intelligent hCaptcha prompt-translation and zero-shot object detection.
 
 The system leverages a **Control Plane architecture** where a Django-based UI manages scraping blueprints, which are then dynamically orchestrated by **Apache Airflow** to spin up ephemeral **Playwright** workers.
 
