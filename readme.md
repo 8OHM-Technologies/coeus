@@ -30,9 +30,9 @@ docker-compose up -d --build
 ### 2. Access the Dashboards
 |**Service**|**URL**|**Credentials**|
 |--|--|--|
-|Control Plane|http://localhost:8000/admin|`admin` / `password123`
+|Control Plane|http://localhost:8000/admin|`admin` / `admin`
 |Airflow UI|http://localhost:9000|`admin` / `admin`
-|API Endpoint|http://coeus.localhost/api/pipelines/active/|N/A
+|DAG API Endpoint|http://coeus.localhost/api/pipelines/active/|N/A
 
 ## 🛠️ Key Technical Features
 
@@ -46,7 +46,7 @@ To prevent memory leaks and "zombie" browser processes, the Scraper does not run
 
 ### **SPA Interaction Logic**
 
-The worker uses Playwright's asynchronous engine to navigate the **SEDAR+** platform. It bypasses complex ARIA-hidden elements and dynamic loaders by using locator-based interactions that mimic human behavior, ensuring high reliability against UI changes.
+The worker uses Playwright's asynchronous engine to navigate the **SEDAR+** platform. It bypasses complex ARIA-hidden elements and dynamic loaders by using locator-based interactions that mimic human behavior, ensuring high accuracy and reliability.
 
 ## 📂 Project Structure
 
@@ -86,7 +86,7 @@ While this repository provides a fully functional local environment, a productio
 
 ### **4. Security & Secrets**
 
--   **Secrets Management:** Hardcoded passwords in `docker-compose.yml` would be moved to **AWS Secrets Manager** or **HashiCorp Vault**.
+-   **Secrets Management:** Hardcoded passwords in `docker-compose.yml` would be moved to **AWS Secrets Manager**.
     
 -   **TLS/SSL:** Traefik would be configured with **Let's Encrypt** or AWS Certificate Manager (ACM) to ensure all traffic to the Control Plane and Airflow UI is encrypted via HTTPS.
 

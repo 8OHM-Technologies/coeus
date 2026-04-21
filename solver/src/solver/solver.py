@@ -1,99 +1,150 @@
 import asyncio
+import io
 import logging
+import re
 from typing import Any, Dict
 
-# Assuming the user has installed playwright: pip install playwright
+from PIL import Image, ImageDraw
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from .utils import get_grid_indexes
-
-# Import our custom modules
+from .translator import PromptTranslator
 from .vision import VisionManager
 
 logger = logging.getLogger(__name__)
 
 
 class HCaptchaSolver:
-    """
-    The main asynchronous solver class.
-    Maintains the vision model in memory and executes Playwright interactions.
-    """
-
     def __init__(
-        self, model_id: str = "IDEA-Research/grounding-dino-base", device: str = None
+        self,
+        vision_model: str = "IDEA-Research/grounding-dino-base",
+        llm_model: str = "Qwen/Qwen2.5-0.5B-Instruct",
+        device: str = "cpu",
     ):
-        # Initialize the model once when the class is instantiated
-        self.vision = VisionManager(model_id=model_id, device=device)
+        self.vision = VisionManager(model_id=vision_model, device=device)
+        self.translator = PromptTranslator(model_id=llm_model, device=device)
+
+    def _process_slices_sync(
+        self, image_bytes: bytes, prompt: str
+    ) -> tuple[list[int], list[list[float]]]:
+        """
+        Slices the 3x3 grid into 9 individual images, runs inference on each,
+        and translates the bounding boxes back to the original image coordinates.
+        """
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        width, height = image.size
+
+        # hCaptcha grids are always 3x3
+        cell_w = width / 3.0
+        cell_h = height / 3.0
+
+        indexes_to_click = []
+        absolute_boxes = []
+
+        # Iterate through the 9 cells (0 to 8)
+        for i in range(9):
+            row = i // 3
+            col = i % 3
+
+            left = int(col * cell_w)
+            upper = int(row * cell_h)
+            right = int((col + 1) * cell_w)
+            lower = int((row + 1) * cell_h)
+
+            # Crop the current cell
+            slice_img = image.crop((left, upper, right, lower))
+
+            # Convert slice to bytes for the vision manager
+            slice_io = io.BytesIO()
+            slice_img.save(slice_io, format="PNG")
+            slice_bytes = slice_io.getvalue()
+
+            # Run inference on the single slice
+            boxes = self.vision.detect_objects(image_bytes=slice_bytes, prompt=prompt)
+
+            # If the model found the object in this slice, mark the index
+            if boxes and len(boxes) > 0:
+                indexes_to_click.append(i)
+
+                # Translate the local slice coordinates back to the global 380x380 image
+                for box in boxes:
+                    abs_box = [
+                        box[0] + left,  # x_min
+                        box[1] + upper,  # y_min
+                        box[2] + left,  # x_max
+                        box[3] + upper,  # y_max
+                    ]
+                    absolute_boxes.append(abs_box)
+
+        return indexes_to_click, absolute_boxes
 
     async def solve_captcha(self, page: Page, max_retries: int = 3) -> Dict[str, Any]:
-        """
-        Takes an active Playwright Page object, locates the hCaptcha instances,
-        and attempts to solve them up to `max_retries` times.
-        """
-        # 1. Define the frame locators
-        # hCaptcha uses specific titles for its iframes which makes targeting them reliable
-        checkbox_frame = page.frame_locator('iframe[title*="checkbox"]')
-        challenge_frame = page.frame_locator('iframe[title*="challenge"]')
+        checkbox_frame = page.frame_locator(
+            'iframe[title*="Widget containing checkbox for hCaptcha security challenge"]'
+        )
+        challenge_frame = page.frame_locator('iframe[title*="hCaptcha challenge"]')
 
-        # 2. Click the initial "I am human" checkbox
         try:
             logger.info("Locating and clicking hCaptcha checkbox...")
             await checkbox_frame.locator("#checkbox").click(timeout=5000)
         except PlaywrightTimeoutError:
-            return {
-                "success": False,
-                "error": "Checkbox not found on the provided page.",
-            }
+            return {"success": False, "error": "Checkbox not found."}
 
-        # 3. Enter the solving loop
         for attempt in range(1, max_retries + 1):
             logger.info(f"Solving attempt {attempt} of {max_retries}...")
 
             try:
-                # Wait for the challenge grid to appear and stabilize
                 grid_container = challenge_frame.locator(".task-grid")
                 await grid_container.wait_for(state="visible", timeout=10000)
-
-                # Small sleep to ensure images are fully loaded inside the grid
                 await asyncio.sleep(1.5)
 
-                # Extract the prompt text
                 prompt_locator = challenge_frame.locator("h2.prompt-text")
-                prompt_text = await prompt_locator.inner_text()
-                logger.info(f"Target object: {prompt_text}")
+                raw_prompt_text = await prompt_locator.inner_text()
 
-                # Take a screenshot of the entire 380x380 grid
-                grid_image_bytes = await grid_container.screenshot(type="jpeg")
+                logger.info(f"Translating prompt: '{raw_prompt_text}'")
+                dino_prompt = await asyncio.to_thread(
+                    self.translator.translate, raw_prompt_text
+                )
+                logger.info(f"DINO-friendly prompt generated: {dino_prompt}")
 
-                # 4. Run PyTorch inference in a separate thread to prevent blocking the async loop
-                logger.info("Running vision model inference...")
-                bounding_boxes = await asyncio.to_thread(
-                    self.vision.detect_objects,
-                    image_bytes=grid_image_bytes,
-                    prompt=prompt_text,
+                grid_image_bytes = await grid_container.screenshot(
+                    type="png", path="/app/scraped_pdfs/hcaptcha_grid.png"
                 )
 
-                # 5. Convert bounding boxes to grid indexes
-                indexes_to_click = get_grid_indexes(bounding_boxes)
+                # --- NEW: Run the slicing logic in a background thread ---
+                logger.info("Slicing image and running vision model inference...")
+                indexes_to_click, bounding_boxes = await asyncio.to_thread(
+                    self._process_slices_sync,
+                    image_bytes=grid_image_bytes,
+                    prompt=dino_prompt,
+                )
+
                 logger.info(f"Model selected indexes: {indexes_to_click}")
 
-                # 6. Execute clicks
+                # Draw bounding boxes (this works exactly the same because of our coordinate translation)
+                try:
+                    image = Image.open(io.BytesIO(grid_image_bytes))
+                    draw = ImageDraw.Draw(image)
+                    for box in bounding_boxes:
+                        draw.rectangle(box, outline="red", width=4)
+
+                    debug_image_path = (
+                        f"/app/scraped_pdfs/hcaptcha_grid_boxed_attempt_{attempt}.png"
+                    )
+                    image.save(debug_image_path)
+                except Exception as e:
+                    logger.error(f"Failed to draw or save bounding boxes: {e}")
+
+                # Execute clicks
                 task_elements = await challenge_frame.locator(".task-grid .task").all()
                 for index in indexes_to_click:
-                    # Double check we don't index out of bounds on weird edge cases
                     if index < len(task_elements):
                         await task_elements[index].click()
-                        # Humanize the click delay slightly
                         await asyncio.sleep(0.3)
 
-                # 7. Submit the challenge
                 await challenge_frame.locator(".button-submit").click()
 
-                # 8. Check for success or a new challenge
-                # We wait to see if the checkbox frame reports success, or if a new grid appears
                 try:
-                    # If aria-checked becomes true, the captcha is solved
                     await checkbox_frame.locator(
                         '#checkbox[aria-checked="true"]'
                     ).wait_for(timeout=5000)
@@ -101,18 +152,14 @@ class HCaptchaSolver:
                     return {"success": True, "attempts": attempt, "error": None}
 
                 except PlaywrightTimeoutError:
-                    # If it didn't succeed, it means we failed and a new puzzle loaded. Loop continues.
                     logger.warning("Puzzle failed. Retrying...")
                     continue
 
             except PlaywrightTimeoutError:
-                # This usually triggers if the captcha auto-passed on the first click
-                # without showing a picture grid at all.
                 is_checked = await checkbox_frame.locator("#checkbox").get_attribute(
                     "aria-checked"
                 )
                 if is_checked == "true":
-                    logger.info("Captcha auto-passed without a visual challenge!")
                     return {"success": True, "attempts": 0, "error": None}
                 else:
                     return {

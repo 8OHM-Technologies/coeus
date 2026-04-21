@@ -37,7 +37,6 @@ class ResourceEstimateAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         """
-        Senior Engineer touch: Optimizes the underlying SQL query.
         Uses a SQL JOIN to fetch the Asset and Company in a single query,
         rather than hitting the database 100 separate times for a list of 100 rows.
         """

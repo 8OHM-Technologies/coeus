@@ -1,5 +1,14 @@
+import logging
 import math
+import sys
 from typing import List, Tuple
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
 
 
 def get_intersection_over_cell_area(

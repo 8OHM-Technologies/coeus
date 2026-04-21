@@ -1,11 +1,3 @@
-x-common-env: &common-env
-  POSTGRES_USER: coeus_admin
-  POSTGRES_PASSWORD: super_secret_password
-  POSTGRES_DB: coeus_mining_db
-  POSTGRES_HOST: postgres
-  POSTGRES_PORT: 5432
-  HF_TOKEN: ${HF_TOKEN:-""}
-
 services:
   # ---------------------------------------------------------
   # 1. Reverse Proxy (Routing & Local DNS)
@@ -60,13 +52,17 @@ services:
     ports:
       - "8000:8000"
     environment:
-      <<: *common-env
+      POSTGRES_USER: coeus_admin
+      POSTGRES_PASSWORD: super_secret_password
+      POSTGRES_DB: coeus_mining_db
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
       DJANGO_SUPERUSER_USERNAME: admin
       DJANGO_SUPERUSER_EMAIL: admin@coeus.local
       DJANGO_SUPERUSER_PASSWORD: admin
     volumes:
       - ./:/app/
-      - //var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,12 +89,13 @@ services:
     container_name: coeus-worker
     image: coeus_worker_image
     environment:
-      <<: *common-env
+      HF_TOKEN: "${HF_TOKEN}"
+      HF_HOME: "${HF_HOME}"
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     volumes:
-      - ./:/app/
+      - ./:/app
       - ./scraped_pdfs:/app/scraped_pdfs
-      - huggingface_cache:/root/.cache/huggingface
+      - ~/.cache/huggingface/hub:/app/huggingface_cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,7 +118,6 @@ services:
       echo 'Admin password forced to: admin' &&
       wait"
     environment:
-      <<: *common-env
       AIRFLOW__CORE__LOAD_EXAMPLES: False
       HOST_SCRAPED_PDFS_PATH: ${PWD}/scraped_pdfs
       COEUS_API_URL: http://coeus-control-plane:8000/api/pipelines/active/
@@ -129,7 +125,7 @@ services:
       - "9000:8080"
     volumes:
       - ./orchestration/airflow_dags:/opt/airflow/dags
-      - //var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - coeus_network
 

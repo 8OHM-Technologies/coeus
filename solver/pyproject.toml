@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hcaptcha-solver"
-version = "0.1.0"
+version = "0.1.1"
 description = "An automated hCaptcha solver using Playwright and Grounding DINO zero-shot object detection."
 authors = [
-    { name = "Coeus Engineering" }
+    { name = "Coeus Data Engineering" }
 ]
 readme = "README.md"
 requires-python = ">=3.11"

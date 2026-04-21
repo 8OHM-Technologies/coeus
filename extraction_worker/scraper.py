@@ -6,8 +6,7 @@ import os
 import sys
 
 from playwright.async_api import TimeoutError, async_playwright
-
-from solver.src.solver.solver import HCaptchaSolver
+from solver.solver import HCaptchaSolver
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +35,7 @@ async def run_extraction(target_url, company_identifier):
             logger.info(f"Navigating to: {target_url}")
 
             # 1. NAVIGATE TO PAGE
-            await page.goto(target_url, wait_until="networkidle", timeout=60000)
+            await page.goto(target_url, wait_until="domcontentloaded")
 
             # --------------------------------------------------------
             # 2. SOLVE HCAPTCHA

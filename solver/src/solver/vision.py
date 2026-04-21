@@ -32,8 +32,6 @@ class VisionManager:
         self,
         image_bytes: bytes,
         prompt: str,
-        box_threshold: float = 0.3,
-        text_threshold: float = 0.25,
     ) -> List[List[float]]:
         """
         Takes the raw Playwright screenshot bytes and the captcha question.
@@ -50,7 +48,7 @@ class VisionManager:
         prefixes_to_strip = [
             "please select all ",
             "select all ",
-            "click all ",
+            "click on all ",
             "find all ",
         ]
         for prefix in prefixes_to_strip:
@@ -75,8 +73,6 @@ class VisionManager:
         results = self.processor.post_process_grounded_object_detection(
             outputs,
             inputs.input_ids,
-            box_threshold=box_threshold,
-            text_threshold=text_threshold,
             target_sizes=target_sizes,
         )[0]
 

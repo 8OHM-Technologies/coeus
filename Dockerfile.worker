@@ -6,6 +6,8 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN pip install --upgrade pip
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements-worker.txt .
 RUN pip install --no-cache-dir -r requirements-worker.txt
 RUN playwright install --with-deps chromium
