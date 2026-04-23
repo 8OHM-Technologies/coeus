@@ -29,6 +29,12 @@ default_args = {
 
 for blueprint in blueprints:
     dag_id = f"extract_{blueprint['pipeline_id']}"
+    target_url = blueprint["phase_1_ingestion"]["start_url"]
+
+    if "ccma.org.za" in target_url:
+        worker_script = "/app/extraction_worker/ccma_scraper.py"
+    else:
+        worker_script = "/app/extraction_worker/scraper.py"
 
     dag = DAG(
         dag_id=dag_id,
@@ -40,7 +46,7 @@ for blueprint in blueprints:
     )
 
     scrape_task = DockerOperator(
-        task_id="run_playwright_scraper",
+        task_id="run_scraper",
         image="coeus_worker_image:latest",
         container_name=f"ephemeral_scraper_{blueprint['pipeline_id']}",
         docker_url="unix://var/run/docker.sock",
@@ -49,7 +55,7 @@ for blueprint in blueprints:
             "PYTHONPATH": "/app:/app/solver/src",
             "HF_TOKEN": os.environ.get("HUGGINGFACE_TOKEN", ""),
         },
-        command=f"python /app/extraction_worker/scraper.py --url '{blueprint['phase_1_ingestion']['start_url']}'",
+        command=f"python {worker_script} --url '{target_url}'",
         auto_remove="force",
         mount_tmp_dir=False,
         mounts=[
