@@ -31,6 +31,7 @@ for blueprint in blueprints:
     dag_id = f"extract_{blueprint['pipeline_id']}"
     target_url = blueprint["phase_1_ingestion"]["start_url"]
 
+    # Routing Logic
     if "ccma.org.za" in target_url:
         worker_script = "/app/extraction_worker/ccma_scraper.py"
     else:
@@ -45,6 +46,7 @@ for blueprint in blueprints:
         tags=["dynamic_extraction"],
     )
 
+    # 1. The Ingestion Task
     scrape_task = DockerOperator(
         task_id="run_scraper",
         image="coeus_worker_image:latest",
@@ -68,5 +70,27 @@ for blueprint in blueprints:
         ],
         dag=dag,
     )
+
+    # 2. The Conditional Extraction Task
+    if blueprint["phase_2_extraction"]["requires_extraction"]:
+        extract_task = DockerOperator(
+            task_id="run_llm_extraction",
+            image="coeus_worker_image:latest",
+            container_name=f"ephemeral_extractor_{blueprint['pipeline_id']}",
+            docker_url="unix://var/run/docker.sock",
+            network_mode="coeus_network",
+            command=f"python /app/extraction_worker/llm_extractor.py --schema {blueprint['phase_2_extraction']['expected_schema']}",
+            auto_remove="force",
+            mount_tmp_dir=False,
+            mounts=[
+                Mount(source=HOST_PDF_PATH, target="/app/scraped_pdfs", type="bind")
+            ],
+            dag=dag,
+        )
+
+        # Chain them together
+        scrape_task >> extract_task
+    else:
+        pass
 
     globals()[dag_id] = dag

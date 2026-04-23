@@ -34,11 +34,14 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
         ),
         (
             "Phase 2: Extraction Config (LLM)",
-            {"fields": ("llm_engine", "pydantic_schema_name")},
+            {"fields": ("requires_extraction", "llm_engine", "pydantic_schema_name")},
         ),
         ("Phase 3: Loading Config (Postgres)", {"fields": ("target_table",)}),
         (
             "System Tracking",
-            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+            {
+                "fields": ("created_at", "updated_at", "discovery_script"),
+                "classes": ("collapse",),
+            },
         ),
     )
