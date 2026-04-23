@@ -1,97 +1,86 @@
 # 🌌 Project COEUS: Dynamic PDF Intelligence Pipeline
 
-Project Codename: **COEUS** (named after the Greek Titan god of intellect, heavenly axis, and inquisitive mind - and I like codenames) is a showcase of a distributed data platform designed to automate the extraction and analysis of complex regulatory filings (NI 43-101 technical reports). Includes a custom built hCaptcha solver using intelligent hCaptcha prompt-translation and zero-shot object detection.
+**COEUS** (named after the Greek Titan of intellect and the heavenly axis) is a distributed data platform designed to automate the scraping, extraction, and analysis of multi-source documentation. 
 
-The system leverages a **Control Plane architecture** where a Django-based UI manages scraping blueprints, which are then dynamically orchestrated by **Apache Airflow** to spin up ephemeral **Playwright** workers.
+The project demonstrates a scalable approach to handling varying degrees of web complexity: from **basic HTML parsing** on sites like **ccma.org.za** using Python and BeautifulSoup, to bypassing **advanced anti-bot measures** on high-security regulatory platforms like **sedarplus.ca** (e.g., NI 43-101 mining reports) using Playwright and Selenium.
+
+---
 
 ## 🏗️ System Architecture
 
-The platform is built on a decoupled, microservices-oriented architecture:
+The platform utilizes a decoupled, microservices-oriented architecture designed for horizontal scalability:
 
--   **Control Plane (Django):** The source of truth. Manages pipeline configurations, target URLs, and scheduling metadata.
-    
--   **Orchestrator (Airflow 2.9.1):** Dynamically generates DAGs by polling the Control Plane API. It uses the `DockerOperator` to ensure workers are isolated and ephemeral.
-    
--   **Muscles (Playwright Worker):** An optimized Chromium-based container that handles complex SPA interactions (dropdowns, inputs, and search execution) to find and extract document links.
-    
--   **Storage (PostgreSQL):** A centralized database for both application metadata and Airflow orchestration history.
-    
--   **Gateway (Traefik):** Handles internal routing and provides a professional `coeus.localhost` entry point.
+* **Control Plane (Django):** The system's source of truth. It manages pipeline configurations, target metadata, and scraping "blueprints."
+* **Orchestrator (Apache Airflow 2.9.1):** Dynamically generates DAGs by polling the Control Plane API. It utilizes the `DockerOperator` to ensure workers are isolated and ephemeral.
+* **The "Muscles" (Playwright & BeautifulSoup Workers):** Task-specific containers that scale based on complexity. It handles everything from simple requests to complex SPA interactions (dropdowns, dynamic inputs) to extract deep-linked documentation.
+* **Storage (PostgreSQL):** A centralized relational store for application state and orchestration history.
+* **Gateway (Traefik):** Manages internal service discovery and provides a unified `coeus.localhost` entry point.
 
-## 🚀 Quick Start
-
-The environment is fully containerized and configured for **Zero-Friction Access**. No manual user creation or database migrations are required.
-
-### 1. Boot the System
-Ensure you have Docker and Docker Compose installed, then run:
-```
-docker-compose up -d --build
-```
-### 2. Access the Dashboards
-|**Service**|**URL**|**Credentials**|
-|--|--|--|
-|Control Plane|http://localhost:8000/admin|`admin` / `admin`
-|Airflow UI|http://localhost:9000|`admin` / `admin`
-|DAG API Endpoint|http://coeus.localhost/api/pipelines/active/|N/A
+---
 
 ## 🛠️ Key Technical Features
 
-### **Dynamic DAG Generation**
+### **1. Adaptive Scraping Strategy**
+COEUS doesn't use a "one-size-fits-all" approach. Based on the target's complexity defined in the Control Plane:
+* **Lightweight Extraction:** Rapidly parses unprotected sites using **BeautifulSoup**, minimizing resource overhead.
+* **Heavy-Lift Automation:** Deploys **Playwright/Selenium** to navigate modern JavaScript-heavy frameworks and bypass ARIA-hidden elements or dynamic loaders.
 
-Instead of static `.py` files, the Airflow scheduler utilizes a **DAG Factory**. It polls the Control Plane API and creates a pipeline for every "Active" configuration in the database. This allows the system to scale to thousands of targets without restarting the orchestrator.
+### **2. Dynamic DAG Factory**
+The scheduler polls the Django API to generate pipelines in real-time for every "Active" configuration. This enables the system to scale to thousands of targets without manual intervention or orchestrator restarts.
 
-### **Ephemeral Worker Pattern**
+### **3. AI-Powered hCaptcha Solver**
+Integrated bypass logic utilizing **Hugging Face Transformers**. The system performs:
+* **Intelligent Prompt Translation:** Converting hCaptcha challenges into machine-readable queries.
+* **Zero-Shot Object Detection:** Using vision models to identify and interact with CAPTCHA elements without pre-trained site-specific labels.
 
-To prevent memory leaks and "zombie" browser processes, the Scraper does not run inside Airflow. Airflow acts as a remote commander, spinning up a fresh `coeus_worker_image` for each task and destroying it immediately upon completion.
+---
 
-### **SPA Interaction Logic**
+## 🚀 Quick Start
 
-The worker uses Playwright's asynchronous engine to navigate the **SEDAR+** platform. It bypasses complex ARIA-hidden elements and dynamic loaders by using locator-based interactions that mimic human behavior, ensuring high accuracy and reliability.
+The environment is fully containerized for **Zero-Friction Access**. No manual migrations or user creation required.
+
+### 1. Boot the System
+```bash
+docker-compose up -d --build
+```
+
+### 2. Access the Dashboards
+| Service | URL | Credentials |
+| :--- | :--- | :--- |
+| **Control Plane** | `http://localhost:8000/admin` | `admin` / `admin` |
+| **Airflow UI** | `http://localhost:9000` | `admin` / `admin` |
+| **DAG API** | `http://coeus.localhost/api/pipelines/active/` | N/A |
+
+---
+
+## 🏗️ Production Roadmap
+
+To transition this proof-of-concept to a production-grade environment, the following migrations are recommended:
+
+### **Cloud-Native Orchestration**
+* **Executor Upgrade:** Move from `Standalone` to `KubernetesExecutor`, allowing every scraping task to run as a native K8s Pod for infinite horizontal scaling.
+* **Managed Airflow:** Utilize **AWS MWAA** or **GCP Cloud Composer** to offload infrastructure maintenance.
+
+### **Enterprise Data Handling**
+* **Object Storage:** Transition from local Docker volumes to **Amazon S3** or **GCS** for PDF storage, implementing lifecycle policies for cold-storage (Glacier) archiving.
+* **Managed Databases:** Migrate the containerized PostgreSQL to **AWS RDS** or **GCP Cloud SQL** for automated backups and multi-AZ failover.
+
+### **Resilience & Stealth**
+* **Proxy Rotation:** Integration with residential proxy managers (e.g., Bright Data) to rotate egress IPs and avoid rate-limiting on regulatory portals.
+* **Headless Clusters:** Offload browser execution to specialized grids like **Browserless.io**, reducing the resource footprint of the worker containers.
+
+### **Observability & Security**
+* **Error Tracking:** Integrate **Sentry** within the Playwright workers to capture real-time stack traces of failed extraction attempts.
+* **Secrets Management:** Replace hardcoded environment variables with **AWS Secrets Manager** or **HashiCorp Vault**.
+
+---
 
 ## 📂 Project Structure
-
-```
-├── /
-│   ├── control_plane/       # Django Project
-│   ├── extraction_worker/   # Playwright Scraper
-│   └── orchestration/       # Airflow DAG Factory
-├── database/
-│   └── init.sql             # Multi-tenant DB initialization
-├── Dockerfile.app           # Optimized for Web/API
-├── Dockerfile.worker        # Heavy-lift image with Chromium binaries
-└── docker-compose.yml       # The infrastructure manifest
-```
-
-## 🏗️ Going from Demo to Production
-
-While this repository provides a fully functional local environment, a production-grade deployment would migrate several components to cloud-native managed services to ensure high availability, security, and infinite scalability.
-
-### **1. Infrastructure & Orchestration**
-
--   **From `Standalone` to `Celery/Kubernetes Executor`:** In production, Airflow wouldn't run as a single process. We would use the **KubernetesExecutor**, where every task (the scraper) is spun up as a literal Pod in a K8s cluster. This allows for massive parallel scraping across multiple nodes.
-    
--   **Managed Airflow:** Instead of self-hosting, we would migrate to **AWS MWAA** or **Google Cloud Composer** to offload the maintenance of the Airflow metadata database and webserver. We would also preferably move Airflow's metadata DB to the Postgres instance instead of using SQLite
-
-### **2. Data & Storage**
-
--   **Managed Databases:** The containerized PostgreSQL would be replaced by a managed service like **AWS RDS** or **GCP Cloud SQL**. This provides automated backups, multi-AZ failover, and encrypted-at-rest storage.
-    
--   **Object Storage (S3/GCS):** The `scraped_pdfs` Docker volume is a "local-only" solution. In production, the worker would stream the extracted PDFs directly to **Amazon S3** or **Google Cloud Storage** with lifecycle policies to move older reports to cold storage (Glacier).
-
-### **3. The "Muscle" (Playwright) at Scale**
-
--   **Proxy Rotation:** To avoid being blocked by SEDAR+ or other regulatory bodies, the Playwright worker would be integrated with a **Residential Proxy Manager** (like Bright Data or Oxylabs) to rotate IP addresses for every request.
-    
--   **Headless Clusters:** For high-volume scraping, we would use a specialized browser-less grid like **Browserless.io**, allowing the worker containers to be even lighter since they wouldn't need to carry the heavy Chromium binaries themselves.
-
-### **4. Security & Secrets**
-
--   **Secrets Management:** Hardcoded passwords in `docker-compose.yml` would be moved to **AWS Secrets Manager**.
-    
--   **TLS/SSL:** Traefik would be configured with **Let's Encrypt** or AWS Certificate Manager (ACM) to ensure all traffic to the Control Plane and Airflow UI is encrypted via HTTPS.
-
-### **5. Observability**
-
--   **Error Tracking:** Integration with **Sentry** would be added to the Django and Playwright code to capture stack traces of failed scrapes in real-time.
-    
--   **Monitoring:** Possibly export Airflow metrics to **Prometheus & Grafana** to track "Scrape Success Rate" and "Worker Latency" over time.
+```text
+├── control_plane/       # Django Project (The Brain)
+├── extraction_worker/   # Playwright Scraper (The Muscle)
+├── orchestration/       # Airflow DAG Factory (The Nervous System)
+├── database/            # Multi-tenant DB initialization
+├── Dockerfile.app       # Optimized Web/API image
+├── Dockerfile.worker    # Heavy-lift image with Chromium binaries
+└── docker-compose.yml   # Infrastructure manifest
