@@ -7,7 +7,10 @@ import time
 from urllib.parse import urljoin
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,7 +27,9 @@ HEADERS = {
 def download_pdf(url: str, save_dir: str, file_name: str):
     """Downloads a PDF from a given URL and saves it to the specified directory."""
     try:
-        response = requests.get(url, headers=HEADERS, stream=True, timeout=30)
+        response = requests.get(
+            url, headers=HEADERS, stream=True, timeout=30, verify=False
+        )
         response.raise_for_status()
 
         # Ensure filename is safe and ends in .pdf
@@ -49,12 +54,12 @@ def run_extraction(target_url: str):
     logger.info("==================================================")
 
     # COEUS standard mount path
-    output_dir = "/app/scraped_pdfs/ccma_reports"
+    output_dir = "/app/data/scraped_pdfs/ccma_reports"
     os.makedirs(output_dir, exist_ok=True)
 
     try:
         logger.info("Fetching categories...")
-        response = requests.get(target_url, headers=HEADERS, timeout=15)
+        response = requests.get(target_url, headers=HEADERS, timeout=15, verify=False)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -75,8 +80,12 @@ def run_extraction(target_url: str):
 
         for cat_id, cat_name in categories.items():
             logger.info(f"Scraping Category: {cat_name} (ID: {cat_id})")
-            cat_url = f"{target_url}?custom_p_type=resources&cat={cat_id}"
-            cat_resp = requests.get(cat_url, headers=HEADERS, timeout=15)
+
+            # Force the query against the root domain, regardless of what the Django start_url is
+            base_search_url = "https://www.ccma.org.za/"
+            cat_url = f"{base_search_url}?custom_p_type=resources&cat={cat_id}"
+
+            cat_resp = requests.get(cat_url, headers=HEADERS, timeout=15, verify=False)
 
             if cat_resp.status_code != 200:
                 logger.warning(f"Failed to fetch category {cat_name}. Skipping.")

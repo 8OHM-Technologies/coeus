@@ -12,7 +12,7 @@ COPY requirements-worker.txt .
 RUN pip install --no-cache-dir -r requirements-worker.txt
 RUN playwright install --with-deps chromium
 
-RUN mkdir -p /app/scraped_pdfs
+RUN mkdir -p /app/data/scraped_pdfs
 
 COPY . .
 

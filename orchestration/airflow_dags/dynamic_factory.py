@@ -14,6 +14,11 @@ HOST_PDF_PATH = os.getenv("HOST_SCRAPED_PDFS_PATH")
 if not HOST_PDF_PATH:
     raise ValueError("Environment variable HOST_SCRAPED_PDFS_PATH is not set.")
 
+HOST_LOTTO_PATH = os.getenv("HOST_LOTTO_PATH")
+
+if not HOST_LOTTO_PATH:
+    raise ValueError("Environment variable HOST_LOTTO_PATH is not set.")
+
 try:
     response = requests.get(API_URL, timeout=10)
     response.raise_for_status()
@@ -33,7 +38,9 @@ for blueprint in blueprints:
 
     # Routing Logic
     if "ccma.org.za" in target_url:
-        worker_script = "/app/extraction_worker/ccma_scraper.py"
+        worker_script = "/app/extraction_worker/ccma_playwright_scraper.py"
+    elif "za.national-lottery.com" in target_url:
+        worker_script = "/app/extraction_worker/lotto_scraper.py"
     else:
         worker_script = "/app/extraction_worker/scraper.py"
 
@@ -61,7 +68,10 @@ for blueprint in blueprints:
         auto_remove="force",
         mount_tmp_dir=False,
         mounts=[
-            Mount(source=HOST_PDF_PATH, target="/app/scraped_pdfs", type="bind"),
+            Mount(source=HOST_PDF_PATH, target="/app/data/scraped_pdfs", type="bind"),
+            Mount(
+                source=HOST_LOTTO_PATH, target="/app/data/lotto_results", type="bind"
+            ),
             Mount(
                 source="huggingface_cache",
                 target="/root/.cache/huggingface",
@@ -83,13 +93,14 @@ for blueprint in blueprints:
             auto_remove="force",
             mount_tmp_dir=False,
             mounts=[
-                Mount(source=HOST_PDF_PATH, target="/app/scraped_pdfs", type="bind")
+                Mount(
+                    source=HOST_PDF_PATH, target="/app/data/scraped_pdfs", type="bind"
+                )
             ],
             dag=dag,
         )
 
-        # Chain them together
-        scrape_task >> extract_task
+        scrape_task.set_downstream(extract_task)
     else:
         pass
 

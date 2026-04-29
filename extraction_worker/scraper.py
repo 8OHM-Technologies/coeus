@@ -50,7 +50,7 @@ async def run_extraction(target_url, company_identifier):
             if not solve_result["success"]:
                 logger.error(f"Failed to solve hCaptcha: {solve_result['error']}")
                 await page.screenshot(
-                    path=f"/app/scraped_pdfs/{company_identifier}_captcha_fail.png"
+                    path=f"/app/data/scraped_pdfs/{company_identifier}_captcha_fail.png"
                 )
                 sys.exit(1)
 
@@ -124,8 +124,8 @@ async def run_extraction(target_url, company_identifier):
 
         except Exception as e:
             logger.error(f"❌ Scraping failed: {str(e)}")
-            os.makedirs("/app/scraped_pdfs", exist_ok=True)
-            screenshot_path = f"/app/scraped_pdfs/{company_identifier}.png"
+            os.makedirs("/app/data/scraped_pdfs", exist_ok=True)
+            screenshot_path = f"/app/data/scraped_pdfs/{company_identifier}.png"
             await page.screenshot(path=screenshot_path, full_page=True)
             logger.info(f"Error screenshot saved to {screenshot_path}")
             sys.exit(1)

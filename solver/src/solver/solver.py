@@ -108,7 +108,7 @@ class HCaptchaSolver:
                 logger.info(f"DINO-friendly prompt generated: {dino_prompt}")
 
                 grid_image_bytes = await grid_container.screenshot(
-                    type="png", path="/app/scraped_pdfs/hcaptcha_grid.png"
+                    type="png", path="/app/data/scraped_pdfs/hcaptcha_grid.png"
                 )
 
                 # --- NEW: Run the slicing logic in a background thread ---
@@ -128,9 +128,7 @@ class HCaptchaSolver:
                     for box in bounding_boxes:
                         draw.rectangle(box, outline="red", width=4)
 
-                    debug_image_path = (
-                        f"/app/scraped_pdfs/hcaptcha_grid_boxed_attempt_{attempt}.png"
-                    )
+                    debug_image_path = f"/app/data/scraped_pdfs/hcaptcha_grid_boxed_attempt_{attempt}.png"
                     image.save(debug_image_path)
                 except Exception as e:
                     logger.error(f"Failed to draw or save bounding boxes: {e}")

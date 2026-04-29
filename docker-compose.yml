@@ -26,7 +26,7 @@ services:
     environment:
       POSTGRES_USER: coeus_admin
       POSTGRES_PASSWORD: super_secret_password
-      POSTGRES_DB: coeus_mining_db
+      POSTGRES_DB: coeus_db
     ports:
       - "5432:5432"
     volumes:
@@ -35,7 +35,7 @@ services:
     networks:
       - coeus_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U coeus_admin -d coeus_mining_db"]
+      test: ["CMD-SHELL", "pg_isready -U coeus_admin -d coeus_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -54,7 +54,7 @@ services:
     environment:
       POSTGRES_USER: coeus_admin
       POSTGRES_PASSWORD: super_secret_password
-      POSTGRES_DB: coeus_mining_db
+      POSTGRES_DB: coeus_db
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       DJANGO_SUPERUSER_USERNAME: admin
@@ -94,7 +94,8 @@ services:
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     volumes:
       - ./:/app
-      - ./scraped_pdfs:/app/scraped_pdfs
+      - ./data/lotto_results:/app/data/lotto_results
+      - ./data/scraped_pdfs:/app/data/scraped_pdfs
       - ~/.cache/huggingface/hub:/app/huggingface_cache
     depends_on:
       postgres:
@@ -119,7 +120,8 @@ services:
       wait"
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: False
-      HOST_SCRAPED_PDFS_PATH: ${PWD}/scraped_pdfs
+      HOST_SCRAPED_PDFS_PATH: ${PWD}/data/scraped_pdfs
+      HOST_LOTTO_PATH: ${PWD}/data/lotto_results
       COEUS_API_URL: http://coeus-control-plane:8000/api/pipelines/active/
     ports:
       - "9000:8080"
