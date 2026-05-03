@@ -6,7 +6,7 @@ COEUS is a distributed data platform for automated scraping, extraction, and ana
 
 - **Control Plane (Django):** Manages pipeline configurations and metadata. Located in `control_plane/`.
 - **Orchestrator (Apache Airflow):** Dynamically generates DAGs based on Control Plane configurations. Located in `orchestration/`.
-- **Extraction Workers:** Ephemeral containers running Playwright/BeautifulSoup scrapers. Located in `extraction_worker/`.
+- **Extraction Workers:** Ephemeral containers running Playwright/BeautifulSoup scrapers. Located in `extraction_workers/`.
 - **HCaptcha Solver:** Vision-based solver using Hugging Face models (Grounding DINO, Qwen). Located in `solver/`.
 - **Storage:** PostgreSQL for state and orchestration history. Local/S3 for documents.
 
@@ -40,15 +40,15 @@ The system is fully containerized.
 
 ### Core Files
 - `control_plane/pipelines/models.py`: Pipeline configuration definitions.
-- `extraction_worker/mining_scraper.py`: Playwright scraper for Sedarplus mining documents, with captcha integration.
-- `extraction_worker/ccma_scraper.py`: Playwright scraper for CCMA documents.
-- `extraction_worker/lotto_scraper.py`: Playwright scraper for South African lotto results.
+- `extraction_workers/mining_scraper.py`: Playwright scraper for Sedarplus mining documents, with captcha integration.
+- `extraction_workers/ccma_scraper.py`: Playwright scraper for CCMA documents.
+- `extraction_workers/lotto_scraper.py`: Playwright scraper for South African lotto results.
 - `orchestration/airflow_dags/dynamic_factory.py`: Airflow DAG generator.
 - `solver/src/solver/solver.py`: hCaptcha solving orchestration.
 
 ## 📂 Project Structure
 - `control_plane/`: Django source code.
-- `extraction_worker/`: Scraping scripts and LLM extraction logic.
+- `extraction_workers/`: Scraping scripts and LLM extraction logic.
 - `orchestration/`: Airflow configuration and dynamic DAGs.
 - `solver/`: Vision and LLM models for CAPTCHA bypass.
 - `data/`: Local storage for scraped outputs and debug snapshots.

@@ -38,11 +38,11 @@ for blueprint in blueprints:
 
     # Routing Logic
     if "ccma.org.za" in target_url:
-        worker_script = "/app/extraction_worker/ccma_playwright_scraper.py"
+        worker_script = "/app/extraction_workers/ccma_playwright_scraper.py"
     elif "za.national-lottery.com" in target_url:
-        worker_script = "/app/extraction_worker/lotto_scraper.py"
+        worker_script = "/app/extraction_workers/lotto_scraper.py"
     else:
-        worker_script = "/app/extraction_worker/mining_scraper.py"
+        worker_script = "/app/extraction_workers/mining_scraper.py"
 
     dag = DAG(
         dag_id=dag_id,
@@ -96,7 +96,7 @@ for blueprint in blueprints:
                     "extraction_instructions", ""
                 ),
             },
-            command=f"python /app/extraction_worker/llm_extractor.py --schema {blueprint['phase_2_extraction']['expected_schema']}",
+            command=f"python /app/extraction_workers/llm_extractor.py --schema {blueprint['phase_2_extraction']['expected_schema']}",
             auto_remove="force",
             mount_tmp_dir=False,
             mounts=[
