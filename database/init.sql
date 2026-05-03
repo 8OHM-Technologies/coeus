@@ -3,39 +3,38 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ---------------------------------------------------------
--- 1. Companies Table
+-- 1. Entities Table (e.g. Companies, Organizations)
 -- ---------------------------------------------------------
-CREATE TABLE companies (
+CREATE TABLE entities (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL UNIQUE,
-    ticker VARCHAR(50),
+    identifier VARCHAR(50), -- e.g. Ticker, Registration Number
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ---------------------------------------------------------
--- 2. Assets Table (The Mines/Projects)
+-- 2. Targets Table (e.g. Projects, Assets, Locations)
 -- ---------------------------------------------------------
-CREATE TABLE assets (
+CREATE TABLE targets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    asset_name VARCHAR(255) NOT NULL,
+    entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    target_name VARCHAR(255) NOT NULL,
     location VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(company_id, asset_name)
+    UNIQUE(entity_id, target_name)
 );
 
 -- ---------------------------------------------------------
--- 3. Resource Estimates Table (The Core Data)
+-- 3. Extracted Records Table (The Core Data)
 -- ---------------------------------------------------------
-CREATE TABLE resource_estimates (
+CREATE TABLE extracted_records (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    effective_date DATE NOT NULL,
-    classification VARCHAR(50) NOT NULL, -- e.g., 'Measured', 'Indicated', 'Inferred'
-    commodity VARCHAR(50) NOT NULL,      -- e.g., 'Gold', 'Zinc', 'Copper'
-    tonnage_mt NUMERIC(10, 2),
-    grade NUMERIC(10, 2),
-    grade_unit VARCHAR(20),              -- e.g., 'g/t', '%'
+    target_id UUID NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
+    document_date DATE NOT NULL,
+    record_type VARCHAR(100) NOT NULL, -- e.g. 'Resource Estimate', 'Financial Performance'
+    
+    -- Generic industry-specific data stored as JSONB
+    data JSONB NOT NULL,
 
     -- Data Quality & Pipeline Metadata
     requires_human_review BOOLEAN DEFAULT FALSE,
@@ -43,12 +42,13 @@ CREATE TABLE resource_estimates (
     source_url TEXT,
     extracted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE(asset_id, effective_date, classification, commodity)
+    UNIQUE(target_id, document_date, record_type)
 );
 
 -- ---------------------------------------------------------
 -- 4. Indexes for Query Optimization
 -- ---------------------------------------------------------
-CREATE INDEX idx_assets_company ON assets(company_id);
-CREATE INDEX idx_estimates_asset ON resource_estimates(asset_id);
-CREATE INDEX idx_estimates_review ON resource_estimates(requires_human_review) WHERE requires_human_review = TRUE;
+CREATE INDEX idx_targets_entity ON targets(entity_id);
+CREATE INDEX idx_records_target ON extracted_records(target_id);
+CREATE INDEX idx_records_review ON extracted_records(requires_human_review) WHERE requires_human_review = TRUE;
+CREATE INDEX idx_records_data ON extracted_records USING gin (data);

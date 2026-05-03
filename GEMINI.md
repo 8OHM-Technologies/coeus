@@ -4,7 +4,7 @@ COEUS is a distributed data platform for automated scraping, extraction, and ana
 
 ## 🏗️ System Architecture
 
-- **Control Plane (Django):** Manages pipeline configurations and metadata. Located in `control_plane/`.
+- **Extracted Data (Django):** Manages entity, target, and record metadata. Located in `control_plane/extracted_data/`.
 - **Orchestrator (Apache Airflow):** Dynamically generates DAGs based on Control Plane configurations. Located in `orchestration/`.
 - **Extraction Workers:** Ephemeral containers running Playwright/BeautifulSoup scrapers. Located in `extraction_workers/`.
 - **HCaptcha Solver:** Vision-based solver using Hugging Face models (Grounding DINO, Qwen). Located in `solver/`.
@@ -19,7 +19,7 @@ The orchestrator polls the Django API at `http://coeus-control-plane:8000/api/pi
 Based on `PipelineConfiguration`, the system selects the appropriate worker script:
 - `ccma_playwright_scraper.py` for CCMA.
 - `lotto_scraper.py` for national lottery.
-- `mining_scraper.py` for SEDAR+ (with hCaptcha solving).
+- `sedarplus_scraper.py` for SEDAR+ (supports dynamic document types).
 
 ### 3. AI-Powered hCaptcha Solver
 Uses `VisionManager` for object detection and `PromptTranslator` for prompt engineering. Slices the 3x3 grid for high-precision inference.
@@ -40,7 +40,8 @@ The system is fully containerized.
 
 ### Core Files
 - `control_plane/pipelines/models.py`: Pipeline configuration definitions.
-- `extraction_workers/mining_scraper.py`: Playwright scraper for Sedarplus mining documents, with captcha integration.
+- `control_plane/extracted_data/models.py`: Entity and Target data models.
+- `extraction_workers/sedarplus_scraper.py`: Playwright scraper for Sedarplus documents.
 - `extraction_workers/ccma_scraper.py`: Playwright scraper for CCMA documents.
 - `extraction_workers/lotto_scraper.py`: Playwright scraper for South African lotto results.
 - `orchestration/airflow_dags/dynamic_factory.py`: Airflow DAG generator.

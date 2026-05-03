@@ -1,71 +1,20 @@
 from datetime import date
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 
-class GradeEstimates(BaseModel):
-    """Commodity grades extracted from the resource table."""
-
-    Zn_percent: Optional[float] = Field(
-        None, description="Zinc grade as a percentage. Leave null if not present."
-    )
-    Pb_percent: Optional[float] = Field(
-        None, description="Lead grade as a percentage. Leave null if not present."
-    )
-    Cu_percent: Optional[float] = Field(
-        None, description="Copper grade as a percentage. Leave null if not present."
-    )
-    Ag_gt: Optional[float] = Field(
-        None, description="Silver grade in grams per tonne (g/t)."
-    )
-    Au_gt: Optional[float] = Field(
-        None, description="Gold grade in grams per tonne (g/t)."
-    )
-
-
-class ResourceEstimate(BaseModel):
-    """An individual row of a resource estimate table."""
-
-    asset_name: str = Field(
-        ..., description="The specific name of the mine or deposit (e.g., 'Errington')."
-    )
-    classification: str = Field(
-        ...,
-        description="The resource category: usually 'Measured', 'Indicated', or 'Inferred'.",
-    )
-    tonnage_mt: float = Field(
-        ...,
-        description="The tonnage in millions of tonnes (Mt). Convert to millions if listed otherwise.",
-    )
-    grades: GradeEstimates = Field(
-        ..., description="The specific mineral grades associated with this tonnage."
-    )
-
-
-class TechnicalParameters(BaseModel):
-    """Underlying financial and geological parameters used for the estimate."""
-
-    cut_off_grade: Optional[str] = Field(
-        None,
-        description="The cut-off grade used, usually found in the footnotes (e.g., '1.0% Zn').",
-    )
-    nsr_cutoff_usd: Optional[float] = Field(
-        None,
-        description="The Net Smelter Return (NSR) cut-off value in USD, if stated.",
-    )
+# =========================================================
+# Generic Base Schemas
+# =========================================================
 
 
 class DataQualityFlags(BaseModel):
     """Agentic self-verification flags to determine if human review is needed."""
 
-    is_historical_estimate: bool = Field(
-        ...,
-        description="True if the text explicitly calls this a 'historical' estimate.",
-    )
     requires_human_review: bool = Field(
         ...,
-        description="Set to True IF the footnotes indicate that parameters are unverified, if key data is missing, or if the estimate does not comply with standard NI 43-101/CIM definitions.",
+        description="Set to True IF the data is ambiguous, key values are missing, or the document contains conflicting information.",
     )
     review_reason: Optional[str] = Field(
         None,
@@ -73,17 +22,57 @@ class DataQualityFlags(BaseModel):
     )
 
 
-class NI43101ReportExtraction(BaseModel):
-    """The root schema for extracting data from an NI 43-101 technical report excerpt."""
+class BaseExtractedRecord(BaseModel):
+    """Generic base class for a single record extracted from a document."""
 
-    company_name: str = Field(
-        ..., description="The company that owns the project or commissioned the report."
+    entity_name: str = Field(
+        ..., description="The name of the organization or company."
     )
-    effective_date: date = Field(
-        ..., description="The effective date of the resource estimate (YYYY-MM-DD)."
+    target_name: str = Field(
+        ..., description="The specific project, asset, or location name."
     )
-    estimates: List[ResourceEstimate] = Field(
-        ..., description="List of all resource and reserve estimates found in the text."
+    document_date: date = Field(..., description="The date associated with this record.")
+    record_type: str = Field(..., description="The category of data being extracted.")
+
+
+class GenericDocumentExtraction(BaseModel):
+    """A completely flexible schema for any document type."""
+
+    metadata: BaseExtractedRecord
+    extracted_data: Dict[str, Any] = Field(
+        ..., description="Key-value pairs of the core data points."
     )
-    technical_parameters: TechnicalParameters
+    data_quality_flags: DataQualityFlags
+
+
+# =========================================================
+# Specialized Industry Examples (e.g. Mining)
+# =========================================================
+
+
+class GradeEstimates(BaseModel):
+    """Commodity grades extracted from the resource table."""
+
+    Zn_percent: Optional[float] = None
+    Pb_percent: Optional[float] = None
+    Cu_percent: Optional[float] = None
+    Ag_gt: Optional[float] = None
+    Au_gt: Optional[float] = None
+
+
+class ResourceEstimateItem(BaseModel):
+    """An individual row of a resource estimate table."""
+
+    target_name: str = Field(..., description="The name of the mine or deposit.")
+    classification: str = Field(..., description="Measured, Indicated, or Inferred.")
+    tonnage_mt: float = Field(..., description="Tonnage in millions of tonnes.")
+    grades: GradeEstimates
+
+
+class MiningResourceExtraction(BaseModel):
+    """The root schema for extracting mining technical reports."""
+
+    entity_name: str = Field(..., description="The company name.")
+    effective_date: date = Field(..., description="The date of the estimate.")
+    estimates: List[ResourceEstimateItem]
     data_quality_flags: DataQualityFlags

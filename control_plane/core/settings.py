@@ -46,7 +46,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "pipelines.apps.PipelinesConfig",
-    "mining_data.apps.MiningDataConfig",
+    "extracted_data.apps.ExtractedDataConfig",
 ]
 
 MIDDLEWARE = [

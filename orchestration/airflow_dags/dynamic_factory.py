@@ -39,10 +39,14 @@ for blueprint in blueprints:
     # Routing Logic
     if "ccma.org.za" in target_url:
         worker_script = "/app/extraction_workers/ccma_playwright_scraper.py"
+        worker_args = f"--url '{target_url}'"
     elif "za.national-lottery.com" in target_url:
         worker_script = "/app/extraction_workers/lotto_scraper.py"
+        worker_args = f"--url '{target_url}'"
     else:
-        worker_script = "/app/extraction_workers/mining_scraper.py"
+        worker_script = "/app/extraction_workers/sedarplus_scraper.py"
+        doc_type = blueprint["metadata"].get("document_type", "Technical report (NI 43-101)")
+        worker_args = f"--url '{target_url}' --entity '{blueprint['pipeline_id']}' --doc_type '{doc_type}'"
 
     dag = DAG(
         dag_id=dag_id,
@@ -64,7 +68,7 @@ for blueprint in blueprints:
             "PYTHONPATH": "/app:/app/solver/src",
             "HF_TOKEN": os.environ.get("HUGGINGFACE_TOKEN", ""),
         },
-        command=f"python {worker_script} --url '{target_url}'",
+        command=f"python {worker_script} {worker_args}",
         auto_remove="force",
         mount_tmp_dir=False,
         mounts=[
