@@ -78,7 +78,7 @@ To transition this proof-of-concept to a production-grade environment, the follo
 ## 📂 Project Structure
 ```text
 ├── control_plane/       # Django Project (The Brain)
-├── extraction_worker/   # Playwright Scraper (The Muscle)
+├── extraction_worker/   # Playwright Scrapers (The Muscle)
 ├── orchestration/       # Airflow DAG Factory (The Nervous System)
 ├── database/            # Multi-tenant DB initialization
 ├── Dockerfile.app       # Optimized Web/API image

@@ -25,7 +25,13 @@ class PipelineConfiguration(models.Model):
     # Metadata & Scheduling
     # ---------------------------------------------------------
     name = models.CharField(
-        max_length=255, unique=True, help_text="e.g., Glencore SEDAR Filings"
+        max_length=255, unique=True, help_text="e.g., SEC 10-K Filings"
+    )
+    industry = models.CharField(
+        max_length=100, blank=True, help_text="e.g., Finance, Mining, Healthcare"
+    )
+    document_type = models.CharField(
+        max_length=100, blank=True, help_text="e.g., Technical Report, Annual Report"
     )
     is_active = models.BooleanField(
         default=True, help_text="Uncheck to pause this pipeline in the orchestrator."
@@ -67,9 +73,13 @@ class PipelineConfiguration(models.Model):
     )
     pydantic_schema_name = models.CharField(
         max_length=100,
-        default="NI43101ReportExtraction",
         blank=True,
         help_text="The exact name of the Python class in schemas.py to enforce.",
+    )
+    extraction_instructions = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Custom instructions for the LLM to guide extraction.",
     )
 
     # ---------------------------------------------------------
@@ -77,7 +87,7 @@ class PipelineConfiguration(models.Model):
     # ---------------------------------------------------------
     target_table = models.CharField(
         max_length=100,
-        default="resource_estimates",
+        blank=True,
         help_text="The database table where the structured data will be UPSERTed.",
     )
 
@@ -109,6 +119,10 @@ class PipelineConfiguration(models.Model):
             "pipeline_id": self.name.lower().replace(" ", "_").replace("-", "_"),
             "is_active": self.is_active,
             "schedule": self.schedule_cron,
+            "metadata": {
+                "industry": self.industry,
+                "document_type": self.document_type,
+            },
             "phase_1_ingestion": {
                 "start_url": self.start_url,
                 "target_asset_selector": self.target_css_selector,
@@ -118,6 +132,7 @@ class PipelineConfiguration(models.Model):
                 "requires_extraction": self.requires_extraction,
                 "engine": self.llm_engine,
                 "expected_schema": self.pydantic_schema_name,
+                "extraction_instructions": self.extraction_instructions,
             },
             "phase_3_loading": {"table_name": self.target_table},
         }

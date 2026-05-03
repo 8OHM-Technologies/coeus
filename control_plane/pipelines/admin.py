@@ -11,13 +11,13 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
     # ---------------------------------------------------------
     list_display = (
         "name",
+        "industry",
         "is_active",
         "llm_engine",
-        "target_table",
         "updated_at",
     )
 
-    list_filter = ("is_active", "llm_engine", "pagination_strategy")
+    list_filter = ("is_active", "industry", "llm_engine", "pagination_strategy")
     search_fields = ("name", "start_url")
 
     readonly_fields = (
@@ -27,14 +27,32 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
     )
 
     fieldsets = (
-        ("Metadata & Scheduling", {"fields": ("name", "is_active", "schedule_cron")}),
+        (
+            "Metadata & Scheduling",
+            {
+                "fields": (
+                    "name",
+                    "industry",
+                    "document_type",
+                    "is_active",
+                    "schedule_cron",
+                )
+            },
+        ),
         (
             "Phase 1: Ingestion Config (Playwright)",
             {"fields": ("start_url", "target_css_selector", "pagination_strategy")},
         ),
         (
             "Phase 2: Extraction Config (LLM)",
-            {"fields": ("requires_extraction", "llm_engine", "pydantic_schema_name")},
+            {
+                "fields": (
+                    "requires_extraction",
+                    "llm_engine",
+                    "pydantic_schema_name",
+                    "extraction_instructions",
+                )
+            },
         ),
         ("Phase 3: Loading Config (Postgres)", {"fields": ("target_table",)}),
         (

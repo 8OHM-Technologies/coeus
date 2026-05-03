@@ -1,4 +1,4 @@
-# /extraction_worker/scraper.py
+# /extraction_worker/mining_scraper.py
 import argparse
 import asyncio
 import logging
