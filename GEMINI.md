@@ -42,7 +42,7 @@ The system is fully containerized.
 - `control_plane/pipelines/models.py`: Pipeline configuration definitions.
 - `control_plane/extracted_data/models.py`: Entity and Target data models.
 - `extraction_workers/sedarplus_scraper.py`: Playwright scraper for Sedarplus documents.
-- `extraction_workers/ccma_scraper.py`: Playwright scraper for CCMA documents.
+- `extraction_workers/ccma_playwright_scraper.py`: Playwright scraper for CCMA documents.
 - `extraction_workers/lotto_scraper.py`: Playwright scraper for South African lotto results.
 - `orchestration/airflow_dags/dynamic_factory.py`: Airflow DAG generator.
 - `solver/src/solver/solver.py`: hCaptcha solving orchestration.

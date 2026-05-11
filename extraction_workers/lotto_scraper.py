@@ -1,4 +1,3 @@
-# /extraction_worker/lotto_playwright_scraper.py
 import argparse
 import asyncio
 import csv
@@ -7,6 +6,7 @@ import os
 import sys
 
 from playwright.async_api import async_playwright
+from utils import fetch_pipeline_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,51 +35,62 @@ def save_to_csv(data: list, save_dir: str, file_name: str):
         logger.error(f"  [!] Failed to save CSV {file_name}: {e}")
 
 
-async def run_extraction(target_url: str):
+async def run_extraction(pipeline_name: str):
+    config = await fetch_pipeline_config(pipeline_name)
+    target_url = config["start_url"]
+    extraction_params = config.get("extraction_params", {})
+    
+    start_year = extraction_params.get("start_year", 2000)
+    end_year = extraction_params.get("end_year", 2026)
+    
+    # Standardized selector
+    doc_selector = config.get("target_css_selector_documents") or "table tbody tr"
+
     logger.info("==================================================")
-    logger.info("🚀 COEUS PLAYWRIGHT WORKER INITIALIZED (LOTTO)")
+    logger.info(f"🚀 COEUS PLAYWRIGHT WORKER INITIALIZED (LOTTO: {pipeline_name})")
     logger.info(f"Target Base: {target_url}")
+    logger.info(f"Years: {start_year} - {end_year}")
+    logger.info(f"Selector: {doc_selector}")
     logger.info("==================================================")
 
     output_dir = "/app/data/lotto_results"
     os.makedirs(output_dir, exist_ok=True)
 
-    start_year = 2000
-    end_year = 2026
     all_results = []
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, slow_mo=50)
-        context = await browser.new_context(ignore_https_errors=True)
+        context = await browser.new_context(
+            ignore_https_errors=config.get("allow_insecure_https", True)
+        )
         page = await context.new_page()
 
         try:
-            for year in range(start_year, end_year + 1):
+            for year in range(int(start_year), int(end_year) + 1):
                 logger.info(f"Scraping Year: {year}")
 
                 # Construct the specific archive URL for the year
-                # Ensuring clean url joining whether target_url ends in a slalsh or not
                 year_url = f"{target_url.rstrip('/')}/{year}-archive"
 
                 await page.goto(year_url, wait_until="networkidle")
 
                 try:
-                    await page.wait_for_selector("table tbody", timeout=5000)
+                    # Wait for the container of the documents/rows
+                    container_selector = doc_selector.split(" ")[0] if " " in doc_selector else doc_selector
+                    await page.wait_for_selector(container_selector, timeout=5000)
                 except Exception:
                     logger.warning(
-                        f"  No data table found for {year} or page failed to load."
+                        f"  Selector '{doc_selector}' not found for {year} or page failed to load."
                     )
                     continue
 
-                # Fetch all rows asynchronously
-                rows = await page.locator("table tbody tr").all()
-                logger.info(f"  Found {len(rows)} draws for {year}. Extracting...")
+                # Fetch all rows using the configured selector
+                rows = await page.locator(doc_selector).all()
+                logger.info(f"  Found {len(rows)} items for {year}. Extracting...")
 
                 for row in rows:
                     columns = await row.locator("td").all_inner_texts()
 
-                    # We now check for >= 4 to ensure we have Date, Numbers, Jackpot, and Outcome
-                    # This safely ignores the "Next Lotto Jackpot" promo row
                     if len(columns) >= 4:
                         # Clean the <br> tag out of the date
                         date = columns[0].replace("\n", " ").strip()
@@ -102,7 +113,9 @@ async def run_extraction(target_url: str):
 
             # Save all scraped results after the loop finishes
             logger.info(f"Extraction finished. Total draws scraped: {len(all_results)}")
-            save_to_csv(all_results, output_dir, "historical_lotto_results.csv")
+            save_to_csv(
+                all_results, output_dir, f"historical_lotto_results_{pipeline_name}.csv"
+            )
 
         except Exception as e:
             logger.error(f"❌ Playwright extraction failed: {str(e)}")
@@ -114,8 +127,11 @@ async def run_extraction(target_url: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coeus Lotto Playwright Worker")
-    # You can pass "https://za.national-lottery.com/lotto/results" as the URL
-    parser.add_argument("--url", required=True, help="The target base URL to scrape")
+    parser.add_argument(
+        "--pipeline_name",
+        required=True,
+        help="The name of the pipeline configuration to use",
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_extraction(args.url))
+    asyncio.run(run_extraction(args.pipeline_name))

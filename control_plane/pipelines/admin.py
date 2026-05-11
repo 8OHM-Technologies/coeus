@@ -11,13 +11,14 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
     # ---------------------------------------------------------
     list_display = (
         "name",
+        "scraper_type",
         "industry",
         "is_active",
         "llm_engine",
         "updated_at",
     )
 
-    list_filter = ("is_active", "industry", "llm_engine", "pagination_strategy")
+    list_filter = ("is_active", "scraper_type", "industry", "llm_engine", "pagination_strategy")
     search_fields = ("name", "start_url")
 
     readonly_fields = (
@@ -32,6 +33,7 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "name",
+                    "scraper_type",
                     "industry",
                     "document_type",
                     "is_active",
@@ -41,7 +43,17 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
         ),
         (
             "Phase 1: Ingestion Config (Playwright)",
-            {"fields": ("start_url", "target_css_selector", "pagination_strategy")},
+            {
+                "fields": (
+                    "start_url",
+                    "target_css_selector",
+                    "target_css_selector_categories",
+                    "target_css_selector_documents",
+                    "pagination_strategy",
+                    "allow_insecure_https",
+                    "allow_insecure_requests",
+                )
+            },
         ),
         (
             "Phase 2: Extraction Config (LLM)",
@@ -51,6 +63,7 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
                     "llm_engine",
                     "pydantic_schema_name",
                     "extraction_instructions",
+                    "extraction_params",
                 )
             },
         ),

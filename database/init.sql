@@ -1,5 +1,10 @@
 -- database/init.sql
-
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datname = 'coeus_db') THEN
+        CREATE DATABASE "coeus_db";
+    END IF;
+END $$;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ---------------------------------------------------------
@@ -32,7 +37,7 @@ CREATE TABLE extracted_records (
     target_id UUID NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
     document_date DATE NOT NULL,
     record_type VARCHAR(100) NOT NULL, -- e.g. 'Resource Estimate', 'Financial Performance'
-    
+
     -- Generic industry-specific data stored as JSONB
     data JSONB NOT NULL,
 

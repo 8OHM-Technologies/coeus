@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('mining_data', '0001_initial'),
+        ("extracted_data", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='company',
-            options={'managed': False, 'verbose_name_plural': 'Companies'},
+            name="company",
+            options={"managed": False, "verbose_name_plural": "Companies"},
         ),
     ]

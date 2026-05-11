@@ -1,4 +1,3 @@
-# control_plane/pipelines/models.py
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -15,6 +14,13 @@ class LLMEngine(models.TextChoices):
     CLAUDE_3_OPUS = "claude-3-opus", "Anthropic Claude 3 Opus"
 
 
+class ScraperType(models.TextChoices):
+    CCMA = "ccma", "CCMA (Playwright)"
+    JUDICIARY = "judiciary", "Judiciary (Playwright)"
+    LOTTO = "lotto", "National Lottery (Playwright)"
+    SEDARPLUS = "sedarplus", "SEDAR+ (Playwright + Solver)"
+
+
 class PipelineConfiguration(models.Model):
     """
     Stores the dynamic blueprint for a Coeus extraction pipeline.
@@ -26,6 +32,12 @@ class PipelineConfiguration(models.Model):
     # ---------------------------------------------------------
     name = models.CharField(
         max_length=255, unique=True, help_text="e.g., SEC 10-K Filings"
+    )
+    scraper_type = models.CharField(
+        max_length=20,
+        choices=ScraperType.choices,
+        default=ScraperType.SEDARPLUS,
+        help_text="The specific worker script to execute.",
     )
     industry = models.CharField(
         max_length=100, blank=True, help_text="e.g., Finance, Mining, Healthcare"
@@ -48,7 +60,30 @@ class PipelineConfiguration(models.Model):
     # ---------------------------------------------------------
     start_url = models.URLField(help_text="The root URL for the crawler to begin.")
     target_css_selector = models.CharField(
-        max_length=255, help_text="CSS selector identifying the PDF download links."
+        max_length=255,
+        blank=True,
+        help_text="CSS selector identifying the PDF download links (legacy/generic).",
+    )
+    target_css_selector_categories = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="CSS selector for category links/buttons.",
+    )
+    target_css_selector_documents = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="CSS selector for document links.",
+    )
+    allow_insecure_https = models.BooleanField(
+        default=False, help_text="Ignore SSL errors in Playwright."
+    )
+    allow_insecure_requests = models.BooleanField(
+        default=False, help_text="Ignore SSL errors in requests (urllib3)."
+    )
+    extraction_params = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Arbitrary key-value pairs for specific scraper logic (e.g., filter_keyword).",
     )
     pagination_strategy = models.CharField(
         max_length=20,
@@ -117,6 +152,8 @@ class PipelineConfiguration(models.Model):
         """
         return {
             "pipeline_id": self.name.lower().replace(" ", "_").replace("-", "_"),
+            "name": self.name,
+            "scraper_type": self.scraper_type,
             "is_active": self.is_active,
             "schedule": self.schedule_cron,
             "metadata": {
@@ -126,6 +163,10 @@ class PipelineConfiguration(models.Model):
             "phase_1_ingestion": {
                 "start_url": self.start_url,
                 "target_asset_selector": self.target_css_selector,
+                "target_css_selector_categories": self.target_css_selector_categories,
+                "target_css_selector_documents": self.target_css_selector_documents,
+                "allow_insecure_https": self.allow_insecure_https,
+                "allow_insecure_requests": self.allow_insecure_requests,
                 "pagination_strategy": self.pagination_strategy,
             },
             "phase_2_extraction": {
@@ -133,6 +174,7 @@ class PipelineConfiguration(models.Model):
                 "engine": self.llm_engine,
                 "expected_schema": self.pydantic_schema_name,
                 "extraction_instructions": self.extraction_instructions,
+                "extraction_params": self.extraction_params,
             },
             "phase_3_loading": {"table_name": self.target_table},
         }

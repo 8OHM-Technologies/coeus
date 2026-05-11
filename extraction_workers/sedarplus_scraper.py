@@ -1,4 +1,3 @@
-# extraction_workers/sedarplus_scraper.py
 import argparse
 import asyncio
 import logging
@@ -7,6 +6,7 @@ import sys
 
 from playwright.async_api import TimeoutError, async_playwright
 from solver.solver import HCaptchaSolver
+from utils import fetch_pipeline_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,9 +16,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def run_extraction(target_url, entity_identifier, document_type):
+async def run_extraction(pipeline_name: str):
+    config = await fetch_pipeline_config(pipeline_name)
+    target_url = config["start_url"]
+    
+    extraction_params = config.get("extraction_params", {})
+    entity_identifier = extraction_params.get("entity_identifier", config["pipeline_id"])
+    document_type = config.get("document_type", "Technical report (NI 43-101)")
+    
+    # Standardized Selectors from DB or extraction_params
+    doc_type_selector = extraction_params.get("doc_type_selector", '#W926-fieldset textarea[type="search"]')
+    profile_input_selector = extraction_params.get("profile_input_selector", 'Profile name or number')
+    results_table_selector = config.get("target_css_selector_documents") or "table tbody tr"
+
     logger.info("==================================================")
-    logger.info("🚀 COEUS SEDARPLUS WORKER INITIALIZED")
+    logger.info(f"🚀 COEUS SEDARPLUS WORKER INITIALIZED (PIPELINE: {pipeline_name})")
     logger.info(f"Entity: {entity_identifier}")
     logger.info(f"Doc Type: {document_type}")
     logger.info("==================================================")
@@ -29,6 +41,7 @@ async def run_extraction(target_url, entity_identifier, document_type):
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            ignore_https_errors=config.get("allow_insecure_https", False),
         )
         page = await context.new_page()
 
@@ -49,13 +62,13 @@ async def run_extraction(target_url, entity_identifier, document_type):
 
             # 2. Select Document Type
             logger.info(f"Setting Document Type: {document_type}...")
-            doc_type_field = page.locator('#W926-fieldset textarea[type="search"]')
+            doc_type_field = page.locator(doc_type_selector)
             await doc_type_field.click()
             await page.get_by_role("option", name=document_type, exact=True).click()
 
             # 3. Handle Entity Profile
             logger.info(f"Entering Entity Identifier: {entity_identifier}...")
-            profile_input = page.get_by_role("textbox", name="Profile name or number")
+            profile_input = page.get_by_role("textbox", name=profile_input_selector)
             await profile_input.click()
             await profile_input.fill(entity_identifier)
 
@@ -75,10 +88,10 @@ async def run_extraction(target_url, entity_identifier, document_type):
             await page.get_by_role("button", name="Search").click()
 
             # 5. Extract Results
-            logger.info("Waiting for results table to populate...")
-            await page.wait_for_selector("table tbody tr", timeout=45000)
+            logger.info(f"Waiting for results table to populate (selector: {results_table_selector})...")
+            await page.wait_for_selector(results_table_selector, timeout=45000)
 
-            document_rows = await page.locator("table tbody tr").all()
+            document_rows = await page.locator(results_table_selector).all()
             pdf_urls = []
 
             for row in document_rows:
@@ -110,11 +123,11 @@ async def run_extraction(target_url, entity_identifier, document_type):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coeus Sedarplus Scraper")
-    parser.add_argument("--url", required=True, help="The target URL")
-    parser.add_argument("--entity", required=True, help="Entity name or profile ID")
     parser.add_argument(
-        "--doc_type", default="Technical report (NI 43-101)", help="Document category"
+        "--pipeline_name",
+        required=True,
+        help="The name of the pipeline configuration to use",
     )
-
     args = parser.parse_args()
-    asyncio.run(run_extraction(args.url, args.entity, args.doc_type))
+
+    asyncio.run(run_extraction(args.pipeline_name))
