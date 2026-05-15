@@ -10,13 +10,14 @@ from utils import download_pdf, fetch_pipeline_config
 
 logger = logging.getLogger(__name__)
 
+
 async def run_extraction(pipeline_name: str):
     # Fetch configuration from API
     config = await fetch_pipeline_config(pipeline_name)
     base_search_url = config["start_url"]
     cat_selector = config["target_css_selector_categories"]
     doc_selector = config["target_css_selector_documents"]
-    
+
     # Standardized extraction params
     extraction_params = config.get("extraction_params", {})
     max_retries = int(extraction_params.get("max_retries", 3))

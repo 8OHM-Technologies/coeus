@@ -17,22 +17,24 @@ logger = logging.getLogger(__name__)
 async def run_extraction(pipeline_name: str, schema_name: str):
     # Fetch configuration from API or Env
     config = await fetch_pipeline_config(pipeline_name)
-    
+
     logger.info("==================================================")
     logger.info(f"🚀 COEUS LLM EXTRACTOR INITIALIZED (PIPELINE: {pipeline_name})")
     logger.info(f"Schema: {schema_name}")
-    logger.info(f"Engine: {config.get('llm_engine', 'gpt-4o')}")
+    logger.info(f"Engine: {config.get('llm_engine', 'gemini-cli')}")
     logger.info("==================================================")
 
     # In a real implementation, this would:
     # 1. Load the Pydantic schema from schemas.py
-    # 2. Iterate through files in /app/data/scraped_pdfs/{pipeline_id}
+    # 2. Iterate through files in /app/data/{pipeline_name}/{document_type}/
     # 3. Call the LLM with the extraction instructions
     # 4. Upsert results to the target table
-    
-    logger.info(f"Scanning for documents in: /app/data/scraped_pdfs/{config.get('document_type', '').lower()}")
+
+    logger.info(
+        f"Scanning for documents in: /app/data/{pipeline_name}/{config.get('document_type', '').lower()}"
+    )
     logger.info(f"Target Table: {config.get('target_table', 'extracted_records')}")
-    
+
     # Mocking completion
     await asyncio.sleep(1)
     logger.info("✅ LLM Extraction simulation complete.")

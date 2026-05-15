@@ -9,16 +9,16 @@ class PaginationStrategy(models.TextChoices):
 
 
 class LLMEngine(models.TextChoices):
-    GPT_4O = "gpt-4o", "OpenAI GPT-4o"
-    GPT_4O_MINI = "gpt-4o-mini", "OpenAI GPT-4o-Mini"
-    CLAUDE_3_OPUS = "claude-3-opus", "Anthropic Claude 3 Opus"
+    GEMINI = "gemini-cli", "Gemini Cli"
 
 
 class ScraperType(models.TextChoices):
-    CCMA = "ccma", "CCMA (Playwright)"
+    CCMA = "ccma_playwright", "CCMA (Playwright)"
     JUDICIARY = "judiciary", "Judiciary (Playwright)"
     LOTTO = "lotto", "National Lottery (Playwright)"
     SEDARPLUS = "sedarplus", "SEDAR+ (Playwright + Solver)"
+    MANTECH = "mantech", "Mantech (Playwright)"
+    LIVESTAINABLE = "livestainable", "Livestainable (Playwright)"
 
 
 class PipelineConfiguration(models.Model):
@@ -104,7 +104,7 @@ class PipelineConfiguration(models.Model):
         help_text="Uncheck to skip LLM extraction (e.g., for raw document hoarding like CCMA).",
     )
     llm_engine = models.CharField(
-        max_length=20, choices=LLMEngine.choices, default=LLMEngine.GPT_4O
+        max_length=20, choices=LLMEngine.choices, default=LLMEngine.GEMINI
     )
     pydantic_schema_name = models.CharField(
         max_length=100,

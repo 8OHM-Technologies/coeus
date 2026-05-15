@@ -10,17 +10,12 @@ from docker.types import Mount
 logger = logging.getLogger(__name__)
 
 API_URL = os.getenv(
-    "COEUS_API_URL", "http://coeus-control-plane:8000/api/pipelines/active/"
+    "COEUS_API_URL", "http://coeus-control-plane:8001/api/pipelines/active/"
 )
-HOST_PDF_PATH = os.getenv("HOST_SCRAPED_PDFS_PATH")
+HOST_DATA_PATH = os.getenv("HOST_DATA_PATH")
 
-if not HOST_PDF_PATH:
-    raise ValueError("Environment variable HOST_SCRAPED_PDFS_PATH is not set.")
-
-HOST_LOTTO_PATH = os.getenv("HOST_LOTTO_PATH")
-
-if not HOST_LOTTO_PATH:
-    raise ValueError("Environment variable HOST_LOTTO_PATH is not set.")
+if not HOST_DATA_PATH:
+    raise ValueError("Environment variable HOST_DATA_PATH is not set.")
 
 try:
     response = requests.get(API_URL, timeout=10)
@@ -35,6 +30,23 @@ default_args = {
     "retry_delay": timedelta(minutes=2),
 }
 
+# --- Dynamic Scraper Discovery ---
+# Discovery path (where the Airflow Scheduler finds the files)
+discovery_path = "/app/extraction_workers"
+if not os.path.exists(discovery_path):
+    discovery_path = os.path.join(os.path.dirname(__file__), "../../extraction_workers")
+
+scraper_map = {}
+if os.path.exists(discovery_path):
+    for f in os.listdir(discovery_path):
+        if f.endswith("_scraper.py"):
+            key = f.replace("_scraper.py", "")
+            scraper_map[key] = f"/app/extraction_workers/{f}"
+else:
+    logger.warning(
+        f"Scrapers directory not found at {discovery_path}. Scraper map will be empty."
+    )
+
 for blueprint in blueprints:
     dag_id = f"extract_{blueprint['pipeline_id']}"
     target_url = blueprint["phase_1_ingestion"]["start_url"]
@@ -42,17 +54,23 @@ for blueprint in blueprints:
     # Routing Logic & Worker Arguments
     pipeline_id = blueprint["pipeline_id"]
     scraper_type = blueprint.get("scraper_type", "sedarplus")
-    worker_args = f"--pipeline_name '{pipeline_id}'"
 
-    scraper_map = {
-        "ccma": "/app/extraction_workers/ccma_playwright_scraper.py",
-        "lotto": "/app/extraction_workers/lotto_scraper.py",
-        "judiciary": "/app/extraction_workers/judiciary_scraper.py",
-        "sedarplus": "/app/extraction_workers/sedarplus_scraper.py",
-    }
+    extraction_params = blueprint["phase_2_extraction"].get("extraction_params", {})
+    search_keyword = extraction_params.get("search_keyword")
+    category = extraction_params.get("category")
+
+    worker_args = f"--pipeline_name '{pipeline_id}'"
+    if scraper_type == "mantech":
+        if search_keyword:
+            worker_args += f" --search_keyword '{search_keyword}'"
+        if category:
+            worker_args += f" --category '{category}'"
+
     worker_script = scraper_map.get(scraper_type)
     if not worker_script:
-        logger.warning(f"Unknown scraper type: {scraper_type}.")
+        logger.warning(
+            f"Unknown scraper type: {scraper_type}. Available: {list(scraper_map.keys())}"
+        )
 
     dag = DAG(
         dag_id=dag_id,
@@ -72,10 +90,10 @@ for blueprint in blueprints:
         network_mode="coeus_network",
         environment={
             "PYTHONPATH": "/app:/app/solver/src",
-            "HF_TOKEN": os.environ.get("HUGGINGFACE_TOKEN", ""),
+            "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
             "PIPELINE_CONFIG": os.getenv(
-                "COEUS_API_URL", "http://coeus-control-plane:8000/api/pipelines/active/"
-            ),  # Fallback or marker
+                "COEUS_API_URL", "http://coeus-control-plane:8001/api/pipelines/active/"
+            ),
             # Storing pipeline specific settings in the dynamic factory's task environment
             "START_URL": target_url,
             "DOCUMENT_TYPE": blueprint["metadata"]["document_type"],
@@ -99,9 +117,10 @@ for blueprint in blueprints:
         auto_remove="force",
         mount_tmp_dir=False,
         mounts=[
-            Mount(source=HOST_PDF_PATH, target="/app/data/scraped_pdfs", type="bind"),
             Mount(
-                source=HOST_LOTTO_PATH, target="/app/data/lotto_results", type="bind"
+                source=HOST_DATA_PATH,
+                target="/app/data",
+                type="bind",
             ),
             Mount(
                 source="huggingface_cache",
@@ -122,7 +141,7 @@ for blueprint in blueprints:
             network_mode="coeus_network",
             environment={
                 "PYTHONPATH": "/app:/app/solver/src",
-                "HF_TOKEN": os.environ.get("HUGGINGFACE_TOKEN", ""),
+                "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
                 "PIPELINE_NAME": blueprint["pipeline_id"],
                 "EXTRACTION_INSTRUCTIONS": blueprint["phase_2_extraction"].get(
                     "extraction_instructions", ""
@@ -133,7 +152,7 @@ for blueprint in blueprints:
             mount_tmp_dir=False,
             mounts=[
                 Mount(
-                    source=HOST_PDF_PATH, target="/app/data/scraped_pdfs", type="bind"
+                    source=HOST_DATA_PATH, target="/app/data/scraped_pdfs", type="bind"
                 )
             ],
             dag=dag,

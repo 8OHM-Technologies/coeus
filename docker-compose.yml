@@ -28,7 +28,7 @@ services:
       POSTGRES_PASSWORD: super_secret_password
       POSTGRES_DB: coeus_db
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -50,7 +50,7 @@ services:
     container_name: coeus-control-plane
     image: coeus_control_plane_image
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       POSTGRES_USER: coeus_admin
       POSTGRES_PASSWORD: super_secret_password
@@ -71,13 +71,13 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.control-plane.rule=Host(`coeus.localhost`)"
-      - "traefik.http.services.control-plane.loadbalancer.server.port=8000"
+      - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
       - "traefik.docker.network=coeus_network"
     command: >
       bash -c "python control_plane/manage.py makemigrations &&
                 python control_plane/manage.py migrate &&
                 python control_plane/manage.py createsuperuser --noinput || true &&
-                python control_plane/manage.py runserver 0.0.0.0:8000"
+                python control_plane/manage.py runserver 0.0.0.0:8001"
 
   # ---------------------------------------------------------
   # 4. Ingestion & Extraction Worker (Playwright + OpenAI)
@@ -96,6 +96,7 @@ services:
       - ./:/app
       - ./data/lotto_results:/app/data/lotto_results
       - ./data/scraped_pdfs:/app/data/scraped_pdfs
+      - ./data/livestainable_results:/app/data/livestainable_results
       - ~/.cache/huggingface/hub:/app/huggingface_cache
     depends_on:
       postgres:
@@ -120,13 +121,14 @@ services:
       wait"
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: False
-      HOST_SCRAPED_PDFS_PATH: ${PWD}/data/scraped_pdfs
-      HOST_LOTTO_PATH: ${PWD}/data/lotto_results
-      COEUS_API_URL: http://coeus-control-plane:8000/api/pipelines/active/
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${POSTGRES_CONN_STRING}
+      HOST_DATA_PATH: ${PWD}/data
+      COEUS_API_URL: http://coeus-control-plane:8001/api/pipelines/active/
     ports:
-      - "9000:8080"
+      - "9001:8080"
     volumes:
       - ./orchestration/airflow_dags:/opt/airflow/dags
+      - ./:/app:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - coeus_network

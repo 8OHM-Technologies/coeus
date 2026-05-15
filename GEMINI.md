@@ -13,7 +13,7 @@ COEUS is a distributed data platform for automated scraping, extraction, and ana
 ## 🛠️ Key Technical Features
 
 ### 1. Dynamic DAG Factory
-The orchestrator polls the Django API at `http://coeus-control-plane:8000/api/pipelines/active/` to create DAGs for each active `PipelineConfiguration`.
+The orchestrator polls the Django API at `http://coeus-control-plane:8001/api/pipelines/active/` to create DAGs for each active `PipelineConfiguration`.
 
 ### 2. Adaptive Scraping Strategy
 Based on `PipelineConfiguration`, the system selects the appropriate worker script:
@@ -29,8 +29,8 @@ Uses `VisionManager` for object detection and `PromptTranslator` for prompt engi
 ### Building and Running
 The system is fully containerized.
 - **Boot All Services:** `docker-compose up -d --build`
-- **Django Admin:** `http://localhost:8000/admin` (admin/admin)
-- **Airflow UI:** `http://localhost:9000` (admin/admin)
+- **Django Admin:** `http://localhost:8001/admin` (admin/admin)
+- **Airflow UI:** `http://localhost:9001` (admin/admin)
 
 ### Development Conventions
 - **Model-Driven Pipelines:** All scrapers must be configurable via the Django `PipelineConfiguration` model.

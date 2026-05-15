@@ -1,7 +1,7 @@
+import json
 import logging
 import os
 import sys
-import json
 
 import requests
 import urllib3
@@ -18,7 +18,7 @@ HEADERS = {
 }
 
 API_URL = os.getenv(
-    "COEUS_API_URL", "http://coeus-control-plane:8000/api/pipelines/active/"
+    "COEUS_API_URL", "http://coeus-control-plane:8001/api/pipelines/active/"
 )
 
 
@@ -33,8 +33,10 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
         "document_type": os.getenv("DOCUMENT_TYPE"),
         "target_css_selector_categories": os.getenv("CAT_SELECTOR"),
         "target_css_selector_documents": os.getenv("DOC_SELECTOR"),
-        "allow_insecure_https": os.getenv("ALLOW_INSECURE_HTTPS", "False").lower() == "true",
-        "allow_insecure_requests": os.getenv("ALLOW_INSECURE_REQUESTS", "False").lower() == "true",
+        "allow_insecure_https": os.getenv("ALLOW_INSECURE_HTTPS", "False").lower()
+        == "true",
+        "allow_insecure_requests": os.getenv("ALLOW_INSECURE_REQUESTS", "False").lower()
+        == "true",
     }
 
     # Extract extraction_params from env if it exists
@@ -45,19 +47,25 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
             processed_params = raw_params.replace("'", '"')
             env_config["extraction_params"] = json.loads(processed_params)
         except Exception:
-            logger.warning("Failed to parse EXTRACTION_PARAMS env var. Using empty dict.")
+            logger.warning(
+                "Failed to parse EXTRACTION_PARAMS env var. Using empty dict."
+            )
             env_config["extraction_params"] = {}
 
     # If we have the essential bits from env, use them
     if env_config["start_url"] and env_config["document_type"]:
-        logger.info(f"Using environment-provided configuration for pipeline: {pipeline_name_or_id}")
+        logger.info(
+            f"Using environment-provided configuration for pipeline: {pipeline_name_or_id}"
+        )
         if env_config.get("allow_insecure_requests"):
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         return env_config
 
     # 2. Fallback to API if env vars are missing
     try:
-        logger.info(f"Fetching configuration from API for pipeline: {pipeline_name_or_id}")
+        logger.info(
+            f"Fetching configuration from API for pipeline: {pipeline_name_or_id}"
+        )
         response = requests.get(API_URL, timeout=10)
         response.raise_for_status()
         pipelines = response.json().get("pipelines", [])

@@ -47,8 +47,8 @@ docker-compose up -d --build
 ### 2. Access the Dashboards
 | Service | URL | Credentials |
 | :--- | :--- | :--- |
-| **Control Plane** | `http://localhost:8000/admin` | `admin` / `admin` |
-| **Airflow UI** | `http://localhost:9000` | `admin` / `admin` |
+| **Control Plane** | `http://localhost:8001/admin` | `admin` / `admin` |
+| **Airflow UI** | `http://localhost:9001` | `admin` / `admin` |
 | **DAG API** | `http://coeus.localhost/api/pipelines/active/` | N/A |
 
 ---

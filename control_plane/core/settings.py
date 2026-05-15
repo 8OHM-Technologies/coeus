@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "pipelines.apps.PipelinesConfig",
     "extracted_data.apps.ExtractedDataConfig",
+    "django_apscheduler",
 ]
 
 MIDDLEWARE = [
