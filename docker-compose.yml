@@ -1,5 +1,23 @@
 services:
   # ---------------------------------------------------------
+  # 0. Database Proxy (Secure Tunnel to Cloud SQL)
+  # ---------------------------------------------------------
+  cloud-sql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:latest
+    container_name: coeus-cloud-sql-proxy
+    command:
+      - "--address=0.0.0.0"
+      - "--port=5432"
+      - "${INSTANCE_CONNECTION_NAME}"
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /config/application_default_credentials.json
+    volumes:
+      - C:\Users\tiaan\AppData\Roaming\gcloud:/config:ro
+    networks:
+      - coeus_network
+    restart: always
+
+  # ---------------------------------------------------------
   # 1. Reverse Proxy (Routing & Local DNS)
   # ---------------------------------------------------------
   traefik:
@@ -18,30 +36,7 @@ services:
       - coeus_network
 
   # ---------------------------------------------------------
-  # 2. Data Storage
-  # ---------------------------------------------------------
-  postgres:
-    image: postgres:15-alpine
-    container_name: coeus-postgres
-    environment:
-      POSTGRES_USER: coeus_admin
-      POSTGRES_PASSWORD: super_secret_password
-      POSTGRES_DB: coeus_db
-    ports:
-      - "15432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - coeus_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U coeus_admin -d coeus_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  # ---------------------------------------------------------
-  # 3. Control Plane / Orchestration UI
+  # 2. Control Plane / Orchestration UI
   # ---------------------------------------------------------
   control_plane:
     build:
@@ -49,23 +44,22 @@ services:
       dockerfile: Dockerfile.app
     container_name: coeus-control-plane
     image: coeus_control_plane_image
+    depends_on:
+      - cloud-sql-proxy
     ports:
-      - "8001:8000"
+      - "8001:8001"
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: coeus_admin
-      POSTGRES_PASSWORD: super_secret_password
-      POSTGRES_DB: coeus_db
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      POSTGRES_HOST: cloud-sql-proxy
       DJANGO_SUPERUSER_USERNAME: admin
       DJANGO_SUPERUSER_EMAIL: admin@coeus.local
       DJANGO_SUPERUSER_PASSWORD: admin
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
     volumes:
       - ./:/app/
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - C:\Users\tiaan\AppData\Roaming\gcloud:/root/.config/gcloud:ro
     networks:
       - coeus_network
     labels:
@@ -80,7 +74,7 @@ services:
                 python control_plane/manage.py runserver 0.0.0.0:8001"
 
   # ---------------------------------------------------------
-  # 4. Ingestion & Extraction Worker (Playwright + OpenAI)
+  # 3. Ingestion & Extraction Worker (Playwright + OpenAI)
   # ---------------------------------------------------------
   pipeline_worker:
     build:
@@ -88,29 +82,29 @@ services:
       dockerfile: Dockerfile.worker
     container_name: coeus-worker
     image: coeus_worker_image
+    depends_on:
+      - cloud-sql-proxy
+    env_file:
+      - .env
     environment:
-      HF_TOKEN: "${HF_TOKEN}"
-      HF_HOME: "${HF_HOME}"
+      POSTGRES_HOST: cloud-sql-proxy
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     volumes:
       - ./:/app
-      - ./data/lotto_results:/app/data/lotto_results
-      - ./data/scraped_pdfs:/app/data/scraped_pdfs
-      - ./data/livestainable_results:/app/data/livestainable_results
+      - ./data:/app/data
       - ~/.cache/huggingface/hub:/app/huggingface_cache
-    depends_on:
-      postgres:
-        condition: service_healthy
     networks:
       - coeus_network
     command: tail -f /dev/null
 
   # ---------------------------------------------------------
-  # 5. Orchestration (Apache Airflow Standalone)
+  # 4. Orchestration (Apache Airflow Standalone)
   # ---------------------------------------------------------
   airflow:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow
+    depends_on:
+      - cloud-sql-proxy
     entrypoint: >
       /bin/bash -c "
       airflow standalone &
@@ -119,9 +113,12 @@ services:
       airflow users reset-password --username admin --password admin &&
       echo 'Admin password forced to: admin' &&
       wait"
+    env_file:
+      - .env
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: False
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${POSTGRES_CONN_STRING}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
       HOST_DATA_PATH: ${PWD}/data
       COEUS_API_URL: http://coeus-control-plane:8001/api/pipelines/active/
     ports:
@@ -130,11 +127,11 @@ services:
       - ./orchestration/airflow_dags:/opt/airflow/dags
       - ./:/app:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - C:\Users\tiaan\AppData\Roaming\gcloud:/root/.config/gcloud:ro
     networks:
       - coeus_network
 
 volumes:
-  postgres_data:
   huggingface_cache:
 
 networks:

@@ -2,7 +2,9 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import os
+import re
 import sys
 from urllib.parse import urljoin
 
@@ -36,8 +38,6 @@ async def run_extraction(
 
     if not category:
         category = extraction_params.get("category")
-
-    max_pages = int(extraction_params.get("max_pages", 1))
 
     # Standardized Selectors from DB or fallback to defaults
     doc_selector = config.get("target_css_selector_documents") or "a[id*='HyperLink1_']"
@@ -91,6 +91,29 @@ async def run_extraction(
                 await page.wait_for_load_state("networkidle")
                 await asyncio.sleep(2)  # Give the WebForms grid time to re-render
 
+            # --- DYNAMIC PAGINATION CALCULATION ---
+            max_pages = 1
+            record_label = page.locator("#ContentPlaceHolder1_Label62")
+            if await record_label.count() > 0:
+                label_text = await record_label.inner_text()
+                # Expected format: "Displaying records 1 to 100 of 294"
+                logger.info(f"Record label found: '{label_text}'")
+                match = re.search(r"of\s+(\d+)", label_text)
+                if match:
+                    total_records = int(match.group(1))
+                    max_pages = math.ceil(total_records / 100)
+                    logger.info(
+                        f"Parsed {total_records} total records. Calculated {max_pages} pages."
+                    )
+                else:
+                    logger.warning(
+                        f"Could not parse record count from: '{label_text}'. Defaulting to 1 page."
+                    )
+            else:
+                logger.warning(
+                    "Record count label (#ContentPlaceHolder1_Label62) not found. Defaulting to 1 page."
+                )
+
             # 5. Extract URLs across pages
             for current_page in range(max_pages):
                 logger.info(f"Extracting links from table page {current_page + 1}...")
@@ -106,7 +129,7 @@ async def run_extraction(
 
                 # Check if we need to click the "Next" button for more table pages
                 if current_page < max_pages - 1:
-                    next_btn = page.locator("a:has-text('Next')")
+                    next_btn = page.locator("a:has-text('Next')").first
                     if await next_btn.is_visible():
                         await next_btn.click()
                         await page.wait_for_load_state("networkidle")

@@ -5,6 +5,7 @@ import os
 import sys
 
 from utils import fetch_pipeline_config
+from db import get_db_connection
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,14 +31,41 @@ async def run_extraction(pipeline_name: str, schema_name: str):
     # 3. Call the LLM with the extraction instructions
     # 4. Upsert results to the target table
 
+    target_table = config.get("target_table", "extracted_records")
     logger.info(
         f"Scanning for documents in: /app/data/{pipeline_name}/{config.get('document_type', '').lower()}"
     )
-    logger.info(f"Target Table: {config.get('target_table', 'extracted_records')}")
+    logger.info(f"Target Table: {target_table}")
 
-    # Mocking completion
-    await asyncio.sleep(1)
-    logger.info("✅ LLM Extraction simulation complete.")
+    # Mocking extraction results
+    extracted_data = [
+        {"entity_name": "Example Corp", "registration_number": "123456", "status": "Active"},
+        {"entity_name": "Test Ltd", "registration_number": "789012", "status": "In Liquidation"},
+    ]
+
+    # Database Upsert using asyncpg and Cloud SQL Connector
+    try:
+        conn = await get_db_connection()
+        logger.info(f"Connected to Cloud SQL for upserting to {target_table}")
+        
+        for record in extracted_data:
+            # Example upsert logic (assuming a simple table structure for demonstration)
+            query = f"""
+                INSERT INTO {target_table} (data, pipeline_id)
+                VALUES ($1, $2)
+                ON CONFLICT (pipeline_id, (data->>'registration_number')) 
+                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP;
+            """
+            await conn.execute(query, str(record), pipeline_name)
+            logger.info(f"  [+] Upserted record for: {record['entity_name']}")
+            
+        await conn.close()
+        logger.info("✅ Database upsert complete.")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to upsert records to database: {e}")
+
+    logger.info("✅ LLM Extraction complete.")
 
 
 if __name__ == "__main__":

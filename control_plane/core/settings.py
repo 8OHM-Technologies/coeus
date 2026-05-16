@@ -10,9 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
-
-from django.forms.fields import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -34,7 +33,6 @@ ALLOWED_HOSTS = [
     "coeus.localhost",
     "0.0.0.0",
 ]
-
 
 # Application definition
 
@@ -79,7 +77,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "core.wsgi.application"
 
-
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
@@ -89,11 +86,10 @@ DATABASES = {
         "NAME": os.environ.get("POSTGRES_DB", "coeus_db"),
         "USER": os.environ.get("POSTGRES_USER", "coeus_admin"),
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "super_secret_password"),
-        "HOST": os.environ.get("POSTGRES_HOST", "postgres"),
+        "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
         "PORT": os.environ.get("POSTGRES_PORT", "5432"),
     }
 }
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Password validation
