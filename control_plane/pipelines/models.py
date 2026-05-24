@@ -19,6 +19,7 @@ class ScraperType(models.TextChoices):
     SEDARPLUS = "sedarplus", "SEDAR+ (Playwright + Solver)"
     MANTECH = "mantech", "Mantech (Playwright)"
     LIVESTAINABLE = "livestainable", "Livestainable (Playwright)"
+    SABINET = "sabinet", "Sabinet (Playwright)"
 
 
 class PipelineConfiguration(models.Model):

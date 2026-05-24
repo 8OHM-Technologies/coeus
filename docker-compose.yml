@@ -28,9 +28,9 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.endpoint=tcp://host.docker.internal:2375"
-      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.address=:81"
     ports:
-      - "80:80"
+      - "81:80"
       - "8080:8080"
     networks:
       - coeus_network
@@ -106,13 +106,7 @@ services:
     depends_on:
       - cloud-sql-proxy
     entrypoint: >
-      /bin/bash -c "
-      airflow standalone &
-      echo 'Waiting for Airflow to boot...' &&
-      sleep 25 &&
-      airflow users reset-password --username admin --password admin &&
-      echo 'Admin password forced to: admin' &&
-      wait"
+      /bin/bash -c " airflow standalone & echo 'Waiting for Airflow to boot...' && sleep 25 && airflow users reset-password --username admin --password admin && echo 'Admin password forced to: admin' && wait"
     env_file:
       - .env
     environment:
