@@ -34,6 +34,20 @@ async def run_extraction(pipeline_name: str):
     logger.info(f"Target URL: {start_url}")
     logger.info("==================================================")
 
+    output_file = os.path.join(output_dir, f"{pipeline_name}.json")
+    existing_data = []
+    existing_keys = set()
+    if os.path.exists(output_file):
+        try:
+            with open(output_file, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+            for item in existing_data:
+                key = (item.get("award_number"), item.get("title"))
+                existing_keys.add(key)
+            logger.info(f"Loaded {len(existing_data)} existing records from {output_file} for incremental checking.")
+        except Exception as read_err:
+            logger.warning(f"Could not load existing data from {output_file}: {read_err}. Performing full scrape.")
+
     extracted_data = []
 
     async with async_playwright() as p:
@@ -100,6 +114,7 @@ async def run_extraction(pipeline_name: str):
                 cards = await page.locator("li.ant-list-item").all()
                 logger.info(f"Found {len(cards)} items on page {current_page}.")
 
+                stop_scraping = False
                 for card in cards:
                     try:
                         title_text = await card.evaluate('''
@@ -130,12 +145,23 @@ async def run_extraction(pipeline_name: str):
                             }
                         ''')
 
-                        extracted_data.append({
+                        item_data = {
                             "title": title_text,
                             **metadata
-                        })
+                        }
+
+                        key = (item_data.get("award_number"), item_data.get("title"))
+                        if key in existing_keys:
+                            logger.info(f"Encountered already scraped item: '{title_text}' (Award: {item_data.get('award_number')}). Stopping incremental scrape.")
+                            stop_scraping = True
+                            break
+
+                        extracted_data.append(item_data)
                     except Exception as parse_err:
                         logger.error(f"Error parsing card details: {parse_err}")
+
+                if stop_scraping:
+                    break
 
                 # Go to next page
                 next_btn = page.locator("li.ant-pagination-next").first
@@ -146,6 +172,10 @@ async def run_extraction(pipeline_name: str):
                         logger.info("Pagination next button is disabled. Final page reached.")
                         break
 
+                    if current_page % 100 == 0:
+                        logger.info(f"Scraped {current_page} pages. Sleeping for 60 seconds to avoid detection...")
+                        await asyncio.sleep(60)
+
                     logger.info("Navigating to next page...")
                     await next_btn.click()
                     await page.wait_for_load_state("networkidle")
@@ -155,12 +185,12 @@ async def run_extraction(pipeline_name: str):
                     logger.info("Pagination next button not found. Finishing.")
                     break
 
-            # Save the scraped data to file
-            output_file = os.path.join(output_dir, f"{pipeline_name}.json")
+            # Combine new and old data
+            combined_data = extracted_data + existing_data
             with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(extracted_data, f, indent=4, ensure_ascii=False)
+                json.dump(combined_data, f, indent=4, ensure_ascii=False)
 
-            logger.info(f"✅ Extraction completed successfully. Saved {len(extracted_data)} records to {output_file}.")
+            logger.info(f"✅ Extraction completed successfully. Saved {len(combined_data)} total records ({len(extracted_data)} new) to {output_file}.")
 
         except Exception as e:
             logger.error(f"❌ Playwright extraction failed: {str(e)}")

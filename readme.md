@@ -33,6 +33,28 @@ Integrated bypass logic utilizing **Hugging Face Transformers**. The system perf
 * **Intelligent Prompt Translation:** Converting hCaptcha challenges into machine-readable queries.
 * **Zero-Shot Object Detection:** Using vision models to identify and interact with CAPTCHA elements without pre-trained site-specific labels.
 
+### **4. Ecommerce Aggregation Scheduler**
+The control plane schedules background combination tasks (via Django-APScheduler) to automatically combine product datasets from Mantech and Livestainable, calculate markups, deduplicate, and trigger downstream e-commerce sync (Saleor sync).
+
+### **5. Incremental Crawling & Rate Throttling**
+Scrapers targeting large volumes (such as Sabinet CCMA Awards) utilize local output-aware incremental early stopping. They check scraped metadata `(award_number, title)` against existing database files to terminate execution immediately when cached records are hit. They also run page-based rate throttling (e.g. 60-second sleeps after every 100 pages) to bypass active bot mitigation.
+
+---
+
+## 🕵️ Scraper Registry
+
+COEUS comes pre-equipped with specialized scraper worker scripts inside the `extraction_workers/` directory:
+
+| Scraper Script | Target Platform / Data Type | Technology & Strategy |
+| :--- | :--- | :--- |
+| [sedarplus_scraper.py](file:///e:/Code/coeus/extraction_workers/sedarplus_scraper.py) | **SEDAR+ Corporate Filings** | Playwright + Hugging Face Vision Solver (HCaptcha bypass, zero-shot DINO+Qwen) |
+| [sabinet_scraper.py](file:///e:/Code/coeus/extraction_workers/sabinet_scraper.py) | **Sabinet CCMA Labor Awards** | Playwright, incremental early-stopping, rate-limit sleep throttling, Ant Design select components |
+| [ccma_playwright_scraper.py](file:///e:/Code/coeus/extraction_workers/ccma_playwright_scraper.py) | **CCMA Arbitration Documents** | Playwright multi-category traversal + download utility |
+| [judiciary_scraper.py](file:///e:/Code/coeus/extraction_workers/judiciary_scraper.py) | **South African Judiciary Judgments** | Playwright limit auto-expander + document bulk downloader |
+| [mantech_scraper.py](file:///e:/Code/coeus/extraction_workers/mantech_scraper.py) | **Mantech Electronics Store** | Playwright ASP.NET WebForms paginated table extraction |
+| [livestainable_scraper.py](file:///e:/Code/coeus/extraction_workers/livestainable_scraper.py) | **Livestainable Products** | Playwright e-commerce scraper |
+| [lotto_scraper.py](file:///e:/Code/coeus/extraction_workers/lotto_scraper.py) | **National Lottery Results** | Playwright historical data parser with CSV exporter |
+
 ---
 
 ## 🚀 Quick Start
