@@ -20,6 +20,7 @@ class ScraperType(models.TextChoices):
     MANTECH = "mantech", "Mantech (Playwright)"
     LIVESTAINABLE = "livestainable", "Livestainable (Playwright)"
     SABINET = "sabinet", "Sabinet (Playwright)"
+    SABINET_DETAILS = "sabinet_detail", "Sabinet Details (Playwright)"
 
 
 class PipelineConfiguration(models.Model):

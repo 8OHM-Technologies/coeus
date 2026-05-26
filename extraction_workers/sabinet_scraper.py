@@ -51,11 +51,25 @@ async def run_extraction(pipeline_name: str):
     extracted_data = []
 
     async with async_playwright() as p:
+        # Check for storage state (cookies/session) to bypass login/SSO
+        storage_state_path = os.path.join(output_dir, "state.json")
+        if not os.path.exists(storage_state_path):
+            # Fall back to root data state.json
+            fallback_path = "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json"
+            if os.path.exists(fallback_path):
+                storage_state_path = fallback_path
+            else:
+                storage_state_path = None
+
+        if storage_state_path:
+            logger.info(f"🔑 Loading active browser session state from: {storage_state_path}")
+
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            ignore_https_errors=config.get("allow_insecure_https", False)
+            ignore_https_errors=config.get("allow_insecure_https", False),
+            storage_state=storage_state_path
         )
         page = await context.new_page()
 
@@ -76,29 +90,32 @@ async def run_extraction(pipeline_name: str):
                 logger.info("No cookie consent modal detected or it was auto-dismissed.")
 
             # Click pagination dropdown to select 100 items per page
-            logger.info("Configuring pagination to 100 items per page...")
-            dropdown = page.locator('div.ant-select[aria-label="How many results to show in list"]').first
-            if await dropdown.count() > 0:
-                await dropdown.click()
-                await page.wait_for_load_state("networkidle")
-                await asyncio.sleep(1)
-
-                # Locate option "100 per page"
-                option = page.locator('.ant-select-item-option-content:has-text("100 per page")').first
-                if await option.count() == 0:
-                    option = page.locator('.ant-select-item-option:has-text("100 per page")').first
-                if await option.count() == 0:
-                    option = page.locator('[title="100 per page"]').first
-
-                if await option.count() > 0:
-                    await option.click()
-                    logger.info("Successfully selected '100 per page' option.")
+            try:
+                logger.info("Configuring pagination to 100 items per page...")
+                dropdown = page.locator('div.ant-select[aria-label="How many results to show in list"]').first
+                if await dropdown.count() > 0:
+                    await dropdown.click()
                     await page.wait_for_load_state("networkidle")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)
+
+                    # Locate option "100 per page"
+                    option = page.locator('.ant-select-item-option-content:has-text("100 per page")').first
+                    if await option.count() == 0:
+                        option = page.locator('.ant-select-item-option:has-text("100 per page")').first
+                    if await option.count() == 0:
+                        option = page.locator('[title="100 per page"]').first
+
+                    if await option.count() > 0:
+                        await option.click()
+                        logger.info("Successfully selected '100 per page' option.")
+                        await page.wait_for_load_state("networkidle")
+                        await asyncio.sleep(2)
+                    else:
+                        logger.warning("Could not find '100 per page' option in the dropdown list.")
                 else:
-                    logger.warning("Could not find '100 per page' option in the dropdown list.")
-            else:
-                logger.warning("Could not locate the pagination dropdown on the page.")
+                    logger.warning("Could not locate the pagination dropdown on the page.")
+            except Exception as pag_err:
+                logger.warning(f"Could not configure pagination: {pag_err}. Proceeding with default pagination.")
 
             # Iterate pages
             current_page = 1
@@ -111,64 +128,103 @@ async def run_extraction(pipeline_name: str):
                     logger.warning(f"No list items found or load timed out on page {current_page}.")
                     break
 
-                cards = await page.locator("li.ant-list-item").all()
-                logger.info(f"Found {len(cards)} items on page {current_page}.")
+                try:
+                    # Evaluate in JS to get all page items including detail URLs from React Fiber
+                    page_items = await page.evaluate('''
+                        () => {
+                            const cards = Array.from(document.querySelectorAll('li.ant-list-item'));
+                            if (cards.length === 0) return [];
 
-                stop_scraping = False
-                for card in cards:
-                    try:
-                        title_text = await card.evaluate('''
-                            (el) => {
-                                const titleEl = el.querySelector('.ant-list-item-meta-title');
-                                if (!titleEl) return '';
-                                const clone = titleEl.cloneNode(true);
-                                const icons = clone.querySelectorAll('.anticon, [aria-label="lock"]');
-                                icons.forEach(icon => icon.remove());
-                                return clone.innerText.trim();
+                            const firstContainer = document.querySelector('.discCardContainer');
+                            let rawHits = null;
+                            if (firstContainer) {
+                                const keys = Object.keys(firstContainer);
+                                const reactKey = keys.find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+                                if (reactKey) {
+                                    let curr = firstContainer[reactKey];
+                                    while (curr) {
+                                        if (curr.memoizedProps) {
+                                            if (Array.isArray(curr.memoizedProps.hits)) {
+                                                rawHits = curr.memoizedProps.hits;
+                                                break;
+                                            }
+                                            if (curr.memoizedProps.rawData && curr.memoizedProps.rawData.hits && Array.isArray(curr.memoizedProps.rawData.hits.hits)) {
+                                                rawHits = curr.memoizedProps.rawData.hits.hits;
+                                                break;
+                                            }
+                                        }
+                                        curr = curr.return;
+                                    }
+                                }
                             }
-                        ''')
 
-                        metadata = await card.evaluate('''
-                            (el) => {
-                                const tags = Array.from(el.querySelectorAll('.ant-list-item-meta-description .ant-tag'));
-                                const data = {};
+                            const items = [];
+                            cards.forEach((card, idx) => {
+                                const titleEl = card.querySelector('.ant-list-item-meta-title');
+                                let titleText = '';
+                                if (titleEl) {
+                                    const clone = titleEl.cloneNode(true);
+                                    const icons = clone.querySelectorAll('.anticon, [aria-label="lock"]');
+                                    icons.forEach(icon => icon.remove());
+                                    titleText = clone.innerText.trim();
+                                }
+
+                                const tags = Array.from(card.querySelectorAll('.ant-list-item-meta-description .ant-tag'));
+                                const metadata = {};
                                 tags.forEach(tag => {
                                     const text = tag.innerText || '';
                                     if (text.includes(':')) {
                                         const parts = text.split(':');
                                         const key = parts[0].trim().toLowerCase().replace(/\\s+/g, '_');
                                         const val = parts.slice(1).join(':').trim();
-                                        data[key] = val;
+                                        metadata[key] = val;
                                     }
                                 });
-                                return data;
-                            }
-                        ''')
 
-                        item_data = {
-                            "title": title_text,
-                            **metadata
+                                let id = null;
+                                if (rawHits && rawHits[idx]) {
+                                    const hit = rawHits[idx];
+                                    id = hit._id || hit.id || (hit._source ? hit._source.id : null);
+                                }
+
+                                items.push({
+                                    title: titleText,
+                                    ...metadata,
+                                    detail_url: id ? `https://discover.sabinet.co.za/document/${id}` : null
+                                });
+                            });
+
+                            return items;
                         }
+                    ''')
 
+                    logger.info(f"Extracted {len(page_items)} items on page {current_page}.")
+
+                    stop_scraping = False
+                    for item_data in page_items:
                         key = (item_data.get("award_number"), item_data.get("title"))
                         if key in existing_keys:
-                            logger.info(f"Encountered already scraped item: '{title_text}' (Award: {item_data.get('award_number')}). Stopping incremental scrape.")
+                            logger.info(f"Encountered already scraped item: '{item_data.get('title')}' (Award: {item_data.get('award_number')}). Stopping incremental scrape.")
                             stop_scraping = True
                             break
 
                         extracted_data.append(item_data)
-                    except Exception as parse_err:
-                        logger.error(f"Error parsing card details: {parse_err}")
 
-                if stop_scraping:
+                    if stop_scraping:
+                        break
+                except Exception as page_err:
+                    logger.error(f"Error extracting items on page {current_page}: {page_err}. Stopping traversal to save progress.")
                     break
 
                 # Go to next page
-                next_btn = page.locator("li.ant-pagination-next").first
+                next_btn = page.locator('a[rel="next"]').first
+                if await next_btn.count() == 0:
+                    next_btn = page.locator('a:has-text("Next")').first
+
                 if await next_btn.count() > 0:
+                    disabled = await next_btn.get_attribute("disabled")
                     classes = await next_btn.get_attribute("class") or ""
-                    aria_disabled = await next_btn.get_attribute("aria-disabled") or "false"
-                    if "ant-pagination-disabled" in classes or aria_disabled == "true":
+                    if disabled is not None or "disabled" in classes.lower():
                         logger.info("Pagination next button is disabled. Final page reached.")
                         break
 

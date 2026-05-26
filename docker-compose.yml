@@ -55,16 +55,14 @@ services:
       DJANGO_SUPERUSER_USERNAME: admin
       DJANGO_SUPERUSER_EMAIL: admin@coeus.local
       DJANGO_SUPERUSER_PASSWORD: admin
-      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
     volumes:
       - ./:/app/
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - C:\Users\tiaan\AppData\Roaming\gcloud:/root/.config/gcloud:ro
     networks:
       - coeus_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.control-plane.rule=Host(`coeus.localhost`)"
+      - "traefik.http.routers.control-plane.rule=Host(`control-plane.localhost`)"
       - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
       - "traefik.docker.network=coeus_network"
     command: >
@@ -112,16 +110,19 @@ services:
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: False
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
-      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
       HOST_DATA_PATH: ${PWD}/data
-      COEUS_API_URL: http://coeus-control-plane:8001/api/pipelines/active/
+      COEUS_API_URL: ${COEUS_API_URL}
     ports:
       - "9001:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.airflow.rule=Host(`airflow.localhost`)"
+      - "traefik.http.services.airflow.loadbalancer.server.port=8080"
+      - "traefik.docker.network=coeus_network"
     volumes:
       - ./orchestration/airflow_dags:/opt/airflow/dags
       - ./:/app:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - C:\Users\tiaan\AppData\Roaming\gcloud:/root/.config/gcloud:ro
     networks:
       - coeus_network
 
