@@ -14,7 +14,7 @@ services:
     volumes:
       - C:\Users\tiaan\AppData\Roaming\gcloud:/config:ro
     networks:
-      - coeus_network
+      - 8ohm-network
     restart: always
 
   # ---------------------------------------------------------
@@ -33,7 +33,7 @@ services:
       - "81:80"
       - "8080:8080"
     networks:
-      - coeus_network
+      - 8ohm-network
 
   # ---------------------------------------------------------
   # 2. Control Plane / Orchestration UI
@@ -59,12 +59,12 @@ services:
       - ./:/app/
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - coeus_network
+      - 8ohm-network
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.control-plane.rule=Host(`control-plane.localhost`)"
       - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
-      - "traefik.docker.network=coeus_network"
+      - "traefik.docker.network=8ohm-network"
     command: >
       bash -c "python control_plane/manage.py makemigrations &&
                 python control_plane/manage.py migrate &&
@@ -92,7 +92,7 @@ services:
       - ./data:/app/data
       - ~/.cache/huggingface/hub:/app/huggingface_cache
     networks:
-      - coeus_network
+      - 8ohm-network
     command: tail -f /dev/null
 
   # ---------------------------------------------------------
@@ -118,18 +118,18 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.airflow.rule=Host(`airflow.localhost`)"
       - "traefik.http.services.airflow.loadbalancer.server.port=8080"
-      - "traefik.docker.network=coeus_network"
+      - "traefik.docker.network=8ohm-network"
     volumes:
       - ./orchestration/airflow_dags:/opt/airflow/dags
       - ./:/app:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - coeus_network
+      - 8ohm-network
 
 volumes:
   huggingface_cache:
 
 networks:
-  coeus_network:
-    name: coeus_network
+  8ohm-network:
+    name: 8ohm-network
     driver: bridge

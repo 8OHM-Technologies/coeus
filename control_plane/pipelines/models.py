@@ -21,6 +21,7 @@ class ScraperType(models.TextChoices):
     LIVESTAINABLE = "livestainable", "Livestainable (Playwright)"
     SABINET = "sabinet", "Sabinet (Playwright)"
     SABINET_DETAILS = "sabinet_detail", "Sabinet Details (Playwright)"
+    SAFLII = "saflii", "SAFLII (Basic)"
 
 
 class PipelineConfiguration(models.Model):
