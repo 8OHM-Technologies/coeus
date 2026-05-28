@@ -6,6 +6,26 @@ import sys
 import requests
 import urllib3
 
+def load_dotenv():
+    # Load .env variables into os.environ for local script runs
+    for path in [".env", "../.env", os.path.join(os.path.dirname(__file__), "../.env")]:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip('"').strip("'")
+                            if k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+            break
+
+load_dotenv()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -17,9 +37,7 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 }
 
-API_URL = os.getenv(
-    "COEUS_API_URL", "http://coeus-control-plane:8001/api/pipelines/active/"
-)
+API_URL = os.getenv("COEUS_API_URL") or "http://coeus-control-plane:8001/api/pipelines/active/"
 
 
 async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:

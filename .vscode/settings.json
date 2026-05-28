@@ -1,0 +1,12 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "CloudSQL-PostgreSQL",
+            "name": "8OHM Cloud SQL",
+            "instanceConnectionName": "infinity-ohm-cloud-project:africa-south1:infinity-ohm-cloud-sql",
+            "database": "coeus",
+            "username": "postgres"
+        }
+    ]
+}

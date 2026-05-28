@@ -10,7 +10,7 @@ from docker.types import Mount
 logger = logging.getLogger(__name__)
 
 API_URL = os.getenv(
-    "COEUS_API_URL", "http://coeus-control-plane:8001/api/pipelines/active/"
+    "COEUS_API_URL"
 )
 HOST_DATA_PATH = os.getenv("HOST_DATA_PATH")
 
@@ -87,12 +87,12 @@ for blueprint in blueprints:
         image="coeus_worker_image:latest",
         container_name=f"ephemeral_scraper_{blueprint['pipeline_id']}",
         docker_url="unix://var/run/docker.sock",
-        network_mode="coeus_network",
+        network_mode="8ohm-network",
         environment={
             "PYTHONPATH": "/app:/app/solver/src",
             "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
             "PIPELINE_CONFIG": os.getenv(
-                "COEUS_API_URL", "http://coeus-control-plane:8001/api/pipelines/active/"
+                "COEUS_API_URL"
             ),
             # Storing pipeline specific settings in the dynamic factory's task environment
             "START_URL": target_url,
@@ -113,7 +113,7 @@ for blueprint in blueprints:
                 blueprint["phase_2_extraction"].get("extraction_params", {})
             ),
         },
-        command=f"python {worker_script} {worker_args}",
+        command=f"bash -c 'Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && sleep 1 && python {worker_script} {worker_args}'" if scraper_type == "saflii" else f"python {worker_script} {worker_args}",
         auto_remove="force",
         mount_tmp_dir=False,
         mounts=[
@@ -138,7 +138,7 @@ for blueprint in blueprints:
             image="coeus_worker_image:latest",
             container_name=f"ephemeral_extractor_{blueprint['pipeline_id']}",
             docker_url="unix://var/run/docker.sock",
-            network_mode="coeus_network",
+            network_mode="8ohm-network",
             environment={
                 "PYTHONPATH": "/app:/app/solver/src",
                 "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
