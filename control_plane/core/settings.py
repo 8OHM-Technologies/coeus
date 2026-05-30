@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-z6x9k8#9juped5f6=6=)vl7(lus^4+zazw&2m^ch4u@3+1=jh$"
+SECRET_KEY = os.environ.get("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -33,6 +33,10 @@ ALLOWED_HOSTS = [
     "coeus.localhost",
     "0.0.0.0",
     "control-plane.8ohm.co.za",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.8ohm.co.za"
 ]
 
 # Application definition
@@ -85,7 +89,7 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.environ.get("POSTGRES_DB", "coeus"),
-        "USER": os.environ.get("POSTGRES_USER", "coeus-admin"),
+        "USER": os.environ.get("POSTGRES_USER", "postgres"),
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "super_secret_password"),
         "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
         "PORT": os.environ.get("POSTGRES_PORT", "5432"),

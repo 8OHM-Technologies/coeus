@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Ohm Technologies</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <style>
+        /* Global Reset & Typography */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #12161a;
+            /* Dark metallic blue-gray base */
+            color: #e2e8f0;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Container Alignment */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header / Navigation */
+        header {
+            padding: 30px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .mini-brand {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: #00fa9a;
+            /* Cyan/green neon accent from your logo traces */
+            text-transform: uppercase;
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 80px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .logo-wrapper {
+            max-width: 300px;
+            width: 100%;
+            margin-bottom: 40px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5),
+                0 0 50px rgba(0, 250, 154, 0.05);
+            /* Soft ambient glow */
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .logo-wrapper img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        h1 {
+            font-size: 2.8rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #ffffff;
+            margin-bottom: 20px;
+            max-width: 800px;
+        }
+
+        .tagline {
+            font-size: 1.25rem;
+            color: #94a3b8;
+            max-width: 700px;
+            margin-bottom: 40px;
+        }
+
+        /* Button System */
+        .cta-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .cta-btn {
+            display: inline-block;
+            background: transparent;
+            color: #00fa9a;
+            border: 2px solid #00fa9a;
+            padding: 14px 32px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 15px rgba(0, 250, 154, 0.1);
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .cta-btn:hover {
+            background: #00fa9a;
+            color: #12161a;
+            box-shadow: 0 0 25px rgba(0, 250, 154, 0.35);
+        }
+
+        .cta-btn.secondary {
+            border-color: rgba(0, 250, 154, 0.3);
+            box-shadow: none;
+        }
+
+        .cta-btn.secondary:hover {
+            border-color: #00fa9a;
+            background: rgba(0, 250, 154, 0.1);
+            color: #00fa9a;
+        }
+
+        /* Structural Info Section */
+        .features {
+            padding: 60px 0 100px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .card {
+            background: #1a2026;
+            /* Slightly lighter card background */
+            padding: 40px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(249, 115, 22, 0.3);
+            /* Copper/Orange accent trace hover */
+        }
+
+        .card h3 {
+            font-size: 1.4rem;
+            color: #ffffff;
+            margin-bottom: 15px;
+        }
+
+        .card p {
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+
+        .span-2 {
+            grid-column: span 2;
+        }
+
+        /* --- Modal Styles --- */
+        .modal-overlay {
+            display: none;
+            /* Hidden by default */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background-color: #1a2026;
+            padding: 40px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 250, 154, 0.3);
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            transform: translateY(-20px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: translateY(0);
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 1.8rem;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: color 0.3s ease;
+            background: none;
+            border: none;
+            outline: none;
+        }
+
+        .close-btn:hover {
+            color: #00fa9a;
+        }
+
+        .modal-content h2 {
+            color: #ffffff;
+            margin-bottom: 25px;
+            font-size: 1.8rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            background-color: #12161a;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: #e2e8f0;
+            font-family: inherit;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #00fa9a;
+        }
+
+        .submit-btn {
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #475569;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Responsive Tuning */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .tagline {
+                font-size: 1.1rem;
+            }
+
+            .logo-wrapper {
+                max-width: 90%;
+            }
+
+            .span-2 {
+                grid-column: span 1;
+            }
+
+            .modal-content {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="container nav-container">
+            <div class="mini-brand">8OHM</div>
+            <div class="contact-link" style="color: #64748b; font-size: 0.9rem;">Secure Edge Computing</div>
+        </div>
+    </header>
+
+    <main>
+        <section class="container hero">
+            <div class="logo-wrapper">
+                <img src="InfinityOhm_Logo.png" alt="Infinite Ohm Technologies Logo">
+            </div>
+
+            <h1>Modernize Your Home Security.<br>Free From the Cloud.</h1>
+            <p class="tagline">Privacy-first, offline-ready home automation and security. We transform your trusted
+                legacy alarm panels, sensors, and cameras into a powerful, locally controlled smart network. We build,
+                install, and supply the exact infrastructure you need for a secure, self-hosted ecosystem—delivering
+                absolute control without the complexity.</p>
+
+            <div class="cta-group">
+                <a href="#shop" class="cta-btn">Shop Components and More</a>
+                <button type="button" id="openContactBtn" class="cta-btn secondary">Get in Touch</button>
+                <a href="#ohmbase" class="cta-btn secondary">The OhmBase Docs</a>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="container">
+                <!-- Core Offerings Grid -->
+                <div class="grid">
+                    <div class="card">
+                        <h3>Integration & Support</h3>
+                        <p>Turnkey Home Assistant deployments and legacy alarm "smartification." We bridge rugged, wired
+                            security hardware with modern automation, making complex systems beautifully simple to use.
+                        </p>
+                    </div>
+                    <div class="card">
+                        <h3>Shop</h3>
+                        <p>We do not stock walled gardens. Source the exact open-source-friendly microcontrollers,
+                            Zigbee coordinators, and optocouplers we rigorously stress-test in our own field
+                            deployments.</p>
+                    </div>
+                    <div class="card">
+                        <h3>The FutureHome Hardware</h3>
+                        <p>In active development: The 8OHM Omni-Board. A proprietary, DIN-rail mountable Raspberry Pi
+                            HAT, natively
+                            integrating Wi-Fi, RF433, isolated relays, DC-to-DC buck converters and Pull Up/Downs,
+                            to end smart home device fatigue forever.</p>
+                    </div>
+                </div>
+
+                <!-- Advanced Architecture & Documentation Grid -->
+                <div class="grid">
+                    <div class="card">
+                        <h3>Software & Data Architecture</h3>
+                        <p>Beyond hardware, we are deep-stack software engineers. We have more than 2 decades of
+                            enterprise software development experience, bringing the same rigorous, enterprise-grade
+                            methodology to
+                            every local hub we configure.</p>
+                    </div>
+                    <div class="card span-2" id="ohmbase">
+                        <h3>Open Source by Design</h3>
+                        <p>Explore <strong>The
+                                OhmBase</strong>, our comprehensive engineering wiki, to learn exactly how we deploy
+                            these systems. Use our open-source schematics and wiring guides to take control and build it
+                            yourself, or hire us to engineer it for you.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Infinite Ohm Technologies. All rights reserved. Engineering custom secure hardware & software
+                solutions.</p>
+        </div>
+    </footer>
+
+    <!-- Contact Modal -->
+    <div id="contactModal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="close-btn" id="closeContactBtn">&times;</button>
+            <h2>Get in Touch</h2>
+            <!-- You can point the action URL to a form handler service like Formspree, Formkeep, or your own Sylius/PHP backend later -->
+            <form action="#" method="POST">
+                <div class="form-group">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" required placeholder="John Doe">
+                </div>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required placeholder="john@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="message">How can we help?</label>
+                    <textarea id="message" name="message" rows="5" required
+                        placeholder="Tell us about your project..."></textarea>
+                </div>
+                <button type="submit" class="cta-btn submit-btn">Send Message</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Functionality Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const modal = document.getElementById('contactModal');
+            const openBtn = document.getElementById('openContactBtn');
+            const closeBtn = document.getElementById('closeContactBtn');
+
+            // Open Modal
+            openBtn.addEventListener('click', () => {
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden'; // Prevents background scrolling when modal is open
+            });
+
+            // Close Modal via 'X' button
+            closeBtn.addEventListener('click', () => {
+                modal.classList.remove('active');
+                document.body.style.overflow = 'auto'; // Restores scrolling
+            });
+
+            // Close Modal via clicking outside the modal content
+            window.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                    document.body.style.overflow = 'auto';
+                }
+            });
+
+            // Close Modal via Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && modal.classList.contains('active')) {
+                    modal.classList.remove('active');
+                    document.body.style.overflow = 'auto';
+                }
+            });
+        });
+    </script>
+
+</body>
+
+</html>
