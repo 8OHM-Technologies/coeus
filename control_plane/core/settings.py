@@ -32,6 +32,7 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "coeus.localhost",
     "0.0.0.0",
+    "control-plane.8ohm.co.za",
 ]
 
 # Application definition
