@@ -45,8 +45,6 @@ services:
     container_name: coeus-control-plane
     depends_on:
       - cloud-sql-proxy
-    ports:
-      - "8001:8001"
     env_file:
       - .env
     environment:
@@ -103,8 +101,6 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       HOST_DATA_PATH: /home/deploy-user/coeus/data
       COEUS_API_URL: ${COEUS_API_URL}
-    ports:
-      - "9001:8080"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.airflow.rule=Host(`airflow.8ohm.co.za`)"
