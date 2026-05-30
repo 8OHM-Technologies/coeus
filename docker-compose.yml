@@ -39,11 +39,7 @@ services:
   # 2. Control Plane / Orchestration UI
   # ---------------------------------------------------------
   control_plane:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-    container_name: coeus-control-plane
-    image: coeus_control_plane_image
+    image: ghcr.io/8ohm-technologies/coeus-app:latest
     depends_on:
       - cloud-sql-proxy
     ports:
@@ -75,11 +71,7 @@ services:
   # 3. Ingestion & Extraction Worker (Playwright + OpenAI)
   # ---------------------------------------------------------
   pipeline_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: coeus-worker
-    image: coeus_worker_image
+    image: ghcr.io/8ohm-technologies/coeus-worker:latest
     depends_on:
       - cloud-sql-proxy
     env_file:

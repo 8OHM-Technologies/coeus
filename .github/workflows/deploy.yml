@@ -1,25 +1,45 @@
 name: Deploy to AbsoluteHostingVPS
+
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      packages: read
+      contents: read
+      packages: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Log in to GHCR
+        uses: docker/login-action@49ed152c8e78a529257a3b2a476374572c602cb3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push App & Worker
+        run: |
+          # 1. Build and push the App image
+          docker build -f Dockerfile.app -t ghcr.io/8ohm-technologies/coeus-app:latest .
+          docker push ghcr.io/8ohm-technologies/coeus-app:latest
+          
+          # 2. Build and push the Worker image
+          docker build -f Dockerfile.worker -t ghcr.io/8ohm-technologies/coeus-worker:latest .
+          docker push ghcr.io/8ohm-technologies/coeus-worker:latest
 
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cd /home/deploy-user/coeus/
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            # Pull the image and restart
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
             docker compose pull
             docker compose up -d
