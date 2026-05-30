@@ -28,7 +28,7 @@ jobs:
           docker build -f Dockerfile.worker -t ghcr.io/8ohm-technologies/coeus-worker:latest .
           docker push ghcr.io/8ohm-technologies/coeus-worker:latest
 
-deploy:
+  deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
