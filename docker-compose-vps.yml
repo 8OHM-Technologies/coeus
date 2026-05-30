@@ -30,12 +30,15 @@ services:
       - "--providers.docker.endpoint=unix:///var/run/docker.sock"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /home/deploy-user/coeus/traefik-config:/etc/traefik/dynamic:ro
     networks:
       - 8ohm-network
     restart: always
