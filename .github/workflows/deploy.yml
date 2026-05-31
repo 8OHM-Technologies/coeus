@@ -5,50 +5,85 @@ on:
     branches: [ main ]
 
 jobs:
+  # 1. Detect if the backend/Docker files actually changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_changed: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      
+      - name: Check for file changes
+        uses: dorny/paths-filter@f3ceefdc7ef57bc2d8560787d4b6c33e44044cec
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'Dockerfile.*'
+              - 'requirements.txt'
+              - 'control_plane/**'
+
+  # 2. Build and Push (Only runs if 'detect-changes' found backend updates)
   build-and-push:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.backend_changed == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@22b48a429f10e1de233237b5c534c9c3d2e41597
+        
       - name: Log in to GHCR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and Push App & Worker
-        run: |
-          # 1. Build and push the App image
-          docker build -f Dockerfile.app -t ghcr.io/8ohm-technologies/coeus-app:latest .
-          docker push ghcr.io/8ohm-technologies/coeus-app:latest
           
-          # 2. Build and push the Worker image
-          docker build -f Dockerfile.worker -t ghcr.io/8ohm-technologies/coeus-worker:latest .
-          docker push ghcr.io/8ohm-technologies/coeus-worker:latest
+      - name: Build and Push App
+        uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
+        with:
+          context: .
+          file: Dockerfile.app
+          push: true
+          tags: ghcr.io/8ohm-technologies/coeus-app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: Build and Push Worker
+        uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
+        with:
+          context: .
+          file: Dockerfile.worker
+          push: true
+          tags: ghcr.io/8ohm-technologies/coeus-worker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+  # 3. Always deploy (Updates VPS compose and pulls new images if they were built)
   deploy:
-    needs: build-and-push
+    needs: [detect-changes, build-and-push]
+    # This ensures deployment happens if the build succeeded OR if it was intentionally skipped
+    if: always() && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      # 1. Check out the repository in this job
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 
 
-      # 2. Copy the updated compose file and landing page to the VPS
       - name: Copy files to VPS
         uses: appleboy/scp-action@a6e43c3aaf4e8e6b0b15bf34e19d71118f6b1ca7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          # Specify the files and directories to copy, separated by commas
-          source: "docker-compose-vps.yml,path/to/landing_page/" 
+          source: "docker-compose-vps.yml,landing_page,extraction_workers,orchestration" 
           target: "/home/deploy-user/coeus/"
           strip_components: 0
 
-      # 3. Execute the deployment
       - name: Deploy via SSH
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
         with:
@@ -59,7 +94,6 @@ jobs:
             cd /home/deploy-user/coeus/
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            # Explicitly target your VPS compose file
             docker compose -f docker-compose-vps.yml pull
             docker compose -f docker-compose-vps.yml up -d
             
