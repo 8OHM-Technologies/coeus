@@ -38,7 +38,7 @@ jobs:
 
       # 2. Copy the updated compose file and landing page to the VPS
       - name: Copy files to VPS
-        uses: appleboy/scp-action@ff85246aca05047b0a3c2005e81d77cb0cd69b76
+        uses: appleboy/scp-action@a6e43c3aaf4e8e6b0b15bf34e19d71118f6b1ca7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
