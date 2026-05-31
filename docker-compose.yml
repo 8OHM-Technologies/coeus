@@ -12,7 +12,7 @@ services:
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /config/application_default_credentials.json
     volumes:
-      - C:\Users\tiaan\AppData\Roaming\gcloud:/config:ro
+      - ~/.config/gcloud:/config:ro
     networks:
       - 8ohm-network
     restart: always
@@ -100,6 +100,7 @@ services:
     env_file:
       - .env
     environment:
+      AIRFLOW__WEBSERVER__SESSION_BACKEND: database
       AIRFLOW__CORE__LOAD_EXAMPLES: False
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       HOST_DATA_PATH: ${PWD}/data
