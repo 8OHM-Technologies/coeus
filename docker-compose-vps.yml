@@ -55,8 +55,6 @@ services:
       - cloud-sql-proxy
     env_file:
       - .env
-    environment:
-      POSTGRES_HOST: cloud-sql-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:

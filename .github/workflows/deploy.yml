@@ -32,8 +32,25 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      # 1. Check out the repository in this job
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 
+
+      # 2. Copy the updated compose file and landing page to the VPS
+      - name: Copy files to VPS
+        uses: appleboy/scp-action@ff85246aca05047b0a3c2005e81d77cb0cd69b76
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          # Specify the files and directories to copy, separated by commas
+          source: "docker-compose-vps.yml,path/to/landing_page/" 
+          target: "/home/deploy-user/coeus/"
+          strip_components: 0
+
+      # 3. Execute the deployment
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -41,6 +58,9 @@ jobs:
           script: |
             cd /home/deploy-user/coeus/
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose pull
-            docker compose up -d
+            
+            # Explicitly target your VPS compose file
+            docker compose -f docker-compose-vps.yml pull
+            docker compose -f docker-compose-vps.yml up -d
+            
             docker image prune -f
