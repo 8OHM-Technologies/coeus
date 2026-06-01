@@ -67,7 +67,6 @@ jobs:
   # 3. Always deploy (Updates VPS compose and pulls new images if they were built)
   deploy:
     needs: [detect-changes, build-and-push]
-    # This ensures deployment happens if the build succeeded OR if it was intentionally skipped
     if: always() && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -80,7 +79,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.prod.yml,landing_page,extraction_workers,orchestration" 
+          source: "docker-compose.prod.yml,landing_page" 
           target: "/home/deploy-user/coeus/"
           strip_components: 0
 
