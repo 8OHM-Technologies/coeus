@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   # ---------------------------------------------------------
-  # 0. Secure Cloud SQL Proxy
+  # 0. Secure Cloud SQL Proxy (With Health Checks)
   # ---------------------------------------------------------
   cloud-sql-proxy:
     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:latest
@@ -36,16 +36,12 @@ services:
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
-
-      - "--certificatesresolvers.le-resolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.le-resolver.acme.email=admin@8ohm.co.za"
-      - "--certificatesresolvers.le-resolver.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_certificates:/letsencrypt
+      - /etc/letsencrypt:/etc/letsencrypt:ro
       - /home/deploy-user/coeus/traefik-config:/etc/traefik/dynamic:ro
     networks:
       - 8ohm-network
@@ -69,12 +65,12 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.control-plane.rule=Host(`control-plane.8ohm.co.za`)"
       - "traefik.http.routers.control-plane.entrypoints=websecure"
-      - "traefik.http.routers.control-plane.tls.certresolver=le-resolver"
+      - "traefik.http.routers.control-plane.tls=true"
       - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
       - "traefik.docker.network=8ohm-network"
     command: >
       bash -c "python control_plane/manage.py migrate && 
-               gunicorn control_plane.wsgi:application --bind 0.0.0.0:8001 --workers 3" # Upgraded to production WSGI
+               gunicorn control_plane.wsgi:application --bind 0.0.0.0:8001 --workers 3"
     restart: always
 
   # ---------------------------------------------------------
@@ -145,7 +141,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.airflow.rule=Host(`airflow.8ohm.co.za`)"
       - "traefik.http.routers.airflow.entrypoints=websecure"
-      - "traefik.http.routers.airflow.tls.certresolver=le-resolver"
+      - "traefik.http.routers.airflow.tls=true"
       - "traefik.http.services.airflow.loadbalancer.server.port=8080"
     command: >
       bash -c "airflow db upgrade && webserver"
@@ -165,7 +161,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.landing-page.rule=Host(`8ohm.co.za`) || Host(`www.8ohm.co.za`)"
       - "traefik.http.routers.landing-page.entrypoints=websecure"
-      - "traefik.http.routers.landing-page.tls.certresolver=le-resolver"
+      - "traefik.http.routers.landing-page.tls=true"
       - "traefik.http.services.landing-page.loadbalancer.server.port=80"
       - "traefik.docker.network=8ohm-network"
 
