@@ -71,28 +71,9 @@ services:
                python control_plane/manage.py runserver 0.0.0.0:8001"
     restart: always
 
-  # ---------------------------------------------------------
-  # 3. Extraction Worker Unit (Playwright)
-  # ---------------------------------------------------------
-  pipeline_worker:
-    image: ghcr.io/8ohm-technologies/coeus-worker:latest
-    container_name: coeus-pipeline-worker
-    restart: always
-    depends_on:
-      - cloud-sql-proxy
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: cloud-sql-proxy
-      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
-    volumes:
-      - production_data:/app/data
-      - huggingface_cache:/app/huggingface_cache
-    networks:
-      - 8ohm-network
 
   # ---------------------------------------------------------
-  # 4. Orchestration (Apache Airflow Standalone)
+  # 3. Orchestration (Apache Airflow Standalone)
   # ---------------------------------------------------------
   airflow:
     image: apache/airflow:2.9.1-python3.11
