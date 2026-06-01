@@ -3,3 +3,4 @@ psycopg2-binary>=2.9
 requests>=2.31
 django-apscheduler>=0.7.0
 cloud-sql-python-connector[pg8000]>=0.9.2
+gunicorn==22.0.0
