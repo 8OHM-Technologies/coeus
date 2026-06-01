@@ -70,7 +70,7 @@ services:
       - "traefik.docker.network=8ohm-network"
     command: >
       bash -c "python control_plane/manage.py migrate && 
-               gunicorn control_plane.wsgi:application --bind 0.0.0.0:8001 --workers 3"
+      gunicorn core.wsgi:application --chdir control_plane --bind 0.0.0.0:8001 --workers 3"
     restart: always
 
   # ---------------------------------------------------------
