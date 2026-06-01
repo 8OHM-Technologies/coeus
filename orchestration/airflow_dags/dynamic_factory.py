@@ -84,7 +84,8 @@ for blueprint in blueprints:
     # 1. The Ingestion Task
     scrape_task = DockerOperator(
         task_id="run_scraper",
-        image="coeus_worker_image:latest",
+        image="ghcr.io/8ohm-technologies/coeus-worker:latest",
+        docker_conn_id='github_container_registry',
         container_name=f"ephemeral_scraper_{blueprint['pipeline_id']}",
         docker_url="unix://var/run/docker.sock",
         network_mode="8ohm-network",
@@ -135,7 +136,8 @@ for blueprint in blueprints:
     if blueprint["phase_2_extraction"]["requires_extraction"]:
         extract_task = DockerOperator(
             task_id="run_llm_extraction",
-            image="coeus_worker_image:latest",
+            image="ghcr.io/8ohm-technologies/coeus-worker:latest",
+            docker_conn_id='github_container_registry',
             container_name=f"ephemeral_extractor_{blueprint['pipeline_id']}",
             docker_url="unix://var/run/docker.sock",
             network_mode="8ohm-network",
