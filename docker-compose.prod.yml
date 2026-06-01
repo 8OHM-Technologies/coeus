@@ -82,7 +82,7 @@ services:
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       cloud-sql-proxy:
-        condition: service_healthy
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -106,7 +106,7 @@ services:
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       cloud-sql-proxy:
-        condition: service_healthy
+        condition: service_started
       airflow_scheduler:
         condition: service_started
     env_file:
