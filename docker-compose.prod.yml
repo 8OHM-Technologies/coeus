@@ -138,7 +138,7 @@ services:
     container_name: coeus-landing-page
     restart: always
     volumes:
-      - /home/deploy-user/coeus/landing-page:/usr/share/nginx/html:ro
+      - /home/deploy-user/coeus/landing_page:/usr/share/nginx/html:ro
     networks:
       - 8ohm-network
     labels:

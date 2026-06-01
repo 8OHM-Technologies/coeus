@@ -80,7 +80,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose-vps.yml,landing_page,extraction_workers,orchestration" 
+          source: "docker-compose.prod.yml,landing_page,extraction_workers,orchestration" 
           target: "/home/deploy-user/coeus/"
           strip_components: 0
 
@@ -94,7 +94,7 @@ jobs:
             cd /home/deploy-user/coeus/
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            docker compose -f docker-compose-vps.yml pull
-            docker compose -f docker-compose-vps.yml up -d
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
             
             docker image prune -f
