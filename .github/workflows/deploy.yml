@@ -83,13 +83,14 @@ jobs:
             set -euo pipefail
             mkdir -p /home/deploy-user/coeus/orchestration/airflow_dags
             mkdir -p /home/deploy-user/coeus/extraction_workers
+            mkdir -p /home/deploy-user/coeus/data
             # CI cannot fix ownership when sudo requires a password.
             # Fail early with a clear message instead of failing later in SCP.
-            if [ ! -w /home/deploy-user/coeus/orchestration/airflow_dags ] || [ ! -w /home/deploy-user/coeus/extraction_workers ]; then
+            if [ ! -w /home/deploy-user/coeus/orchestration/airflow_dags ] || [ ! -w /home/deploy-user/coeus/extraction_workers ] || [ ! -w /home/deploy-user/coeus/data ]; then
               echo "ERROR: deploy-user cannot write Airflow bind-mount dirs."
               echo "Run once on VPS as root:"
-              echo "chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers"
-              echo "chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers"
+              echo "chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
+              echo "chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
               exit 1
             fi
 

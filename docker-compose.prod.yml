@@ -89,7 +89,7 @@ services:
       POSTGRES_HOST: cloud-sql-proxy
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     volumes:
-      - production_data:/app/data
+      - /home/deploy-user/coeus/data:/app/data
       - huggingface_cache:/app/huggingface_cache
     networks:
       - 8ohm-network
@@ -100,6 +100,7 @@ services:
   airflow_scheduler:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow-scheduler
+    hostname: coeus-airflow-scheduler
     restart: always
     user: "50000:0"
     # Host docker group GID (verify with: getent group docker | cut -d: -f3)
@@ -116,10 +117,13 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       COEUS_API_URL: "http://coeus-control-plane:8001/api/pipelines/active/"
-      HOST_DATA_PATH: "/var/coeus/data"
+      HOST_DATA_PATH: "/home/deploy-user/coeus/data"
       PYTHONPATH: /opt/airflow/extraction_workers
+      # Stable hostname for log serving when webserver falls back to HTTP fetch
+      AIRFLOW__LOGGING__WORKER_LOG_SERVER_HOST: coeus-airflow-scheduler
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
+      - airflow_logs:/opt/airflow/logs
       - ./orchestration/airflow_dags:/opt/airflow/dags:ro
       - ./extraction_workers:/opt/airflow/extraction_workers:ro
     networks:
@@ -143,9 +147,11 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       COEUS_API_URL: "http://coeus-control-plane:8001/api/pipelines/active/"
-      HOST_DATA_PATH: "/var/coeus/data"
+      HOST_DATA_PATH: "/home/deploy-user/coeus/data"
       PYTHONPATH: /opt/airflow/extraction_workers
+      AIRFLOW__LOGGING__WORKER_LOG_SERVER_HOST: coeus-airflow-scheduler
     volumes:
+      - airflow_logs:/opt/airflow/logs
       - ./orchestration/airflow_dags:/opt/airflow/dags:ro
       - ./extraction_workers:/opt/airflow/extraction_workers:ro
     networks:
@@ -181,8 +187,8 @@ services:
 volumes:
   traefik_certificates:
   static_assets:
-  production_data:
   huggingface_cache:
+  airflow_logs:
 
 networks:
   8ohm-network:
