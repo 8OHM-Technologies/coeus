@@ -44,12 +44,18 @@ default_args = {
 
 # --- Dynamic Scraper Discovery ---
 # Discovery path (where the Airflow Scheduler finds the files)
-discovery_path = "/app/extraction_workers"
-if not os.path.exists(discovery_path):
-    discovery_path = os.path.join(os.path.dirname(__file__), "../../extraction_workers")
+_discovery_candidates = [
+    "/app/extraction_workers",
+    "/opt/airflow/extraction_workers",
+    os.path.join(os.path.dirname(__file__), "../extraction_workers"),
+]
+discovery_path = next(
+    (path for path in _discovery_candidates if os.path.exists(path)),
+    None,
+)
 
 scraper_map = {}
-if os.path.exists(discovery_path):
+if discovery_path:
     for f in os.listdir(discovery_path):
         if f.endswith("_scraper.py"):
             key = f.replace("_scraper.py", "")

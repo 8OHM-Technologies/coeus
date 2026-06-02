@@ -102,8 +102,9 @@ services:
     container_name: coeus-airflow-scheduler
     restart: always
     user: "50000:0"
+    # Host docker group GID (verify with: getent group docker | cut -d: -f3)
     group_add:
-      - "999"
+      - "988"
     depends_on:
       - cloud-sql-proxy
     env_file:
