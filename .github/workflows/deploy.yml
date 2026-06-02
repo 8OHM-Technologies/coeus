@@ -124,6 +124,6 @@ jobs:
 
             # Fail fast if scheduler container still does not see DAG files.
             docker exec coeus-airflow-scheduler test -f /opt/airflow/dags/dynamic_factory.py
-            docker exec coeus-airflow-scheduler test -n "$(ls -A /opt/airflow/extraction_workers)"
+            docker exec coeus-airflow-scheduler sh -lc 'test -n "$(ls -A /opt/airflow/extraction_workers)"'
             
             docker image prune -f
