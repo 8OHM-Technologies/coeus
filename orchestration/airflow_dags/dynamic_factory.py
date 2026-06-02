@@ -15,13 +15,25 @@ API_URL = os.getenv(
 HOST_DATA_PATH = os.getenv("HOST_DATA_PATH")
 
 if not HOST_DATA_PATH:
-    raise ValueError("Environment variable HOST_DATA_PATH is not set.")
+    HOST_DATA_PATH = "/tmp/coeus_data"
+    logger.warning(
+        "Environment variable HOST_DATA_PATH is not set. "
+        "Falling back to /tmp/coeus_data."
+    )
+
+if not API_URL:
+    logger.warning("Environment variable COEUS_API_URL is not set.")
 
 try:
-    response = requests.get(API_URL, timeout=10)
-    response.raise_for_status()
-    blueprints = response.json().get("pipelines", [])
-except Exception:
+    if not API_URL:
+        blueprints = []
+    else:
+        response = requests.get(API_URL, timeout=10)
+        response.raise_for_status()
+        blueprints = response.json().get("pipelines", [])
+        logger.info("Loaded %s active pipeline blueprints from API.", len(blueprints))
+except Exception as exc:
+    logger.exception("Failed to fetch dynamic pipeline blueprints: %s", exc)
     blueprints = []
 
 default_args = {
