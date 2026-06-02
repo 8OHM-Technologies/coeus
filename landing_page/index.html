@@ -52,31 +52,68 @@
             text-transform: uppercase;
         }
 
-        /* Hero Section */
+        /* Hero (inside parallax stack) */
         .hero {
-            padding: 80px 0;
+            position: relative;
+            z-index: 1;
+            padding: 80px 0 60px;
+            background: rgba(18, 22, 26, 0.68);
+        }
+
+        .hero .container {
             display: flex;
             flex-direction: column;
             align-items: center;
             text-align: center;
         }
 
-        .logo-wrapper {
-            max-width: 300px;
-            width: 100%;
-            margin-bottom: 40px;
-            border-radius: 16px;
+        /* Full-width parallax logo + hero + features stack */
+        .parallax-features {
+            position: relative;
+            clip-path: inset(0);
             overflow: hidden;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5),
-                0 0 50px rgba(0, 250, 154, 0.05);
-            /* Soft ambient glow */
-            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .logo-wrapper img {
+        .parallax-logo {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
-            height: auto;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .parallax-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
             display: block;
+        }
+
+        .parallax-logo-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+                to bottom,
+                rgba(18, 22, 26, 0.15) 0%,
+                rgba(18, 22, 26, 0.4) 50%,
+                rgba(18, 22, 26, 0.75) 100%
+            );
+        }
+
+        .features-content {
+            position: relative;
+            z-index: 1;
+            padding: 60px 0 100px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            background: linear-gradient(
+                to bottom,
+                rgba(18, 22, 26, 0.78) 0%,
+                rgba(18, 22, 26, 0.9) 35%,
+                #12161a 100%
+            );
         }
 
         h1 {
@@ -136,13 +173,6 @@
             border-color: #00fa9a;
             background: rgba(0, 250, 154, 0.1);
             color: #00fa9a;
-        }
-
-        /* Structural Info Section */
-        .features {
-            padding: 60px 0 100px;
-            background: rgba(0, 0, 0, 0.2);
-            border-top: 1px solid rgba(255, 255, 255, 0.03);
         }
 
         .grid {
@@ -300,8 +330,21 @@
                 font-size: 1.1rem;
             }
 
-            .logo-wrapper {
-                max-width: 90%;
+            .parallax-features {
+                clip-path: none;
+            }
+
+            .parallax-logo {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 100%;
+                min-height: 100%;
+            }
+
+            .hero {
+                background: rgba(18, 22, 26, 0.72);
             }
 
             .span-2 {
@@ -310,6 +353,18 @@
 
             .modal-content {
                 padding: 30px 20px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .parallax-features {
+                clip-path: none;
+            }
+
+            .parallax-logo {
+                position: absolute;
+                height: 100%;
+                min-height: 100%;
             }
         }
     </style>
@@ -325,26 +380,30 @@
     </header>
 
     <main>
-        <section class="container hero">
-            <div class="logo-wrapper">
-                <img src="InfinityOhm_Logo.png" alt="Infinite Ohm Technologies Logo">
+        <section class="parallax-features" aria-label="Main content">
+            <div class="parallax-logo" aria-hidden="true">
+                <img src="InfinityOhm_Logo.webp" alt="">
+                <div class="parallax-logo-overlay"></div>
             </div>
 
-            <h1>Modernize Your Home Security.<br>Free From the Cloud.</h1>
-            <p class="tagline">Privacy-first, offline-ready home automation and security. We transform your trusted
-                legacy alarm panels, sensors, and cameras into a powerful, locally controlled smart network. We build,
-                install, and supply the exact infrastructure you need for a secure, self-hosted ecosystem—delivering
-                absolute control without the complexity.</p>
+            <section class="hero">
+                <div class="container">
+                    <h1>Modernize Your Home Security.<br>Free From the Cloud.</h1>
+                    <p class="tagline">Privacy-first, offline-ready home automation and security. We transform your trusted
+                        legacy alarm panels, sensors, and cameras into a powerful, locally controlled smart network. We build,
+                        install, and supply the exact infrastructure you need for a secure, self-hosted ecosystem—delivering
+                        absolute control without the complexity.</p>
 
-            <div class="cta-group">
-                <a href="#shop" class="cta-btn">Shop Components and More</a>
-                <button type="button" id="openContactBtn" class="cta-btn secondary">Get in Touch</button>
-                <a href="#ohmbase" class="cta-btn secondary">The OhmBase Docs</a>
-            </div>
-        </section>
+                    <div class="cta-group">
+                        <a href="#shop" class="cta-btn">Shop Components and More</a>
+                        <button type="button" id="openContactBtn" class="cta-btn secondary">Get in Touch</button>
+                        <a href="#ohmbase" class="cta-btn secondary">The OhmBase Docs</a>
+                    </div>
+                </div>
+            </section>
 
-        <section class="features">
-            <div class="container">
+            <div class="features-content">
+                <div class="container">
                 <!-- Core Offerings Grid -->
                 <div class="grid">
                     <div class="card">
@@ -384,6 +443,7 @@
                             these systems. Use our open-source schematics and wiring guides to take control and build it
                             yourself, or hire us to engineer it for you.</p>
                     </div>
+                </div>
                 </div>
             </div>
         </section>
