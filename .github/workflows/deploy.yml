@@ -83,12 +83,15 @@ jobs:
             set -euo pipefail
             mkdir -p /home/deploy-user/coeus/orchestration/airflow_dags
             mkdir -p /home/deploy-user/coeus/extraction_workers
-            # Some deploys created root-owned files/directories on the VPS.
-            # If passwordless sudo is available, normalize ownership before SCP.
-            if command -v sudo >/dev/null 2>&1; then
-              sudo -n chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers || true
+            # CI cannot fix ownership when sudo requires a password.
+            # Fail early with a clear message instead of failing later in SCP.
+            if [ ! -w /home/deploy-user/coeus/orchestration/airflow_dags ] || [ ! -w /home/deploy-user/coeus/extraction_workers ]; then
+              echo "ERROR: deploy-user cannot write Airflow bind-mount dirs."
+              echo "Run once on VPS as root:"
+              echo "chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers"
+              echo "chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers"
+              exit 1
             fi
-            chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers || true
 
       - name: Copy files to VPS
         uses: appleboy/scp-action@a6e43c3aaf4e8e6b0b15bf34e19d71118f6b1ca7
