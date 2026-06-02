@@ -79,7 +79,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.prod.yml,landing_page" 
+          source: "docker-compose.prod.yml,landing_page,orchestration,extraction_workers" 
           target: "/home/deploy-user/coeus/"
           strip_components: 0
 

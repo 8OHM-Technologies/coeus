@@ -119,8 +119,8 @@ services:
       PYTHONPATH: /opt/airflow/extraction_workers
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
-      - /var/coeus/airflow_dags:/opt/airflow/dags:ro
-      - /var/coeus/extraction_workers:/opt/airflow/extraction_workers:ro
+      - ./orchestration/airflow_dags:/opt/airflow/dags:ro
+      - ./extraction_workers:/opt/airflow/extraction_workers:ro
     networks:
       - 8ohm-network
     command: scheduler
@@ -145,8 +145,8 @@ services:
       HOST_DATA_PATH: "/var/coeus/data"
       PYTHONPATH: /opt/airflow/extraction_workers
     volumes:
-      - /var/coeus/airflow_dags:/opt/airflow/dags:ro
-      - /var/coeus/extraction_workers:/opt/airflow/extraction_workers:ro
+      - ./orchestration/airflow_dags:/opt/airflow/dags:ro
+      - ./extraction_workers:/opt/airflow/extraction_workers:ro
     networks:
       - 8ohm-network
     labels:
