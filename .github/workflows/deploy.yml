@@ -73,13 +73,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 
 
+      - name: Prepare writable deploy paths
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -euo pipefail
+            mkdir -p /home/deploy-user/coeus/orchestration/airflow_dags
+            mkdir -p /home/deploy-user/coeus/extraction_workers
+            # Some deploys created root-owned files/directories on the VPS.
+            # If passwordless sudo is available, normalize ownership before SCP.
+            if command -v sudo >/dev/null 2>&1; then
+              sudo -n chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers || true
+            fi
+            chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers || true
+
       - name: Copy files to VPS
         uses: appleboy/scp-action@a6e43c3aaf4e8e6b0b15bf34e19d71118f6b1ca7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.prod.yml,landing_page,orchestration,extraction_workers" 
+          source: "docker-compose.prod.yml,landing_page,orchestration/airflow_dags,extraction_workers" 
           target: "/home/deploy-user/coeus/"
           strip_components: 0
 
