@@ -153,12 +153,26 @@ async def wait_for_metadata_after_turnstile(page):
 
 async def scrape_case_metadata(page, case_url):
     """Navigate to the case page and extract metadata fields."""
-    response = await page.goto(case_url, timeout=30000)
+    candidate_urls = [case_url]
+    if not case_url.endswith(".html"):
+        candidate_urls.append(f"{case_url}.html")
+
+    response = None
+    status = None
+    resolved_url = case_url
+    for url in candidate_urls:
+        response = await page.goto(url, timeout=30000)
+        if not response:
+            continue
+        status = response.status
+        if status != 404:
+            resolved_url = url
+            break
+
     if not response:
         logger.warning(f"No response received for {case_url}.")
         return None, None
 
-    status = response.status
     if status == 404:
         return None, 404
 
@@ -174,7 +188,7 @@ async def scrape_case_metadata(page, case_url):
 
     page_info = await page.evaluate(EXTRACT_METADATA_JS)
     record = {
-        "case_url": case_url,
+        "case_url": resolved_url,
         "title": page_info.get("h1", ""),
         **page_info.get("metadata", {}),
     }
@@ -280,10 +294,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     path_parts = [p for p in parsed.path.split("/") if p]
     court_name = path_parts[-1] if path_parts else "SAFLII"
 
-    output_dir = os.path.join("/app/data/scraped_pdfs", "saflii")
-    if not os.path.exists("/app/data") and not os.path.exists("/app"):
-        output_dir = os.path.join("data", "scraped_pdfs", "saflii")
+    base_data_dir = "/app/data" if os.path.exists("/app/data") else "data"
+    output_dir = os.path.join(base_data_dir, "scraped_pdfs", "saflii")
     os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Output directory: {os.path.abspath(output_dir)}")
 
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser (headless={headless})...")
@@ -343,6 +357,13 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 case_url = f"{target_url.rstrip('/')}/{year}/{seq}"
                 pdf_url = f"{case_url}.pdf"
 
+                if pdf_exists and need_json:
+                    logger.info(f"  [~] PDF exists, backfilling metadata: {json_name}")
+                elif json_exists and need_pdf:
+                    logger.info(f"  [~] JSON exists, downloading PDF: {file_name}")
+                else:
+                    logger.info(f"  [~] Fetching PDF and metadata for sequence {seq}")
+
                 if need_json:
                     logger.info(f"Scraping metadata: {case_url}")
                 if need_pdf:
@@ -352,6 +373,12 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                     if need_json:
                         metadata, case_status = await scrape_case_metadata(page, case_url)
                         if case_status == 404:
+                            if pdf_exists:
+                                logger.warning(
+                                    f"Case page 404 for {case_url}, but PDF exists. Skipping metadata for this sequence."
+                                )
+                                seq += 1
+                                continue
                             logger.info(f"Received 404 for {case_url}. Moving to next year.")
                             break
 
