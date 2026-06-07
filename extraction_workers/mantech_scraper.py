@@ -37,7 +37,7 @@ async def run_extraction(
         search_keyword = extraction_params.get("search_keyword")
 
     if not category:
-        category = extraction_params.get("category")
+        category = extraction_params.get("category") or extraction_params.get("categories")
 
     # Determine execution targets based on priority
     # If search_keyword is provided, ignore all categories

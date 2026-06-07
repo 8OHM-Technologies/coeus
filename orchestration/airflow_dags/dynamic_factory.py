@@ -77,14 +77,18 @@ for blueprint in blueprints:
 
     extraction_params = blueprint["phase_2_extraction"].get("extraction_params", {})
     search_keyword = extraction_params.get("search_keyword")
-    category = extraction_params.get("category")
+    category = extraction_params.get("category") or extraction_params.get("categories")
 
     worker_args = f"--pipeline_name '{pipeline_id}'"
     if scraper_type == "mantech":
         if search_keyword:
             worker_args += f" --search_keyword '{search_keyword}'"
         if category:
-            worker_args += f" --category '{category}'"
+            if isinstance(category, list):
+                category_str = ",".join(str(c) for c in category)
+            else:
+                category_str = str(category)
+            worker_args += f" --category '{category_str}'"
 
     worker_script = scraper_map.get(scraper_type)
     if not worker_script:
