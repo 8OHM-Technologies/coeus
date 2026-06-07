@@ -182,3 +182,5 @@ The production stack already covers managed database access, CI/CD, and TLS. Rem
 ## 📄 Related Documentation
 
 - [GEMINI.md](GEMINI.md) — Condensed context for AI-assisted development in this repo.
+- [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) — Comprehensive technical analysis of the Coeus scraping, extraction, and orchestration architecture.
+
