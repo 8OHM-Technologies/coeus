@@ -103,9 +103,9 @@ docker compose up -d --build
 
 | Service | Direct URL | Traefik URL (port 81) | Credentials |
 | :--- | :--- | :--- | :--- |
-| **Control Plane** | `http://localhost:8001/admin` | `http://control-plane.localhost/admin` | `admin` / `admin` |
-| **Airflow UI** | `http://localhost:9001` | `http://airflow.localhost` | `admin` / `admin` |
-| **Active Pipelines API** | — | `http://control-plane.localhost/api/pipelines/active/` | N/A |
+| **Control Plane** | `http://localhost:8001/admin` | `http://control-plane.localhost:81/admin` | `admin` / `admin` |
+| **Airflow UI** | `http://localhost:9001` | `http://airflow.localhost:81` | `admin` / `admin` |
+| **Active Pipelines API** | — | `http://control-plane.localhost:81/api/pipelines/active/` | N/A |
 | **Traefik Dashboard** | `http://localhost:8080` | — | — |
 
 On first boot, the control plane runs migrations and creates the default superuser automatically.

@@ -17,9 +17,15 @@ The orchestrator polls the Django API at `http://coeus-control-plane:8001/api/pi
 
 ### 2. Adaptive Scraping Strategy
 Based on `PipelineConfiguration`, the system selects the appropriate worker script:
-- `ccma_playwright_scraper.py` for CCMA.
-- `lotto_scraper.py` for national lottery.
-- `sedarplus_scraper.py` for SEDAR+ (supports dynamic document types).
+- `sedarplus_scraper.py` for SEDAR+ (supports dynamic document types, Playwright + Solver).
+- `sabinet_scraper.py` for Sabinet CCMA Labor Awards (index extraction, Playwright).
+- `sabinet_detail_scraper.py` for Sabinet Award Details (follows index JSON, Playwright).
+- `ccma_playwright_scraper.py` for CCMA (multi-category traversal + download utility, Playwright).
+- `judiciary_scraper.py` for South African Judiciary Judgments (limit auto-expander, Playwright).
+- `saflii_scraper.py` for SAFLII Case Law (basic crawling with Xvfb, Playwright).
+- `mantech_scraper.py` for Mantech Electronics Store (ASP.NET WebForms paginated table, Playwright).
+- `livestainable_scraper.py` for Livestainable Products (e-commerce catalog, Playwright).
+- `lotto_scraper.py` for South African lotto results (national lottery parser, Playwright).
 
 ### 3. AI-Powered hCaptcha Solver
 Uses `VisionManager` for object detection and `PromptTranslator` for prompt engineering. Slices the 3x3 grid for high-precision inference.
@@ -29,8 +35,10 @@ Uses `VisionManager` for object detection and `PromptTranslator` for prompt engi
 ### Building and Running
 The system is fully containerized.
 - **Boot All Services:** `docker-compose up -d --build`
-- **Django Admin:** `http://localhost:8001/admin` (admin/admin)
-- **Airflow UI:** `http://localhost:9001` (admin/admin)
+- **Django Admin (Direct):** `http://localhost:8001/admin` (admin/admin)
+- **Django Admin (Traefik):** `http://control-plane.localhost:81/admin`
+- **Airflow UI (Direct):** `http://localhost:9001` (admin/admin)
+- **Airflow UI (Traefik):** `http://airflow.localhost:81`
 
 ### Development Conventions
 - **Model-Driven Pipelines:** All scrapers must be configurable via the Django `PipelineConfiguration` model.
@@ -44,6 +52,12 @@ The system is fully containerized.
 - `extraction_workers/sedarplus_scraper.py`: Playwright scraper for Sedarplus documents.
 - `extraction_workers/ccma_playwright_scraper.py`: Playwright scraper for CCMA documents.
 - `extraction_workers/lotto_scraper.py`: Playwright scraper for South African lotto results.
+- `extraction_workers/saflii_scraper.py`: Playwright scraper for SAFLII case law.
+- `extraction_workers/mantech_scraper.py`: Playwright scraper for Mantech electronics store.
+- `extraction_workers/livestainable_scraper.py`: Playwright scraper for Livestainable products.
+- `extraction_workers/sabinet_scraper.py`: Playwright scraper for Sabinet indexes.
+- `extraction_workers/sabinet_detail_scraper.py`: Playwright scraper for Sabinet details.
+- `extraction_workers/judiciary_scraper.py`: Playwright scraper for South African Judiciary.
 - `orchestration/airflow_dags/dynamic_factory.py`: Airflow DAG generator.
 - `solver/src/solver/solver.py`: hCaptcha solving orchestration.
 
