@@ -7,223 +7,682 @@
     <title>Infinity Ohm Technologies</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Phosphor Icons (Light & Thin variants) -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/light/style.css" />
+
     <style>
-        /* Global Reset & Typography */
+        /* --- Global Reset & Custom Properties --- */
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #12161a;
-            /* Dark metallic blue-gray base */
-            color: #e2e8f0;
-            line-height: 1.6;
-            overflow-x: hidden;
+        :root {
+            --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            
+            --color-bg: #050505;
+            --color-surface-outer: rgba(255, 255, 255, 0.02);
+            --color-surface-inner: #0b0e12;
+            --color-border-outer: rgba(255, 255, 255, 0.05);
+            --color-border-inner: rgba(255, 255, 255, 0.03);
+            
+            --color-accent-primary: #ff8800; /* Warm Copper / Orange */
+            --color-accent-secondary: #8dd7da; /* Electric Cyan */
+            --color-text-primary: #ffffff;
+            --color-text-secondary: #94a3b8;
+            --color-text-muted: #475569;
+            
+            --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        /* Container Alignment */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background-color: var(--color-bg);
+            color: var(--color-text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 0 20px;
+            padding: 0 24px;
+            width: 100%;
         }
 
-        /* Header / Navigation */
-        header {
-            padding: 30px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .nav-container {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .mini-brand {
-            font-size: 1.1rem;
-            font-weight: 700;
-            letter-spacing: 2px;
-            color: #ff8800;
-            /* Cyan/green neon accent from your logo traces */
-            text-transform: uppercase;
-        }
-
-        /* Hero (inside parallax stack) */
-        .hero {
-            position: relative;
-            z-index: 1;
-            padding: 80px 0 60px;
-            background: rgba(18, 22, 26, 0.68);
-        }
-
-        .hero .container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-        }
-
-        /* Full-width parallax logo + hero + features stack */
-        .parallax-features {
-            position: relative;
-            clip-path: inset(0);
+        /* --- GPU-Accelerated Glowing Mesh Background --- */
+        .background-visuals {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
             overflow: hidden;
         }
 
-        .parallax-logo {
+        .glow-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(130px);
+            opacity: 0.12;
+            mix-blend-mode: screen;
+            will-change: transform;
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .orb-1 {
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--color-accent-primary) 0%, rgba(255,136,0,0) 70%);
+            top: -15%;
+            left: -10%;
+        }
+
+        .orb-2 {
+            width: 700px;
+            height: 700px;
+            background: radial-gradient(circle, var(--color-accent-secondary) 0%, rgba(141,215,218,0) 70%);
+            bottom: -15%;
+            right: -10%;
+        }
+
+        .orb-3 {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, #ff3c00 0%, rgba(255,60,0,0) 70%);
+            top: 40%;
+            left: 35%;
+        }
+
+        .grid-overlay {
+            position: absolute;
+            inset: 0;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+            background-size: 64px 64px;
+            mask-image: radial-gradient(circle at center, black 40%, transparent 95%);
+            -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 95%);
+        }
+
+        .noise-overlay {
+            position: absolute;
+            inset: 0;
+            opacity: 0.015;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        /* --- Floating Island Navigation --- */
+        .navbar-wrapper {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
-            height: 100vh;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        .parallax-logo img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            object-position: center;
-            display: block;
-        }
-
-        .parallax-logo-overlay {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(to bottom,
-                    rgba(18, 22, 26, 0.15) 0%,
-                    rgba(18, 22, 26, 0.4) 50%,
-                    rgba(18, 22, 26, 0.75) 100%);
-        }
-
-        .features-content {
-            position: relative;
-            z-index: 1;
-            padding: 60px 0 100px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            background: linear-gradient(to bottom,
-                    rgba(18, 22, 26, 0.78) 0%,
-                    rgba(18, 22, 26, 0.9) 35%,
-                    #12161a 100%);
-        }
-
-        h1 {
-            font-size: 2.8rem;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-            color: #ffffff;
-            margin-bottom: 20px;
-            max-width: 800px;
-        }
-
-        .tagline {
-            font-size: 1.25rem;
-            color: #94a3b8;
-            max-width: 700px;
-            margin-bottom: 40px;
-        }
-
-        /* Button System */
-        .cta-group {
+            z-index: 100;
+            padding: 24px;
             display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
             justify-content: center;
         }
 
-        .cta-btn {
-            display: inline-block;
-            background: transparent;
-            color: #ff8800;
-            border: 2px solid #ff8800;
-            padding: 14px 32px;
-            font-size: 1rem;
+        .navbar {
+            background: rgba(11, 14, 18, 0.6);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--color-border-outer);
+            padding: 8px 8px 8px 24px;
+            border-radius: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 900px;
+            box-shadow: 
+                0 10px 40px rgba(0, 0, 0, 0.5),
+                inset 0 1px 1px rgba(255, 255, 255, 0.05);
+            transition: all 0.5s var(--ease-premium);
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .brand-logo-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--color-accent-primary);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--color-accent-primary);
+        }
+
+        .brand-text {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 3px;
+            color: var(--color-text-primary);
+            text-transform: uppercase;
+        }
+
+        .nav-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(141, 215, 218, 0.06);
+            border: 1px solid rgba(141, 215, 218, 0.15);
+            padding: 4px 12px;
+            border-radius: 100px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--color-accent-secondary);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--color-accent-secondary);
+        }
+
+        .status-text {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--color-accent-secondary);
+            letter-spacing: 0.5px;
+        }
+
+        .nav-cta {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-border-outer);
+            color: var(--color-text-primary);
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 6px 6px 6px 18px;
+            border-radius: 100px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.5s var(--ease-premium);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-cta:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .nav-cta-icon {
+            width: 28px;
+            height: 28px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.5s var(--ease-premium);
+        }
+
+        .nav-cta:hover .nav-cta-icon {
+            transform: translate(2px, -2px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* --- Hero Section --- */
+        .hero {
+            position: relative;
+            z-index: 10;
+            padding: 180px 0 80px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .eyebrow-badge {
+            background: rgba(255, 136, 0, 0.06);
+            border: 1px solid rgba(255, 136, 0, 0.15);
+            padding: 6px 16px;
+            border-radius: 100px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .eyebrow-dot {
+            width: 5px;
+            height: 5px;
+            background: var(--color-accent-primary);
+            border-radius: 50%;
+        }
+
+        .eyebrow-text {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--color-accent-primary);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .hero-title {
+            font-family: var(--font-display);
+            font-size: 4rem;
+            font-weight: 800;
+            line-height: 1.15;
+            letter-spacing: -1.5px;
+            color: var(--color-text-primary);
+            max-width: 900px;
+            margin-bottom: 24px;
+        }
+
+        .hero-title .gradient-text {
+            background: linear-gradient(135deg, #ff8800 0%, #ffaa44 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            position: relative;
+        }
+
+        .hero-tagline {
+            font-size: 1.25rem;
+            color: var(--color-text-secondary);
+            max-width: 750px;
+            margin-bottom: 48px;
+            font-weight: 400;
+            line-height: 1.7;
+        }
+
+        /* --- Button-in-Button System --- */
+        .cta-group {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 8px 8px 28px;
+            border-radius: 100px;
+            font-family: var(--font-body);
+            font-size: 0.95rem;
             font-weight: 600;
             text-decoration: none;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 15px rgba(249, 115, 22, 0.3);
-            font-family: inherit;
+            transition: all 0.5s var(--ease-premium);
             cursor: pointer;
+            border: none;
+            outline: none;
         }
 
-        .cta-btn:hover {
-            background: #ff8800;
-            color: #12161a;
-            box-shadow: 0 0 25px rgba(249, 115, 22, 0.3);
+        .btn-primary {
+            background: var(--color-accent-primary);
+            color: #050505;
+            box-shadow: 0 10px 30px rgba(255, 136, 0, 0.2);
         }
 
-        .cta-btn.secondary {
-            border-color: rgba(249, 115, 22, 0.3);
-            box-shadow: none;
+        .btn-primary:hover {
+            background: #ffa133;
+            transform: translateY(-2px);
+            box-shadow: 0 15px 40px rgba(255, 136, 0, 0.35);
         }
 
-        .cta-btn.secondary:hover {
-            border-color: #ff8800;
-            background: rgba(249, 115, 22, 0.3);
-            color: #ff8800;
+        .btn-primary:active {
+            transform: translateY(0) scale(0.98);
         }
 
-        .grid {
+        .btn-icon {
+            width: 38px;
+            height: 38px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.5s var(--ease-premium);
+        }
+
+        .btn-primary:hover .btn-icon {
+            transform: rotate(45deg);
+            background: rgba(255, 255, 255, 0.35);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--color-text-primary);
+            border: 1px solid var(--color-border-outer);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .btn-secondary .btn-icon {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--color-border-outer);
+        }
+
+        .btn-secondary:hover .btn-icon {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translate(2px, -2px);
+        }
+
+        /* --- Floating Centerpiece (Logo Showcase) --- */
+        .logo-backdrop-container {
+            display: flex;
+            justify-content: center;
+            margin: 64px auto 96px;
+            max-width: 680px;
+            width: 100%;
+            z-index: 10;
+            position: relative;
+        }
+
+        .logo-bezel-outer {
+            background: var(--color-surface-outer);
+            border: 1px solid var(--color-border-outer);
+            padding: 8px;
+            border-radius: 36px;
+            width: 100%;
+            box-shadow: 
+                0 30px 60px rgba(0, 0, 0, 0.7),
+                0 0 100px rgba(255, 136, 0, 0.04);
+            transition: all 0.6s var(--ease-premium);
+        }
+
+        .logo-bezel-outer:hover {
+            border-color: rgba(255, 136, 0, 0.2);
+            box-shadow: 
+                0 40px 80px rgba(0, 0, 0, 0.8),
+                0 0 120px rgba(255, 136, 0, 0.08);
+        }
+
+        .logo-bezel-inner {
+            background: linear-gradient(185deg, #0f131a 0%, #050505 100%);
+            border-radius: 28px;
+            border: 1px solid var(--color-border-inner);
+            padding: 56px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .logo-bezel-inner::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(255, 136, 0, 0.06) 0%, transparent 75%);
+        }
+
+        .hero-logo-img {
+            max-width: 100%;
+            height: auto;
+            max-height: 180px;
+            object-fit: contain;
+            z-index: 1;
+            filter: drop-shadow(0 15px 30px rgba(0,0,0,0.6));
+            transition: transform 0.6s var(--ease-premium);
+        }
+
+        .logo-bezel-outer:hover .hero-logo-img {
+            transform: scale(1.02);
+        }
+
+        /* --- Bento Grid Layout & Double-Bezel Cards --- */
+        .features-section {
+            position: relative;
+            z-index: 10;
+            padding: 80px 0 160px;
+        }
+
+        .bento-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-top: 20px;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 24px;
+            margin-top: 48px;
         }
 
-        .card {
-            background: #1a2026;
-            /* Slightly lighter card background */
+        .col-span-12 { grid-column: span 12; }
+        .col-span-7 { grid-column: span 7; }
+        .col-span-6 { grid-column: span 6; }
+        .col-span-5 { grid-column: span 5; }
+
+        .bezel-card-outer {
+            background: var(--color-surface-outer);
+            border: 1px solid var(--color-border-outer);
+            padding: 6px;
+            border-radius: 28px;
+            transition: all 0.6s var(--ease-premium);
+            display: flex;
+        }
+
+        .bezel-card-outer:hover {
+            transform: translateY(-8px);
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 136, 0, 0.25);
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.6),
+                0 0 50px rgba(255, 136, 0, 0.04);
+        }
+
+        .bezel-card-outer.accent-glow:hover {
+            border-color: rgba(141, 215, 218, 0.3);
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.6),
+                0 0 50px rgba(141, 215, 218, 0.05);
+        }
+
+        .bezel-card-inner {
+            background: var(--color-surface-inner);
             padding: 40px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.03);
-            transition: transform 0.3s ease;
+            border-radius: 22px; /* calc(28px - 6px) */
+            border: 1px solid var(--color-border-inner);
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
+            position: relative;
+            overflow: hidden;
         }
 
-        .card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(141, 215, 218, 0.8)
-                /* Copper/Orange accent trace hover */
+        .card-icon {
+            width: 52px;
+            height: 52px;
+            background: rgba(255, 136, 0, 0.04);
+            border: 1px solid rgba(255, 136, 0, 0.15);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 28px;
+            transition: all 0.5s var(--ease-premium);
         }
 
-        .card h3 {
-            font-size: 1.4rem;
-            color: #ffffff;
-            margin-bottom: 15px;
+        .bezel-card-outer:hover .card-icon {
+            background: var(--color-accent-primary);
+            border-color: var(--color-accent-primary);
+            box-shadow: 0 0 15px rgba(255, 136, 0, 0.3);
         }
 
-        .card p {
-            color: #94a3b8;
+        .bezel-card-outer:hover .card-icon i {
+            color: #050505;
+        }
+
+        .bezel-card-outer.accent-glow .card-icon {
+            background: rgba(141, 215, 218, 0.04);
+            border-color: rgba(141, 215, 218, 0.15);
+        }
+
+        .bezel-card-outer.accent-glow:hover .card-icon {
+            background: var(--color-accent-secondary);
+            border-color: var(--color-accent-secondary);
+            box-shadow: 0 0 15px rgba(141, 215, 218, 0.3);
+        }
+
+        .card-icon i {
+            font-size: 1.5rem;
+            color: var(--color-accent-primary);
+            transition: all 0.5s var(--ease-premium);
+        }
+
+        .bezel-card-outer.accent-glow .card-icon i {
+            color: var(--color-accent-secondary);
+        }
+
+        .card-title {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--color-text-primary);
+            margin-bottom: 16px;
+        }
+
+        .card-desc {
+            color: var(--color-text-secondary);
             font-size: 0.95rem;
+            line-height: 1.6;
         }
 
-        .span-2 {
-            grid-column: span 2;
+        /* --- Editorial Layout (Card 5 Split) --- */
+        .editorial-card {
+            flex-direction: row;
+            gap: 48px;
+            align-items: stretch;
+            padding: 48px;
         }
 
-        /* --- Modal Styles --- */
-        .modal-overlay {
-            display: none;
-            /* Hidden by default */
-            position: fixed;
-            top: 0;
-            left: 0;
+        .editorial-left {
+            flex: 1.2;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .editorial-left .btn {
+            margin-top: 36px;
+            align-self: flex-start;
+        }
+
+        .editorial-right {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 320px;
+        }
+
+        .mock-diagram {
+            background: #050505;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 
+                0 20px 40px rgba(0, 0, 0, 0.6),
+                inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+
+        .mock-header {
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 14px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mock-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .mock-dot.red { background: #ff5f56; }
+        .mock-dot.yellow { background: #ffbd2e; }
+        .mock-dot.green { background: #27c93f; }
+
+        .mock-title {
+            color: var(--color-text-muted);
+            font-size: 0.75rem;
+            font-family: 'Fira Code', monospace;
+            margin-left: 8px;
+        }
+
+        .mock-code {
+            padding: 24px;
+            margin: 0;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #ffa844;
+            line-height: 1.5;
+            background: #07090c;
+            height: 100%;
+        }
+
+        .mock-code .yaml-key { color: var(--color-accent-secondary); }
+        .mock-code .yaml-val { color: #ffffff; }
+        .mock-code .yaml-comment { color: var(--color-text-muted); }
+
+        /* --- Footer --- */
+        footer {
+            position: relative;
+            z-index: 10;
+            padding: 56px 0;
+            border-top: 1px solid var(--color-border-outer);
+            background: #050505;
+            text-align: center;
+        }
+
+        .footer-text {
+            font-size: 0.85rem;
+            color: var(--color-text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        /* --- Custom Contact Modal (Heavy Glass) --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background-color: rgba(5, 5, 5, 0.8);
             z-index: 1000;
             justify-content: center;
             align-items: center;
             opacity: 0;
-            transition: opacity 0.3s ease;
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            transition: opacity 0.5s var(--ease-premium);
+            padding: 24px;
         }
 
         .modal-overlay.active {
@@ -231,136 +690,214 @@
             opacity: 1;
         }
 
-        .modal-content {
-            background-color: #1a2026;
-            padding: 40px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 196, 67, 0.487);
-            width: 90%;
-            max-width: 500px;
-            position: relative;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-            transform: translateY(-20px);
-            transition: transform 0.3s ease;
+        .modal-bezel-outer {
+            background: var(--color-surface-outer);
+            border: 1px solid var(--color-border-outer);
+            padding: 6px;
+            border-radius: 32px;
+            width: 100%;
+            max-width: 540px;
+            transform: scale(0.9) translateY(30px);
+            transition: transform 0.5s var(--ease-premium);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8);
         }
 
-        .modal-overlay.active .modal-content {
-            transform: translateY(0);
+        .modal-overlay.active .modal-bezel-outer {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-content {
+            background: var(--color-surface-inner);
+            border: 1px solid var(--color-border-inner);
+            padding: 40px;
+            border-radius: 26px; /* calc(32px - 6px) */
+            position: relative;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
+            display: flex;
+            flex-direction: column;
         }
 
         .close-btn {
             position: absolute;
-            top: 15px;
-            right: 20px;
-            font-size: 1.8rem;
-            color: #94a3b8;
+            top: 24px;
+            right: 24px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--color-border-outer);
+            color: var(--color-text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
-            transition: color 0.3s ease;
-            background: none;
-            border: none;
-            outline: none;
+            transition: all 0.3s ease;
         }
 
         .close-btn:hover {
-            color: #ff8800;
+            color: var(--color-text-primary);
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.15);
         }
 
-        .modal-content h2 {
-            color: #ffffff;
-            margin-bottom: 25px;
-            font-size: 1.8rem;
+        .close-btn i {
+            font-size: 1.1rem;
+        }
+
+        .modal-title {
+            font-family: var(--font-display);
+            color: var(--color-text-primary);
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+
+        .modal-subtitle {
+            color: var(--color-text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 32px;
         }
 
         .form-group {
-            margin-bottom: 20px;
-            text-align: left;
+            margin-bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #94a3b8;
-            font-size: 0.9rem;
+            color: var(--color-text-primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
         }
 
         .form-group input,
         .form-group textarea {
             width: 100%;
-            padding: 12px;
-            background-color: #12161a;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-            color: #e2e8f0;
+            padding: 14px 16px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--color-border-outer);
+            border-radius: 12px;
+            color: var(--color-text-primary);
             font-family: inherit;
-            font-size: 1rem;
-            transition: border-color 0.3s ease;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
         }
 
         .form-group input:focus,
         .form-group textarea:focus {
             outline: none;
-            border-color: #ff8800;
+            border-color: var(--color-accent-primary);
+            background-color: rgba(255, 255, 255, 0.02);
+            box-shadow: 
+                0 0 20px rgba(255, 136, 0, 0.12),
+                inset 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: var(--color-text-muted);
         }
 
         .submit-btn {
             width: 100%;
-            margin-top: 10px;
+            margin-top: 8px;
+            justify-content: center;
         }
 
-        /* Footer */
-        footer {
-            padding: 40px 0;
-            text-align: center;
-            font-size: 0.85rem;
-            color: #475569;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        /* --- Scroll Reveal entry styles --- */
+        .reveal-item {
+            opacity: 0;
+            transform: translateY(32px);
+            transition: 
+                opacity 1.2s var(--ease-premium), 
+                transform 1.2s var(--ease-premium),
+                filter 1.2s var(--ease-premium);
+            filter: blur(8px);
+            will-change: transform, opacity, filter;
         }
 
-        /* Responsive Tuning */
-        @media (max-width: 768px) {
-            h1 {
-                font-size: 2rem;
+        .reveal-item.revealed {
+            opacity: 1;
+            transform: translateY(0);
+            filter: blur(0);
+        }
+
+        /* --- Responsive Design --- */
+        @media (max-width: 1024px) {
+            .hero-title {
+                font-size: 3.2rem;
             }
+        }
 
-            .tagline {
+        @media (max-width: 768px) {
+            .navbar-wrapper {
+                padding: 16px;
+            }
+            .navbar {
+                padding: 8px 8px 8px 16px;
+                gap: 16px;
+            }
+            .nav-status {
+                display: none;
+            }
+            .hero {
+                padding: 140px 0 60px;
+            }
+            .hero-title {
+                font-size: 2.4rem;
+                letter-spacing: -1px;
+            }
+            .hero-tagline {
                 font-size: 1.1rem;
             }
-
-            .parallax-features {
-                clip-path: none;
+            .cta-group {
+                flex-direction: column;
+                width: 100%;
+                max-width: 320px;
             }
-
-            .parallax-logo {
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 100%;
-                min-height: 100%;
+            .btn {
+                width: 100%;
+                justify-content: space-between;
             }
-
-            .hero {
-                background: rgba(18, 22, 26, 0.72);
+            .logo-bezel-inner {
+                padding: 36px;
             }
-
-            .span-2 {
-                grid-column: span 1;
+            .bento-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
             }
-
-            .modal-content {
-                padding: 30px 20px;
+            .col-span-12, .col-span-7, .col-span-6, .col-span-5 {
+                grid-column: span 1 !important;
+            }
+            .bezel-card-inner {
+                padding: 28px;
+            }
+            .editorial-card {
+                flex-direction: column;
+                gap: 32px;
+                padding: 28px;
+            }
+            .editorial-right {
+                min-width: 100%;
+            }
+            .mock-code {
+                padding: 16px;
             }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .parallax-features {
-                clip-path: none;
+            .reveal-item {
+                opacity: 1 !important;
+                transform: none !important;
+                filter: none !important;
+                transition: none !important;
             }
-
-            .parallax-logo {
-                position: absolute;
-                height: 100%;
-                min-height: 100%;
+            .glow-orb {
+                animation: none !important;
+                transform: none !important;
             }
         }
     </style>
@@ -368,142 +905,304 @@
 
 <body>
 
-    <header>
-        <div class="container nav-container">
-            <div class="mini-brand">Infinity Ohm Technologies</div>
-            <div class="contact-link" style="color: #8dd7da; font-size: 0.9rem;">Secure Smart Home Automation</div>
-        </div>
+    <!-- Background mesh decorations -->
+    <div class="background-visuals">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glow-orb orb-3"></div>
+        <div class="grid-overlay"></div>
+        <div class="noise-overlay"></div>
+    </div>
+
+    <!-- Floating Island Navigation -->
+    <header class="navbar-wrapper">
+        <nav class="navbar">
+            <a href="#" class="nav-brand">
+                <span class="brand-logo-dot"></span>
+                <span class="brand-text">8OHM</span>
+            </a>
+            
+            <div class="nav-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Local Smart Home Automation</span>
+            </div>
+
+            <button type="button" id="openContactBtn" class="nav-cta">
+                <span>Get in Touch</span>
+                <div class="nav-cta-icon">
+                    <i class="ph-light ph-arrow-up-right"></i>
+                </div>
+            </button>
+        </nav>
     </header>
 
     <main>
-        <section class="parallax-features" aria-label="Main content">
-            <div class="parallax-logo" aria-hidden="true">
-                <img src="InfinityOhm_Logo.webp" alt="">
-                <div class="parallax-logo-overlay"></div>
+        <!-- Hero Section -->
+        <section class="hero container">
+            <div class="eyebrow-badge reveal-item">
+                <span class="eyebrow-dot"></span>
+                <span class="eyebrow-text">SECURE SMART HOME SYSTEM</span>
             </div>
 
-            <section class="hero">
-                <div class="container">
-                    <h1>Smart Home Security You Can Actually Trust -<br>No Cloud Required</h1>
-                    <p class="tagline">You don't need to throw away your reliable, hardwired alarm, gate motor or
-                        intercom system to get a modern smart
-                        home. We upgrade your existing security and home systems into a single, easy-to-use smart
-                        network that works perfectly even when the internet is down. No monthly subscriptions, absolute
-                        privacy.</p>
+            <h1 class="hero-title reveal-item">
+                Smart Home Security <br>You Can Actually Trust - <br>
+                <span class="gradient-text">No Cloud Required</span>
+            </h1>
 
-                    <div class="cta-group">
-                        <a href="#shop" class="cta-btn">Shop Components</a>
-                        <button type="button" id="openContactBtn" class="cta-btn secondary">Get in Touch</button>
-                        <a href="#ohmbase" class="cta-btn secondary">DIY Guides & Wiki</a>
+            <p class="hero-tagline reveal-item">
+                You don't need to throw away your reliable, hardwired alarm, gate motor or intercom system to get a modern smart home. We upgrade your existing security and home systems into a single, easy-to-use smart network that works perfectly even when the internet is down. No monthly subscriptions, absolute privacy.
+            </p>
+
+            <div class="cta-group reveal-item">
+                <a href="#shop" class="btn btn-primary">
+                    <span>Shop Components</span>
+                    <div class="btn-icon">
+                        <i class="ph-light ph-shopping-bag-open"></i>
                     </div>
-                </div>
-            </section>
-
-            <div class="features-content">
-                <div class="container">
-                    <div class="grid">
-                        <div class="card">
-                            <h3>On-Site Installation & Support</h3>
-                            <p>We do the heavy lifting. We integrate and configure your smart home hub on-site,
-                                upgrading your existing alarm panels, outdoor beams, and sensors into one seamless,
-                                easy-to-use smart home system.</p>
-                        </div>
-                        <div class="card">
-                            <h3>Reliable Hardware Sales</h3>
-                            <p>We only sell what we trust. Source the exact smart switches, relays, and sensors we use
-                                in our own professional installations. Everything in our store is tested to work
-                                perfectly in home labs without relying on cloud subscriptions.</p>
-                        </div>
-                        <div class="card">
-                            <h3>The FutureHome Hub</h3>
-                            <p>In active development: The 8OHM Omni-Board. A custom-built smart brain for your home
-                                designed to connect directly to your DB board with built-in support for older alarm
-                                systems, gate motors, outdoor beams and security lighting.</p>
-                        </div>
+                </a>
+                <button type="button" id="openContactBtnHero" class="btn btn-secondary">
+                    <span>Get in Touch</span>
+                    <div class="btn-icon">
+                        <i class="ph-light ph-arrow-up-right"></i>
                     </div>
+                </button>
+                <a href="#ohmbase" class="btn btn-secondary">
+                    <span>DIY Guides & Wiki</span>
+                    <div class="btn-icon">
+                        <i class="ph-light ph-book-open"></i>
+                    </div>
+                </a>
+            </div>
 
-                    <div class="grid">
-                        <div class="card">
-                            <h3>Works When the Internet Doesn't</h3>
-                            <p>Most smart homes break the moment your internet connection drops. By keeping all the
-                                decision-making
-                                right inside your house, your lights, alarms, and cameras react instantly—even during
-                                internet outages or loadshedding.</p>
-                        </div>
-                        <div class="card span-2" id="ohmbase">
-                            <h3>Learn How We Do It</h3>
-                            <p>Explore <strong>The OhmBase</strong>, our comprehensive DIY wiki. We don't hide our
-                                secrets. Use our step-by-step guides and simple wiring diagrams to upgrade your home
-                                yourself for free—or hire us to get it done for you.</p>
-                        </div>
+            <!-- Floating Bezel Frame Logo -->
+            <div class="logo-backdrop-container reveal-item">
+                <div class="logo-bezel-outer">
+                    <div class="logo-bezel-inner">
+                        <img src="InfinityOhm_Logo.webp" alt="Infinity Ohm Technologies" class="hero-logo-img">
                     </div>
                 </div>
             </div>
         </section>
+
+        <!-- Features Bento Grid -->
+        <section class="features-section container" aria-label="Main features">
+            <div class="bento-grid">
+                
+                <!-- Card 1: On-Site Installation -->
+                <div class="bezel-card-outer col-span-7 reveal-item">
+                    <div class="bezel-card-inner">
+                        <div class="card-icon">
+                            <i class="ph-light ph-wrench"></i>
+                        </div>
+                        <h3 class="card-title">On-Site Installation & Support</h3>
+                        <p class="card-desc">We do the heavy lifting. We integrate and configure your smart home hub on-site, upgrading your existing alarm panels, outdoor beams, and sensors into one seamless, easy-to-use smart home system.</p>
+                    </div>
+                </div>
+
+                <!-- Card 2: Reliable Hardware Sales -->
+                <div class="bezel-card-outer col-span-5 reveal-item accent-glow">
+                    <div class="bezel-card-inner">
+                        <div class="card-icon">
+                            <i class="ph-light ph-cpu"></i>
+                        </div>
+                        <h3 class="card-title">Reliable Hardware Sales</h3>
+                        <p class="card-desc">We only sell what we trust. Source the exact smart switches, relays, and sensors we use in our own professional installations. Everything in our store is tested to work perfectly in home labs without relying on cloud subscriptions.</p>
+                    </div>
+                </div>
+
+                <!-- Card 3: The FutureHome Hub -->
+                <div class="bezel-card-outer col-span-5 reveal-item">
+                    <div class="bezel-card-inner">
+                        <div class="card-icon">
+                            <i class="ph-light ph-hard-drives"></i>
+                        </div>
+                        <h3 class="card-title">The FutureHome Hub</h3>
+                        <p class="card-desc">In active development: The 8OHM Omni-Board. A custom-built smart brain for your home designed to connect directly to your DB board with built-in support for older alarm systems, gate motors, outdoor beams and security lighting.</p>
+                    </div>
+                </div>
+
+                <!-- Card 4: Works offline -->
+                <div class="bezel-card-outer col-span-7 reveal-item accent-glow">
+                    <div class="bezel-card-inner">
+                        <div class="card-icon">
+                            <i class="ph-light ph-cloud-slash"></i>
+                        </div>
+                        <h3 class="card-title">Works When the Internet Doesn't</h3>
+                        <p class="card-desc">Most smart homes break the moment your internet connection drops. By keeping all the decision-making right inside your house, your lights, alarms, and cameras react instantly—even during internet outages or loadshedding.</p>
+                    </div>
+                </div>
+
+                <!-- Card 5 (Editorial Split): Learn How We Do It -->
+                <div class="bezel-card-outer col-span-12 reveal-item" id="ohmbase">
+                    <div class="bezel-card-inner editorial-card">
+                        <div class="editorial-left">
+                            <div class="card-icon">
+                                <i class="ph-light ph-book-open"></i>
+                            </div>
+                            <h3 class="card-title">Learn How We Do It</h3>
+                            <p class="card-desc">Explore <strong>The OhmBase</strong>, our comprehensive DIY wiki. We don't hide our secrets. Use our step-by-step guides and simple wiring diagrams to upgrade your home yourself for free—or hire us to get it done for you.</p>
+                            <a href="#ohmbase" class="btn btn-secondary">
+                                <span>DIY Guides & Wiki</span>
+                                <div class="btn-icon">
+                                    <i class="ph-light ph-arrow-right"></i>
+                                </div>
+                            </a>
+                        </div>
+                        <div class="editorial-right">
+                            <div class="mock-diagram">
+                                <div class="mock-header">
+                                    <span class="mock-dot red"></span>
+                                    <span class="mock-dot yellow"></span>
+                                    <span class="mock-dot green"></span>
+                                    <span class="mock-title">ohmbase_smart_relay.yaml</span>
+                                </div>
+                                <pre class="mock-code"><code><span class="yaml-key">esphome</span>:
+  <span class="yaml-key">name</span>: <span class="yaml-val">ohm-relay-01</span>
+
+<span class="yaml-key">esp8266</span>:
+  <span class="yaml-key">board</span>: <span class="yaml-val">esp01_1m</span>
+
+<span class="yaml-comment"># Local automation fallback</span>
+<span class="yaml-key">binary_sensor</span>:
+  - <span class="yaml-key">platform</span>: <span class="yaml-val">gpio</span>
+    <span class="yaml-key">pin</span>: <span class="yaml-val">GPIO0</span>
+    <span class="yaml-key">name</span>: <span class="yaml-val">"Physical Switch"</span>
+    <span class="yaml-key">on_press</span>:
+      - <span class="yaml-key">switch.toggle</span>: <span class="yaml-val">relay_1</span>
+
+<span class="yaml-key">switch</span>:
+  - <span class="yaml-key">platform</span>: <span class="yaml-val">gpio</span>
+    <span class="yaml-key">pin</span>: <span class="yaml-val">GPIO2</span>
+    <span class="yaml-key">name</span>: <span class="yaml-val">"Ohm Relay Channel 1"</span>
+    <span class="yaml-key">id</span>: <span class="yaml-val">relay_1</span></code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
     </main>
 
+    <!-- Footer -->
     <footer>
         <div class="container">
-            <p>&copy; 2026 Infinity Ohm Technologies. All rights reserved. Engineering custom secure hardware & software
-                solutions.</p>
+            <p class="footer-text">&copy; 2026 Infinity Ohm Technologies. All rights reserved. Engineering custom secure hardware & software solutions.</p>
         </div>
     </footer>
 
+    <!-- Contact Modal -->
     <div id="contactModal" class="modal-overlay">
-        <div class="modal-content">
-            <button class="close-btn" id="closeContactBtn">&times;</button>
-            <h2>Get in Touch</h2>
-            <form action="#" method="POST">
-                <div class="form-group">
-                    <label for="name">Name</label>
-                    <input type="text" id="name" name="name" required placeholder="John Doe">
-                </div>
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required placeholder="john@example.com">
-                </div>
-                <div class="form-group">
-                    <label for="message">How can we help?</label>
-                    <textarea id="message" name="message" rows="5" required
-                        placeholder="Tell us about your home and what you'd like to automate or upgrade..."></textarea>
-                </div>
-                <button type="submit" class="cta-btn submit-btn">Send Message</button>
-            </form>
+        <div class="modal-bezel-outer">
+            <div class="modal-content">
+                <button class="close-btn" id="closeContactBtn" aria-label="Close modal">
+                    <i class="ph-light ph-x"></i>
+                </button>
+                <h2 class="modal-title">Get in Touch</h2>
+                <p class="modal-subtitle">Tell us about your home and what you'd like to automate or upgrade.</p>
+                
+                <form action="#" method="POST">
+                    <div class="form-group">
+                        <label for="name">Name</label>
+                        <input type="text" id="name" name="name" required placeholder="John Doe">
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required placeholder="john@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="message">How can we help?</label>
+                        <textarea id="message" name="message" rows="4" required placeholder="Tell us about your home and what you'd like to automate or upgrade..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary submit-btn">
+                        <span>Send Message</span>
+                        <div class="btn-icon">
+                            <i class="ph-light ph-paper-plane-tilt"></i>
+                        </div>
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 
+    <!-- Scripting for Motion & Modal -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // Modal Elements
             const modal = document.getElementById('contactModal');
-            const openBtn = document.getElementById('openContactBtn');
+            const openBtns = [
+                document.getElementById('openContactBtn'),
+                document.getElementById('openContactBtnHero')
+            ];
             const closeBtn = document.getElementById('closeContactBtn');
 
             // Open Modal
-            openBtn.addEventListener('click', () => {
-                modal.classList.add('active');
-                document.body.style.overflow = 'hidden'; // Prevents background scrolling when modal is open
+            openBtns.forEach(btn => {
+                if (btn) {
+                    btn.addEventListener('click', () => {
+                        modal.classList.add('active');
+                        document.body.style.overflow = 'hidden'; // Prevents background scroll
+                    });
+                }
             });
 
-            // Close Modal via 'X' button
-            closeBtn.addEventListener('click', () => {
+            // Close Modal
+            const closeModal = () => {
                 modal.classList.remove('active');
-                document.body.style.overflow = 'auto'; // Restores scrolling
-            });
+                document.body.style.overflow = 'auto'; // Restores background scroll
+            };
 
-            // Close Modal via clicking outside the modal content
+            closeBtn.addEventListener('click', closeModal);
+
+            // Close modal when clicking on overlay background
             window.addEventListener('click', (e) => {
                 if (e.target === modal) {
-                    modal.classList.remove('active');
-                    document.body.style.overflow = 'auto';
+                    closeModal();
                 }
             });
 
-            // Close Modal via Escape key
+            // Close modal on Escape key press
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && modal.classList.contains('active')) {
-                    modal.classList.remove('active');
-                    document.body.style.overflow = 'auto';
+                    closeModal();
                 }
+            });
+
+            // Interactive Mouse-Move Magnetic Background Glow
+            document.addEventListener('mousemove', (e) => {
+                const orbs = document.querySelectorAll('.glow-orb');
+                const x = e.clientX / window.innerWidth;
+                const y = e.clientY / window.innerHeight;
+                
+                orbs.forEach((orb, index) => {
+                    const speed = (index + 1) * 20;
+                    const dx = (x - 0.5) * speed;
+                    const dy = (y - 0.5) * speed;
+                    orb.style.transform = `translate(${dx}px, ${dy}px)`;
+                });
+            });
+
+            // IntersectionObserver for Staggered Scroll-Reveal Entry
+            const revealOptions = {
+                root: null,
+                rootMargin: '0px',
+                threshold: 0.1
+            };
+
+            const revealObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach((entry, index) => {
+                    if (entry.isIntersecting) {
+                        // Apply slight stagger when elements are revealed
+                        setTimeout(() => {
+                            entry.target.classList.add('revealed');
+                        }, index * 80);
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, revealOptions);
+
+            document.querySelectorAll('.reveal-item').forEach(item => {
+                revealObserver.observe(item);
             });
         });
     </script>
