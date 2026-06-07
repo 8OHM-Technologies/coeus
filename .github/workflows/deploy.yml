@@ -20,8 +20,10 @@ jobs:
           filters: |
             backend:
               - 'Dockerfile.*'
-              - 'requirements.txt'
+              - 'requirements*.txt'
               - 'control_plane/**'
+              - 'extraction_workers/**'
+              - 'solver/**'
 
   # 2. Build and Push (Only runs if 'detect-changes' found backend updates)
   build-and-push:

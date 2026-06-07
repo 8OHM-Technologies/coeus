@@ -7,7 +7,7 @@ services:
       - "--port=5432"
       - "${INSTANCE_CONNECTION_NAME}"
     environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /config/infinity-ohm-cloud-project-ba3373ab9eb5.json
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
     volumes:
       - ~/.config/gcloud:/config:ro
     networks:
@@ -90,10 +90,7 @@ services:
     depends_on:
       - cloud-sql-proxy
     entrypoint: >
-      /bin/bash -c "
-      airflow db upgrade &&
-      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@coeus.local || true &&
-      (airflow webserver & airflow scheduler & wait)"
+      /bin/bash -c " airflow db upgrade && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@coeus.local || true && (airflow webserver & airflow scheduler & wait)"
     env_file:
       - .env
     environment:

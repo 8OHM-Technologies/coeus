@@ -21,6 +21,8 @@ if not HOST_DATA_PATH:
         "Falling back to /tmp/coeus_data."
     )
 
+host_workers_path = os.path.join(os.path.dirname(HOST_DATA_PATH), "extraction_workers")
+
 if not API_URL:
     logger.warning("Environment variable COEUS_API_URL is not set.")
 
@@ -142,6 +144,11 @@ for blueprint in blueprints:
                 type="bind",
             ),
             Mount(
+                source=host_workers_path,
+                target="/app/extraction_workers",
+                type="bind",
+            ),
+            Mount(
                 source="huggingface_cache",
                 target="/root/.cache/huggingface",
                 type="volume",
@@ -173,7 +180,10 @@ for blueprint in blueprints:
             mounts=[
                 Mount(
                     source=HOST_DATA_PATH, target="/app/data/scraped_pdfs", type="bind"
-                )
+                ),
+                Mount(
+                    source=host_workers_path, target="/app/extraction_workers", type="bind"
+                ),
             ],
             dag=dag,
         )
