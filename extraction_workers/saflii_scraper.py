@@ -11,6 +11,14 @@ from urllib.parse import urlparse
 from playwright.async_api import async_playwright
 from utils import fetch_pipeline_config
 
+try:
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+    HAS_GDRIVE_LIBS = True
+except ImportError:
+    HAS_GDRIVE_LIBS = False
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -109,6 +117,101 @@ EXTRACT_METADATA_JS = """
         };
     }
 """
+
+
+def load_gdrive_credentials(extraction_params):
+    if not HAS_GDRIVE_LIBS:
+        raise ImportError("Google client libraries (google-api-python-client, google-auth) are not installed.")
+    
+    scopes = ["https://www.googleapis.com/auth/drive"]
+    
+    creds_param = extraction_params.get("gdrive_credentials")
+    if creds_param:
+        if isinstance(creds_param, dict):
+            logger.info("Loading Google Drive credentials from dictionary in extraction_params.")
+            return service_account.Credentials.from_service_account_info(creds_param, scopes=scopes)
+        elif isinstance(creds_param, str):
+            try:
+                info = json.loads(creds_param)
+                logger.info("Loading Google Drive credentials from JSON string in extraction_params.")
+                return service_account.Credentials.from_service_account_info(info, scopes=scopes)
+            except json.JSONDecodeError:
+                if os.path.exists(creds_param):
+                    logger.info(f"Loading Google Drive credentials from file path in extraction_params: {creds_param}")
+                    return service_account.Credentials.from_service_account_file(creds_param, scopes=scopes)
+                else:
+                    logger.warning(f"Credentials path in extraction_params does not exist: {creds_param}")
+
+    env_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if env_path and os.path.exists(env_path):
+        logger.info(f"Loading Google Drive credentials from GOOGLE_APPLICATION_CREDENTIALS: {env_path}")
+        return service_account.Credentials.from_service_account_file(env_path, scopes=scopes)
+
+    search_paths = [
+        "/app/data/infinity-ohm-cloud-project-880d29f3549c.json",
+        "/app/data/gdrive_credentials.json",
+        "/config/infinity-ohm-cloud-project-880d29f3549c.json",
+        os.path.expanduser("~/.config/gcloud/infinity-ohm-cloud-project-880d29f3549c.json")
+    ]
+    for path in search_paths:
+        if os.path.exists(path):
+            logger.info(f"Loading Google Drive credentials from candidate path: {path}")
+            return service_account.Credentials.from_service_account_file(path, scopes=scopes)
+
+    raise FileNotFoundError("Google Drive credentials not found.")
+
+
+def list_gdrive_files(service, folder_id):
+    files = set()
+    page_token = None
+    while True:
+        try:
+            query = f"'{folder_id}' in parents and trashed = false"
+            response = service.files().list(
+                q=query,
+                spaces="drive",
+                fields="nextPageToken, files(id, name)",
+                pageToken=page_token
+            ).execute()
+            for f in response.get("files", []):
+                files.add(f["name"])
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        except Exception as e:
+            logger.error(f"Error listing Google Drive files: {e}")
+            raise
+    return files
+
+
+def upload_file_to_gdrive(service, file_path, folder_id):
+    file_name = os.path.basename(file_path)
+    logger.info(f"Uploading {file_name} to Google Drive...")
+    
+    if file_path.endswith(".pdf"):
+        mime_type = "application/pdf"
+    elif file_path.endswith(".json"):
+        mime_type = "application/json"
+    else:
+        mime_type = "application/octet-stream"
+        
+    file_metadata = {
+        "name": file_name,
+        "parents": [folder_id]
+    }
+    media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
+    
+    try:
+        file_obj = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id"
+        ).execute()
+        logger.info(f"Successfully uploaded {file_name} to Google Drive (ID: {file_obj.get('id')})")
+        return True
+    except Exception as e:
+        logger.error(f"Error uploading {file_name} to Google Drive: {e}")
+        return False
 
 
 async def find_turnstile_frame(page):
@@ -299,6 +402,53 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output directory: {os.path.abspath(output_dir)}")
 
+    manifest_path = os.path.join(output_dir, "saflii_manifest.json")
+    manifest = set()
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest_data = json.load(f)
+                if isinstance(manifest_data, list):
+                    manifest = set(manifest_data)
+                elif isinstance(manifest_data, dict) and "downloaded_files" in manifest_data:
+                    manifest = set(manifest_data["downloaded_files"])
+            logger.info(f"Loaded {len(manifest)} files from local manifest: {manifest_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load manifest file {manifest_path}: {e}")
+
+    # Scan output directory for any existing files to populate manifest
+    for fname in os.listdir(output_dir):
+        if fname.endswith((".pdf", ".json")):
+            manifest.add(fname)
+
+    gdrive_folder_id = extraction_params.get("gdrive_folder_id")
+    gdrive_delete_local = extraction_params.get("gdrive_delete_local", False)
+    gdrive_service = None
+    gdrive_files = set()
+
+    if gdrive_folder_id:
+        logger.info("Google Drive integration is enabled.")
+        try:
+            creds = load_gdrive_credentials(extraction_params)
+            gdrive_service = build("drive", "v3", credentials=creds)
+            logger.info("Fetching existing files from Google Drive folder...")
+            gdrive_files = list_gdrive_files(gdrive_service, gdrive_folder_id)
+            logger.info(f"Found {len(gdrive_files)} existing files on Google Drive.")
+            manifest.update(gdrive_files)
+        except Exception as e:
+            logger.error(f"Failed to initialize Google Drive: {e}")
+            sys.exit(1)
+
+    def save_manifest():
+        try:
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump({"downloaded_files": sorted(list(manifest))}, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to save manifest file {manifest_path}: {e}")
+
+    # Save manifest initially to persist any newly scanned files
+    save_manifest()
+
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser (headless={headless})...")
         launch_kwargs = {"headless": headless}
@@ -343,11 +493,11 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 json_name = f"{court_name}_{year}_{seq}.json"
                 json_path = os.path.join(output_dir, json_name)
 
-                pdf_exists = os.path.exists(file_path)
-                json_exists = os.path.exists(json_path)
+                pdf_exists = os.path.exists(file_path) or file_name in manifest
+                json_exists = os.path.exists(json_path) or json_name in manifest
 
                 if pdf_exists and json_exists:
-                    logger.info(f"  [-] Skipping (PDF and JSON exist): {file_name}")
+                    logger.info(f"  [-] Skipping (PDF and JSON exist in local/manifest/GDrive): {file_name}")
                     seq += 1
                     continue
 
@@ -387,6 +537,18 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                             with open(json_path, "w", encoding="utf-8") as f:
                                 json.dump(metadata, f, indent=2, ensure_ascii=False)
                             logger.info(f"  [+] Saved metadata: {json_name}")
+                            manifest.add(json_name)
+                            save_manifest()
+
+                            if gdrive_service:
+                                if upload_file_to_gdrive(gdrive_service, json_path, gdrive_folder_id):
+                                    gdrive_files.add(json_name)
+                                    if gdrive_delete_local:
+                                        try:
+                                            os.remove(json_path)
+                                            logger.info(f"  [+] Deleted local metadata file: {json_name}")
+                                        except Exception as e:
+                                            logger.warning(f"Failed to delete local file {json_name}: {e}")
                         else:
                             logger.warning(f"  [!] No metadata extracted for {case_url}")
                             if not need_pdf:
@@ -402,6 +564,18 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                             with open(file_path, "wb") as f:
                                 f.write(pdf_bytes)
                             logger.info(f"  [+] Downloaded: {file_name}")
+                            manifest.add(file_name)
+                            save_manifest()
+
+                            if gdrive_service:
+                                if upload_file_to_gdrive(gdrive_service, file_path, gdrive_folder_id):
+                                    gdrive_files.add(file_name)
+                                    if gdrive_delete_local:
+                                        try:
+                                            os.remove(file_path)
+                                            logger.info(f"  [+] Deleted local PDF file: {file_name}")
+                                        except Exception as e:
+                                            logger.warning(f"Failed to delete local file {file_name}: {e}")
                         else:
                             if pdf_result_status == 404:
                                 logger.warning(
