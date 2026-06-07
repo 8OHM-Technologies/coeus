@@ -11,10 +11,13 @@
     <!-- Premium Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet">
 
     <!-- Phosphor Icons (Light & Thin variants) -->
-    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/light/style.css" />
+    <link rel="stylesheet" type="text/css"
+        href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/light/style.css" />
 
     <style>
         /* --- Global Reset & Custom Properties --- */
@@ -27,19 +30,21 @@
         :root {
             --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
             --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-            
+
             --color-bg: #050505;
             --color-surface-outer: rgba(255, 255, 255, 0.02);
             --color-surface-inner: #0b0e12;
             --color-border-outer: rgba(255, 255, 255, 0.05);
             --color-border-inner: rgba(255, 255, 255, 0.03);
-            
-            --color-accent-primary: #ff8800; /* Warm Copper / Orange */
-            --color-accent-secondary: #8dd7da; /* Electric Cyan */
+
+            --color-accent-primary: #ff8800;
+            /* Warm Copper / Orange */
+            --color-accent-secondary: #8dd7da;
+            /* Electric Cyan */
             --color-text-primary: #ffffff;
             --color-text-secondary: #94a3b8;
             --color-text-muted: #475569;
-            
+
             --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
         }
 
@@ -85,7 +90,7 @@
         .orb-1 {
             width: 600px;
             height: 600px;
-            background: radial-gradient(circle, var(--color-accent-primary) 0%, rgba(255,136,0,0) 70%);
+            background: radial-gradient(circle, var(--color-accent-primary) 0%, rgba(255, 136, 0, 0) 70%);
             top: -15%;
             left: -10%;
         }
@@ -93,7 +98,7 @@
         .orb-2 {
             width: 700px;
             height: 700px;
-            background: radial-gradient(circle, var(--color-accent-secondary) 0%, rgba(141,215,218,0) 70%);
+            background: radial-gradient(circle, var(--color-accent-secondary) 0%, rgba(141, 215, 218, 0) 70%);
             bottom: -15%;
             right: -10%;
         }
@@ -101,7 +106,7 @@
         .orb-3 {
             width: 500px;
             height: 500px;
-            background: radial-gradient(circle, #ff3c00 0%, rgba(255,60,0,0) 70%);
+            background: radial-gradient(circle, #ff3c00 0%, rgba(255, 60, 0, 0) 70%);
             top: 40%;
             left: 35%;
         }
@@ -109,7 +114,7 @@
         .grid-overlay {
             position: absolute;
             inset: 0;
-            background-image: 
+            background-image:
                 linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
                 linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
             background-size: 64px 64px;
@@ -148,7 +153,7 @@
             justify-content: space-between;
             width: 100%;
             max-width: 900px;
-            box-shadow: 
+            box-shadow:
                 0 10px 40px rgba(0, 0, 0, 0.5),
                 inset 0 1px 1px rgba(255, 255, 255, 0.05);
             transition: all 0.5s var(--ease-premium);
@@ -390,70 +395,6 @@
             transform: translate(2px, -2px);
         }
 
-        /* --- Floating Centerpiece (Logo Showcase) --- */
-        .logo-backdrop-container {
-            display: flex;
-            justify-content: center;
-            margin: 64px auto 96px;
-            max-width: 680px;
-            width: 100%;
-            z-index: 10;
-            position: relative;
-        }
-
-        .logo-bezel-outer {
-            background: var(--color-surface-outer);
-            border: 1px solid var(--color-border-outer);
-            padding: 8px;
-            border-radius: 36px;
-            width: 100%;
-            box-shadow: 
-                0 30px 60px rgba(0, 0, 0, 0.7),
-                0 0 100px rgba(255, 136, 0, 0.04);
-            transition: all 0.6s var(--ease-premium);
-        }
-
-        .logo-bezel-outer:hover {
-            border-color: rgba(255, 136, 0, 0.2);
-            box-shadow: 
-                0 40px 80px rgba(0, 0, 0, 0.8),
-                0 0 120px rgba(255, 136, 0, 0.08);
-        }
-
-        .logo-bezel-inner {
-            background: linear-gradient(185deg, #0f131a 0%, #050505 100%);
-            border-radius: 28px;
-            border: 1px solid var(--color-border-inner);
-            padding: 56px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05);
-        }
-
-        .logo-bezel-inner::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(circle at center, rgba(255, 136, 0, 0.06) 0%, transparent 75%);
-        }
-
-        .hero-logo-img {
-            max-width: 100%;
-            height: auto;
-            max-height: 180px;
-            object-fit: contain;
-            z-index: 1;
-            filter: drop-shadow(0 15px 30px rgba(0,0,0,0.6));
-            transition: transform 0.6s var(--ease-premium);
-        }
-
-        .logo-bezel-outer:hover .hero-logo-img {
-            transform: scale(1.02);
-        }
-
         /* --- Bento Grid Layout & Double-Bezel Cards --- */
         .features-section {
             position: relative;
@@ -468,10 +409,21 @@
             margin-top: 48px;
         }
 
-        .col-span-12 { grid-column: span 12; }
-        .col-span-7 { grid-column: span 7; }
-        .col-span-6 { grid-column: span 6; }
-        .col-span-5 { grid-column: span 5; }
+        .col-span-12 {
+            grid-column: span 12;
+        }
+
+        .col-span-7 {
+            grid-column: span 7;
+        }
+
+        .col-span-6 {
+            grid-column: span 6;
+        }
+
+        .col-span-5 {
+            grid-column: span 5;
+        }
 
         .bezel-card-outer {
             background: var(--color-surface-outer);
@@ -486,14 +438,14 @@
             transform: translateY(-8px);
             background: rgba(255, 255, 255, 0.03);
             border-color: rgba(255, 136, 0, 0.25);
-            box-shadow: 
+            box-shadow:
                 0 25px 50px rgba(0, 0, 0, 0.6),
                 0 0 50px rgba(255, 136, 0, 0.04);
         }
 
         .bezel-card-outer.accent-glow:hover {
             border-color: rgba(141, 215, 218, 0.3);
-            box-shadow: 
+            box-shadow:
                 0 25px 50px rgba(0, 0, 0, 0.6),
                 0 0 50px rgba(141, 215, 218, 0.05);
         }
@@ -501,7 +453,8 @@
         .bezel-card-inner {
             background: var(--color-surface-inner);
             padding: 40px;
-            border-radius: 22px; /* calc(28px - 6px) */
+            border-radius: 22px;
+            /* calc(28px - 6px) */
             border: 1px solid var(--color-border-inner);
             width: 100%;
             display: flex;
@@ -606,9 +559,9 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            box-shadow: 
+            box-shadow:
                 0 20px 40px rgba(0, 0, 0, 0.6),
-                inset 0 1px 0 rgba(255,255,255,0.05);
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
         }
 
         .mock-header {
@@ -626,9 +579,17 @@
             border-radius: 50%;
         }
 
-        .mock-dot.red { background: #ff5f56; }
-        .mock-dot.yellow { background: #ffbd2e; }
-        .mock-dot.green { background: #27c93f; }
+        .mock-dot.red {
+            background: #ff5f56;
+        }
+
+        .mock-dot.yellow {
+            background: #ffbd2e;
+        }
+
+        .mock-dot.green {
+            background: #27c93f;
+        }
 
         .mock-title {
             color: var(--color-text-muted);
@@ -649,9 +610,17 @@
             height: 100%;
         }
 
-        .mock-code .yaml-key { color: var(--color-accent-secondary); }
-        .mock-code .yaml-val { color: #ffffff; }
-        .mock-code .yaml-comment { color: var(--color-text-muted); }
+        .mock-code .yaml-key {
+            color: var(--color-accent-secondary);
+        }
+
+        .mock-code .yaml-val {
+            color: #ffffff;
+        }
+
+        .mock-code .yaml-comment {
+            color: var(--color-text-muted);
+        }
 
         /* --- Footer --- */
         footer {
@@ -710,7 +679,8 @@
             background: var(--color-surface-inner);
             border: 1px solid var(--color-border-inner);
             padding: 40px;
-            border-radius: 26px; /* calc(32px - 6px) */
+            border-radius: 26px;
+            /* calc(32px - 6px) */
             position: relative;
             box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
             display: flex;
@@ -721,7 +691,7 @@
             position: absolute;
             top: 24px;
             right: 24px;
-            background: rgba(255,255,255,0.03);
+            background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--color-border-outer);
             color: var(--color-text-secondary);
             width: 36px;
@@ -736,8 +706,8 @@
 
         .close-btn:hover {
             color: var(--color-text-primary);
-            background: rgba(255,255,255,0.08);
-            border-color: rgba(255,255,255,0.15);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
         }
 
         .close-btn i {
@@ -791,7 +761,7 @@
             outline: none;
             border-color: var(--color-accent-primary);
             background-color: rgba(255, 255, 255, 0.02);
-            box-shadow: 
+            box-shadow:
                 0 0 20px rgba(255, 136, 0, 0.12),
                 inset 0 1px 2px rgba(0, 0, 0, 0.2);
         }
@@ -811,8 +781,8 @@
         .reveal-item {
             opacity: 0;
             transform: translateY(32px);
-            transition: 
-                opacity 1.2s var(--ease-premium), 
+            transition:
+                opacity 1.2s var(--ease-premium),
                 transform 1.2s var(--ease-premium),
                 filter 1.2s var(--ease-premium);
             filter: blur(8px);
@@ -836,53 +806,70 @@
             .navbar-wrapper {
                 padding: 16px;
             }
+
             .navbar {
                 padding: 8px 8px 8px 16px;
                 gap: 16px;
             }
+
             .nav-status {
                 display: none;
             }
+
             .hero {
                 padding: 140px 0 60px;
             }
+
             .hero-title {
                 font-size: 2.4rem;
                 letter-spacing: -1px;
             }
+
             .hero-tagline {
                 font-size: 1.1rem;
             }
+
             .cta-group {
                 flex-direction: column;
                 width: 100%;
                 max-width: 320px;
             }
+
             .btn {
                 width: 100%;
                 justify-content: space-between;
             }
+
             .logo-bezel-inner {
                 padding: 36px;
             }
+
             .bento-grid {
                 grid-template-columns: 1fr;
                 gap: 16px;
             }
-            .col-span-12, .col-span-7, .col-span-6, .col-span-5 {
+
+            .col-span-12,
+            .col-span-7,
+            .col-span-6,
+            .col-span-5 {
                 grid-column: span 1 !important;
             }
+
             .bezel-card-inner {
                 padding: 28px;
             }
+
             .editorial-card {
                 flex-direction: column;
                 gap: 32px;
                 padding: 28px;
             }
+
             .editorial-right {
                 min-width: 100%;
             }
+
             .mock-code {
                 padding: 16px;
             }
@@ -895,6 +882,7 @@
                 filter: none !important;
                 transition: none !important;
             }
+
             .glow-orb {
                 animation: none !important;
                 transform: none !important;
@@ -921,7 +909,7 @@
                 <span class="brand-logo-dot"></span>
                 <span class="brand-text">8OHM</span>
             </a>
-            
+
             <div class="nav-status">
                 <span class="status-dot"></span>
                 <span class="status-text">Local Smart Home Automation</span>
@@ -950,7 +938,9 @@
             </h1>
 
             <p class="hero-tagline reveal-item">
-                You don't need to throw away your reliable, hardwired alarm, gate motor or intercom system to get a modern smart home. We upgrade your existing security and home systems into a single, easy-to-use smart network that works perfectly even when the internet is down. No monthly subscriptions, absolute privacy.
+                You don't need to throw away your reliable, hardwired alarm, gate motor or intercom system to get a
+                modern smart home. We upgrade your existing security and home systems into a single, easy-to-use smart
+                network that works perfectly even when the internet is down. No monthly subscriptions, absolute privacy.
             </p>
 
             <div class="cta-group reveal-item">
@@ -973,21 +963,12 @@
                     </div>
                 </a>
             </div>
-
-            <!-- Floating Bezel Frame Logo -->
-            <div class="logo-backdrop-container reveal-item">
-                <div class="logo-bezel-outer">
-                    <div class="logo-bezel-inner">
-                        <img src="InfinityOhm_Logo.webp" alt="Infinity Ohm Technologies" class="hero-logo-img">
-                    </div>
-                </div>
-            </div>
         </section>
 
         <!-- Features Bento Grid -->
         <section class="features-section container" aria-label="Main features">
             <div class="bento-grid">
-                
+
                 <!-- Card 1: On-Site Installation -->
                 <div class="bezel-card-outer col-span-7 reveal-item">
                     <div class="bezel-card-inner">
@@ -995,7 +976,9 @@
                             <i class="ph-light ph-wrench"></i>
                         </div>
                         <h3 class="card-title">On-Site Installation & Support</h3>
-                        <p class="card-desc">We do the heavy lifting. We integrate and configure your smart home hub on-site, upgrading your existing alarm panels, outdoor beams, and sensors into one seamless, easy-to-use smart home system.</p>
+                        <p class="card-desc">We do the heavy lifting. We integrate and configure your smart home hub
+                            on-site, upgrading your existing alarm panels, outdoor beams, and sensors into one seamless,
+                            easy-to-use smart home system.</p>
                     </div>
                 </div>
 
@@ -1006,7 +989,9 @@
                             <i class="ph-light ph-cpu"></i>
                         </div>
                         <h3 class="card-title">Reliable Hardware Sales</h3>
-                        <p class="card-desc">We only sell what we trust. Source the exact smart switches, relays, and sensors we use in our own professional installations. Everything in our store is tested to work perfectly in home labs without relying on cloud subscriptions.</p>
+                        <p class="card-desc">We only sell what we trust. Source the exact smart switches, relays, and
+                            sensors we use in our own professional installations. Everything in our store is tested to
+                            work perfectly in home labs without relying on cloud subscriptions.</p>
                     </div>
                 </div>
 
@@ -1017,7 +1002,9 @@
                             <i class="ph-light ph-hard-drives"></i>
                         </div>
                         <h3 class="card-title">The FutureHome Hub</h3>
-                        <p class="card-desc">In active development: The 8OHM Omni-Board. A custom-built smart brain for your home designed to connect directly to your DB board with built-in support for older alarm systems, gate motors, outdoor beams and security lighting.</p>
+                        <p class="card-desc">In active development: The 8OHM Omni-Board. A custom-built smart brain for
+                            your home designed to connect directly to your DB board with built-in support for older
+                            alarm systems, gate motors, outdoor beams and security lighting.</p>
                     </div>
                 </div>
 
@@ -1028,7 +1015,9 @@
                             <i class="ph-light ph-cloud-slash"></i>
                         </div>
                         <h3 class="card-title">Works When the Internet Doesn't</h3>
-                        <p class="card-desc">Most smart homes break the moment your internet connection drops. By keeping all the decision-making right inside your house, your lights, alarms, and cameras react instantly—even during internet outages or loadshedding.</p>
+                        <p class="card-desc">Most smart homes break the moment your internet connection drops. By
+                            keeping all the decision-making right inside your house, your lights, alarms, and cameras
+                            react instantly—even during internet outages or loadshedding.</p>
                     </div>
                 </div>
 
@@ -1040,7 +1029,9 @@
                                 <i class="ph-light ph-book-open"></i>
                             </div>
                             <h3 class="card-title">Learn How We Do It</h3>
-                            <p class="card-desc">Explore <strong>The OhmBase</strong>, our comprehensive DIY wiki. We don't hide our secrets. Use our step-by-step guides and simple wiring diagrams to upgrade your home yourself for free—or hire us to get it done for you.</p>
+                            <p class="card-desc">Explore <strong>The OhmBase</strong>, our comprehensive DIY wiki. We
+                                don't hide our secrets. Use our step-by-step guides and simple wiring diagrams to
+                                upgrade your home yourself for free—or hire us to get it done for you.</p>
                             <a href="#ohmbase" class="btn btn-secondary">
                                 <span>DIY Guides & Wiki</span>
                                 <div class="btn-icon">
@@ -1087,7 +1078,8 @@
     <!-- Footer -->
     <footer>
         <div class="container">
-            <p class="footer-text">&copy; 2026 Infinity Ohm Technologies. All rights reserved. Engineering custom secure hardware & software solutions.</p>
+            <p class="footer-text">&copy; 2026 Infinity Ohm Technologies. All rights reserved. Engineering custom secure
+                hardware & software solutions.</p>
         </div>
     </footer>
 
@@ -1100,7 +1092,7 @@
                 </button>
                 <h2 class="modal-title">Get in Touch</h2>
                 <p class="modal-subtitle">Tell us about your home and what you'd like to automate or upgrade.</p>
-                
+
                 <form action="#" method="POST">
                     <div class="form-group">
                         <label for="name">Name</label>
@@ -1112,7 +1104,8 @@
                     </div>
                     <div class="form-group">
                         <label for="message">How can we help?</label>
-                        <textarea id="message" name="message" rows="4" required placeholder="Tell us about your home and what you'd like to automate or upgrade..."></textarea>
+                        <textarea id="message" name="message" rows="4" required
+                            placeholder="Tell us about your home and what you'd like to automate or upgrade..."></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary submit-btn">
                         <span>Send Message</span>
@@ -1173,7 +1166,7 @@
                 const orbs = document.querySelectorAll('.glow-orb');
                 const x = e.clientX / window.innerWidth;
                 const y = e.clientY / window.innerHeight;
-                
+
                 orbs.forEach((orb, index) => {
                     const speed = (index + 1) * 20;
                     const dx = (x - 0.5) * speed;
