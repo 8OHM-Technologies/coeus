@@ -39,6 +39,47 @@ async def run_extraction(
     if not category:
         category = extraction_params.get("category")
 
+    # Determine execution targets based on priority
+    # If search_keyword is provided, ignore all categories
+    categories = []
+    if search_keyword:
+        loops = [{"search_keyword": search_keyword, "category": None}]
+    else:
+        if category:
+            if isinstance(category, list):
+                categories = [str(c).strip() for c in category if str(c).strip()]
+            elif isinstance(category, str):
+                # Try parsing as JSON list, fallback to splitting by comma
+                stripped = category.strip()
+                if (stripped.startswith("[") and stripped.endswith("]")) or (
+                    stripped.startswith("{") and stripped.endswith("}")
+                ):
+                    try:
+                        parsed = json.loads(category)
+                        if isinstance(parsed, list):
+                            categories = [
+                                str(c).strip() for c in parsed if str(c).strip()
+                            ]
+                        elif isinstance(parsed, dict):
+                            categories = [
+                                str(c).strip() for c in parsed.values() if str(c).strip()
+                            ]
+                        else:
+                            categories = [str(parsed).strip()]
+                    except Exception:
+                        categories = [
+                            c.strip() for c in category.split(",") if c.strip()
+                        ]
+                else:
+                    categories = [c.strip() for c in category.split(",") if c.strip()]
+            else:
+                categories = [str(category).strip()]
+
+        if categories:
+            loops = [{"search_keyword": None, "category": cat} for cat in categories]
+        else:
+            loops = [{"search_keyword": None, "category": None}]
+
     # Standardized Selectors from DB or fallback to defaults
     doc_selector = config.get("target_css_selector_documents") or "a[id*='HyperLink1_']"
 
@@ -46,7 +87,8 @@ async def run_extraction(
     logger.info(f"🚀 COEUS MANTECH WORKER INITIALIZED (PIPELINE: {pipeline_name})")
     logger.info(f"Target URL: {start_url}")
     logger.info(f"Search Keyword: {search_keyword}")
-    logger.info(f"Category: {category}")
+    logger.info(f"Categories: {categories}")
+    logger.info(f"Execution Loops: {len(loops)}")
     logger.info("==================================================")
 
     product_urls = []
@@ -60,83 +102,104 @@ async def run_extraction(
         page = await context.new_page()
 
         try:
-            # 1. Navigate to the base URL
-            logger.info(f"Navigating to {start_url}...")
-            await page.goto(start_url)
+            for idx, loop in enumerate(loops):
+                current_category = loop["category"]
+                current_search = loop["search_keyword"]
 
-            # 2. Select Category (If provided)
-            if category:
-                logger.info(f"Selecting category '{category}'...")
-                await page.locator("#ContentPlaceHolder1_ListBox1").select_option(
-                    category
+                logger.info(
+                    f"Processing target {idx + 1}/{len(loops)} (Category: {current_category}, Search: {current_search})"
                 )
-                await page.wait_for_load_state("networkidle")
-                await asyncio.sleep(2)
+                try:
+                    # 1. Navigate to the base URL
+                    logger.info(f"Navigating to {start_url}...")
+                    await page.goto(start_url)
 
-            # 3. Execute Search (If provided)
-            if search_keyword:
-                logger.info(f"Searching for '{search_keyword}'...")
-                await page.locator("input[name='ctl00$SearchTextBox']").fill(
-                    search_keyword
-                )
-                await page.locator("input[name='ctl00$SearchButton']").click()
-                await page.wait_for_load_state("networkidle")
-
-            # 4. Change pagination to 100 items
-            logger.info("Setting pagination to 100 items...")
-            if await page.locator("#ContentPlaceHolder1_PagerDropDownList").count() > 0:
-                await page.locator(
-                    "#ContentPlaceHolder1_PagerDropDownList"
-                ).select_option("100")
-                await page.wait_for_load_state("networkidle")
-                await asyncio.sleep(2)  # Give the WebForms grid time to re-render
-
-            # --- DYNAMIC PAGINATION CALCULATION ---
-            max_pages = 1
-            record_label = page.locator("#ContentPlaceHolder1_Label62")
-            if await record_label.count() > 0:
-                label_text = await record_label.inner_text()
-                # Expected format: "Displaying records 1 to 100 of 294"
-                logger.info(f"Record label found: '{label_text}'")
-                match = re.search(r"of\s+(\d+)", label_text)
-                if match:
-                    total_records = int(match.group(1))
-                    max_pages = math.ceil(total_records / 100)
-                    logger.info(
-                        f"Parsed {total_records} total records. Calculated {max_pages} pages."
-                    )
-                else:
-                    logger.warning(
-                        f"Could not parse record count from: '{label_text}'. Defaulting to 1 page."
-                    )
-            else:
-                logger.warning(
-                    "Record count label (#ContentPlaceHolder1_Label62) not found. Defaulting to 1 page."
-                )
-
-            # 5. Extract URLs across pages
-            for current_page in range(max_pages):
-                logger.info(f"Extracting links from table page {current_page + 1}...")
-
-                # Target the Stock Code links
-                links = await page.locator(doc_selector).all()
-
-                for link in links:
-                    href = await link.get_attribute("href")
-                    if href and "ProductInfo.aspx" in href:
-                        full_url = urljoin("https://www.mantech.co.za/", href)
-                        product_urls.append(full_url)
-
-                # Check if we need to click the "Next" button for more table pages
-                if current_page < max_pages - 1:
-                    next_btn = page.locator("a:has-text('Next')").first
-                    if await next_btn.is_visible():
-                        await next_btn.click()
+                    # 2. Select Category (If provided)
+                    if current_category:
+                        logger.info(f"Selecting category '{current_category}'...")
+                        await page.locator(
+                            "#ContentPlaceHolder1_ListBox1"
+                        ).select_option(current_category)
                         await page.wait_for_load_state("networkidle")
                         await asyncio.sleep(2)
+
+                    # 3. Execute Search (If provided)
+                    if current_search:
+                        logger.info(f"Searching for '{current_search}'...")
+                        await page.locator("input[name='ctl00$SearchTextBox']").fill(
+                            current_search
+                        )
+                        await page.locator("input[name='ctl00$SearchButton']").click()
+                        await page.wait_for_load_state("networkidle")
+
+                    # 4. Change pagination to 100 items
+                    logger.info("Setting pagination to 100 items...")
+                    if (
+                        await page.locator(
+                            "#ContentPlaceHolder1_PagerDropDownList"
+                        ).count()
+                        > 0
+                    ):
+                        await page.locator(
+                            "#ContentPlaceHolder1_PagerDropDownList"
+                        ).select_option("100")
+                        await page.wait_for_load_state("networkidle")
+                        await asyncio.sleep(
+                            2
+                        )  # Give the WebForms grid time to re-render
+
+                    # --- DYNAMIC PAGINATION CALCULATION ---
+                    max_pages = 1
+                    record_label = page.locator("#ContentPlaceHolder1_Label62")
+                    if await record_label.count() > 0:
+                        label_text = await record_label.inner_text()
+                        # Expected format: "Displaying records 1 to 100 of 294"
+                        logger.info(f"Record label found: '{label_text}'")
+                        match = re.search(r"of\s+(\d+)", label_text)
+                        if match:
+                            total_records = int(match.group(1))
+                            max_pages = math.ceil(total_records / 100)
+                            logger.info(
+                                f"Parsed {total_records} total records. Calculated {max_pages} pages."
+                            )
+                        else:
+                            logger.warning(
+                                f"Could not parse record count from: '{label_text}'. Defaulting to 1 page."
+                            )
                     else:
-                        logger.info("No more pages available.")
-                        break
+                        logger.warning(
+                            "Record count label (#ContentPlaceHolder1_Label62) not found. Defaulting to 1 page."
+                        )
+
+                    # 5. Extract URLs across pages
+                    for current_page in range(max_pages):
+                        logger.info(
+                            f"Extracting links from table page {current_page + 1}..."
+                        )
+
+                        # Target the Stock Code links
+                        links = await page.locator(doc_selector).all()
+
+                        for link in links:
+                            href = await link.get_attribute("href")
+                            if href and "ProductInfo.aspx" in href:
+                                full_url = urljoin("https://www.mantech.co.za/", href)
+                                product_urls.append(full_url)
+
+                        # Check if we need to click the "Next" button for more table pages
+                        if current_page < max_pages - 1:
+                            next_btn = page.locator("a:has-text('Next')").first
+                            if await next_btn.is_visible():
+                                await next_btn.click()
+                                await page.wait_for_load_state("networkidle")
+                                await asyncio.sleep(2)
+                            else:
+                                logger.info("No more pages available.")
+                                break
+                except Exception as e:
+                    logger.error(
+                        f"Error gathering URLs for category '{current_category}' / search '{current_search}': {e}"
+                    )
 
             # Deduplicate URLs just in case
             product_urls = list(set(product_urls))
@@ -266,7 +329,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--category",
-        help="The category to select (overrides config)",
+        help="The category or categories (comma-separated) to select (overrides config)",
     )
     args = parser.parse_args()
 
