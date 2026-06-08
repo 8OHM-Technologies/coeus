@@ -104,7 +104,7 @@ services:
       - ./data:/app/data
       - huggingface_cache:/app/huggingface_cache
       - ./extraction_workers:/app/extraction_workers
-      - ./solver:/app/solver
+      - ./misstcha:/app/misstcha
     networks:
       - 8ohm-network
     command: tail -f /dev/null

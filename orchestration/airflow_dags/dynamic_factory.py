@@ -114,7 +114,7 @@ for blueprint in blueprints:
         docker_url="unix://var/run/docker.sock",
         network_mode="8ohm-network",
         environment={
-            "PYTHONPATH": "/app:/app/solver/src",
+            "PYTHONPATH": "/app",
             "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
             "PIPELINE_CONFIG": os.getenv(
                 "COEUS_API_URL"
@@ -171,7 +171,7 @@ for blueprint in blueprints:
             docker_url="unix://var/run/docker.sock",
             network_mode="8ohm-network",
             environment={
-                "PYTHONPATH": "/app:/app/solver/src",
+                "PYTHONPATH": "/app",
                 "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
                 "PIPELINE_NAME": blueprint["pipeline_id"],
                 "EXTRACTION_INSTRUCTIONS": blueprint["phase_2_extraction"].get(

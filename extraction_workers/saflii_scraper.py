@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from playwright.async_api import async_playwright
 from utils import fetch_pipeline_config
+from misstcha import TurnstileSolver
 
 try:
     from google.oauth2 import service_account
@@ -214,34 +215,7 @@ def upload_file_to_gdrive(service, file_path, folder_id):
         return False
 
 
-async def find_turnstile_frame(page):
-    for _ in range(10):
-        for frame in page.frames:
-            if "challenges.cloudflare.com" in frame.url:
-                return frame
-        await asyncio.sleep(0.5)
-    return None
-
-
-async def solve_turnstile_checkbox(page, turnstile_frame):
-    logger.info("  [!] Cloudflare Turnstile challenge detected. Attempting to solve...")
-    await asyncio.sleep(7)
-
-    frame_el = await turnstile_frame.frame_element()
-    if not frame_el:
-        return False
-
-    box = await frame_el.bounding_box()
-    if not box:
-        return False
-
-    click_x = box["x"] + 30
-    click_y = box["y"] + 32
-    logger.info(f"  [!] Clicking verification checkbox at ({click_x}, {click_y})")
-    await page.mouse.move(click_x, click_y)
-    await asyncio.sleep(0.3)
-    await page.mouse.click(click_x, click_y)
-    return True
+turnstile_solver = TurnstileSolver()
 
 
 async def wait_for_metadata_after_turnstile(page):
@@ -249,7 +223,7 @@ async def wait_for_metadata_after_turnstile(page):
         await asyncio.sleep(1)
         if await page.locator(".metaDataLabel").count() > 0:
             return True
-        if not await find_turnstile_frame(page):
+        if not await turnstile_solver.find_turnstile_frame(page):
             return await page.locator(".metaDataLabel").count() > 0
     return False
 
@@ -279,9 +253,8 @@ async def scrape_case_metadata(page, case_url):
     if status == 404:
         return None, 404
 
-    turnstile_frame = await find_turnstile_frame(page)
-    if turnstile_frame:
-        await solve_turnstile_checkbox(page, turnstile_frame)
+    solve_res = await turnstile_solver.solve(page)
+    if solve_res["success"]:
         await wait_for_metadata_after_turnstile(page)
     else:
         try:
@@ -321,9 +294,8 @@ async def download_pdf(
     if status == 404:
         return None, 404, content_type
 
-    turnstile_frame = await find_turnstile_frame(page)
-    if turnstile_frame:
-        await solve_turnstile_checkbox(page, turnstile_frame)
+    solve_res = await turnstile_solver.solve(page)
+    if solve_res["success"]:
         logger.info("  [!] Click sent. Starting polling fetch loop...")
 
         for _ in range(40):

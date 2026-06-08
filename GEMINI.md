@@ -7,7 +7,7 @@ COEUS is a distributed data platform for automated scraping, extraction, and ana
 - **Extracted Data (Django):** Manages entity, target, and record metadata. Located in `control_plane/extracted_data/`.
 - **Orchestrator (Apache Airflow):** Dynamically generates DAGs based on Control Plane configurations. Located in `orchestration/`.
 - **Extraction Workers:** Ephemeral containers running Playwright/BeautifulSoup scrapers. Located in `extraction_workers/`.
-- **HCaptcha Solver:** Vision-based solver using Hugging Face models (Grounding DINO, Qwen). Located in `solver/`.
+- **Captcha Solver (misstcha):** Extensible CAPTCHA and Turnstile solver package. Located in `misstcha/`.
 - **Storage:** PostgreSQL for state and orchestration history. Local/S3 for documents.
 
 ## 🛠️ Key Technical Features
@@ -17,7 +17,7 @@ The orchestrator polls the Django API at `http://coeus-control-plane:8001/api/pi
 
 ### 2. Adaptive Scraping Strategy
 Based on `PipelineConfiguration`, the system selects the appropriate worker script:
-- `sedarplus_scraper.py` for SEDAR+ (supports dynamic document types, Playwright + Solver).
+- `sedarplus_scraper.py` for SEDAR+ (supports dynamic document types, Playwright + misstcha).
 - `sabinet_scraper.py` for Sabinet CCMA Labor Awards (index extraction, Playwright).
 - `sabinet_detail_scraper.py` for Sabinet Award Details (follows index JSON, Playwright).
 - `ccma_playwright_scraper.py` for CCMA (multi-category traversal + download utility, Playwright).
@@ -27,8 +27,8 @@ Based on `PipelineConfiguration`, the system selects the appropriate worker scri
 - `livestainable_scraper.py` for Livestainable Products (e-commerce catalog, Playwright).
 - `lotto_scraper.py` for South African lotto results (national lottery parser, Playwright).
 
-### 3. AI-Powered hCaptcha Solver
-Uses `VisionManager` for object detection and `PromptTranslator` for prompt engineering. Slices the 3x3 grid for high-precision inference.
+### 3. AI-Powered Captcha Bypass (misstcha)
+Uses `VisionManager` for object detection and `PromptTranslator` for prompt engineering to bypass hCaptcha challenges, and `TurnstileSolver` to resolve Cloudflare Turnstile barriers.
 
 ## 🚀 Development Guide
 
@@ -59,11 +59,11 @@ The system is fully containerized.
 - `extraction_workers/sabinet_detail_scraper.py`: Playwright scraper for Sabinet details.
 - `extraction_workers/judiciary_scraper.py`: Playwright scraper for South African Judiciary.
 - `orchestration/airflow_dags/dynamic_factory.py`: Airflow DAG generator.
-- `solver/src/solver/solver.py`: hCaptcha solving orchestration.
+- `misstcha/`: Captcha/Turnstile solver package.
 
 ## 📂 Project Structure
 - `control_plane/`: Django source code.
 - `extraction_workers/`: Scraping scripts and LLM extraction logic.
 - `orchestration/`: Airflow configuration and dynamic DAGs.
-- `solver/`: Vision and LLM models for CAPTCHA bypass.
+- `misstcha/`: Captcha/Turnstile solver package containing BaseSolver, HCaptchaSolver, and TurnstileSolver.
 - `data/`: Local storage for scraped outputs and debug snapshots.

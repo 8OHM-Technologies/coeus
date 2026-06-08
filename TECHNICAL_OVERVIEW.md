@@ -141,7 +141,7 @@ Implemented via `DockerOperator` executing `ghcr.io/8ohm-technologies/coeus-work
 
 - **Environment Variable Injection**:
   Airflow extracts parameters from the blueprint and maps them into container-accessible variables:
-  - `PYTHONPATH`: `/app:/app/solver/src`
+  - `PYTHONPATH`: `/app`
   - `HF_TOKEN`: Hugging Face Hub token (read from Scheduler environment).
   - `PIPELINE_CONFIG`: Set to `COEUS_API_URL`.
   - `START_URL`: Ingest start URL.
