@@ -69,9 +69,7 @@ services:
       - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "python control_plane/manage.py migrate &&
-      python control_plane/manage.py collectstatic --noinput &&
-      gunicorn core.wsgi:application --chdir control_plane --bind 0.0.0.0:8001 --workers 3"
+      bash -c "python control_plane/manage.py migrate && python control_plane/manage.py collectstatic --noinput && gunicorn core.wsgi:application --chdir control_plane --bind 0.0.0.0:8001 --workers 3"
     restart: always
 
   # ---------------------------------------------------------
