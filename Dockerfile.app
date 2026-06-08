@@ -14,7 +14,7 @@ RUN pip install --upgrade pip
 COPY requirements-app.txt .
 RUN pip install --no-cache-dir -r requirements-app.txt
 
-COPY . .
+COPY control_plane/ ./control_plane/
 
 EXPOSE 8001
 

@@ -14,7 +14,8 @@ RUN playwright install --with-deps chromium
 
 RUN mkdir -p /app/data/scraped_pdfs
 
-COPY . .
+COPY extraction_workers/ ./extraction_workers/
+COPY solver/ ./solver/
 
 # CMD ["celery", "-A", "coeus", "worker"]
 CMD ["tail", "-f", "/dev/null"]

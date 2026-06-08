@@ -1,0 +1,14 @@
+FROM node:24
+LABEL maintainer "requarks.io"
+
+RUN apt-get update && \
+    apt-get install -y bash curl git python3 make g++ nano gnupg && \
+    mkdir -p /app
+
+WORKDIR /app
+
+COPY ./ohmbase .
+
+EXPOSE 3000
+
+CMD ["node", "server"]

@@ -160,6 +160,7 @@ services:
       - "traefik.http.routers.airflow.entrypoints=websecure"
       - "traefik.http.routers.airflow.tls=true"
       - "traefik.http.services.airflow.loadbalancer.server.port=8080"
+      - "traefik.docker.network=8ohm-network"
     command: >
       bash -c "airflow db upgrade && airflow webserver"
 
@@ -181,6 +182,45 @@ services:
       - "traefik.http.routers.landing-page.tls=true"
       - "traefik.http.services.landing-page.loadbalancer.server.port=80"
       - "traefik.docker.network=8ohm-network"
+
+  # ---------------------------------------------------------
+  # 6a. ohmbase Application (Wiki.js)
+  # ---------------------------------------------------------
+  ohmbase:
+    image: ghcr.io/requarks/wiki:2
+    container_name: coeus-ohmbase
+    depends_on:
+      - cloud-sql-proxy
+    env_file:
+      - .env
+    environment:
+      - DB_TYPE=postgres
+      - DB_HOST=cloud-sql-proxy
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASS=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB}
+      - UPGRADE_COMPANION=1
+    networks:
+      - 8ohm-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ohmbase.rule=Host(`ohmbase.8ohm.co.za`)"
+      - "traefik.http.services.ohmbase.loadbalancer.server.port=3000"
+      - "traefik.docker.network=8ohm-network"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------
+  # 6b. ohmbase Update Companion
+  # ---------------------------------------------------------
+  ohmbase_update_companion:
+    image: ghcr.io/requarks/wiki-update-companion:latest
+    container_name: coeus-ohmbase-update-companion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - 8ohm-network
+    restart: unless-stopped
 
 volumes:
   traefik_certificates:

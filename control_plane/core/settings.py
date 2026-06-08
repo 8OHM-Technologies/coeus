@@ -31,6 +31,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "coeus.localhost",
+    "control-plane.localhost",
     "0.0.0.0",
     "control-plane.8ohm.co.za",
 ]

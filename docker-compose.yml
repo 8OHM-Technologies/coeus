@@ -25,17 +25,23 @@ services:
   traefik:
     image: traefik:latest
     container_name: coeus-traefik
+    environment:
+      - TZ=Africa/Johannesburg
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
+      - "--log.level=DEBUG"
+      - "--log.filePath=/logs/traefik.log"
+      - "--accesslog.filePath=/logs/access.log"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.endpoint=unix:///var/run/docker.sock"
       - "--entrypoints.web.address=:80"
     ports:
-      - "81:80"
+      - "80:80"
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./ohmbase/logs:/logs
     networks:
       - 8ohm-network
     restart: always
@@ -51,8 +57,6 @@ services:
     image: coeus_app_image
     depends_on:
       - cloud-sql-proxy
-    ports:
-      - "8001:8001"
     env_file:
       - .env
     environment:
@@ -60,8 +64,12 @@ services:
       DJANGO_SUPERUSER_USERNAME: admin
       DJANGO_SUPERUSER_EMAIL: admin@coeus.local
       DJANGO_SUPERUSER_PASSWORD: admin
+      DEBUG: "True"
+    ports:
+      - "8001:8001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./control_plane:/app/control_plane
     networks:
       - 8ohm-network
     labels:
@@ -95,6 +103,8 @@ services:
     volumes:
       - ./data:/app/data
       - huggingface_cache:/app/huggingface_cache
+      - ./extraction_workers:/app/extraction_workers
+      - ./solver:/app/solver
     networks:
       - 8ohm-network
     command: tail -f /dev/null
@@ -110,6 +120,8 @@ services:
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - cloud-sql-proxy
+    ports:
+      - "9002:8080"
     env_file:
       - .env
     environment:
@@ -183,6 +195,47 @@ services:
       - "traefik.http.routers.landing-page.rule=Host(`8ohm.localhost`) || Host(`localhost`)"
       - "traefik.http.services.landing-page.loadbalancer.server.port=80"
       - "traefik.docker.network=8ohm-network"
+
+  # ---------------------------------------------------------
+  # 6a. ohmbase Application (Wiki.js)
+  # ---------------------------------------------------------
+  ohmbase:
+    build:
+      context: .
+      dockerfile: Dockerfile.ohmbase
+    container_name: coeus-ohmbase
+    depends_on:
+      - cloud-sql-proxy
+    env_file:
+      - .env
+    environment:
+      - DB_TYPE=postgres
+      - DB_HOST=cloud-sql-proxy
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASS=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB}
+      - UPGRADE_COMPANION=1
+    networks:
+      - 8ohm-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ohmbase.rule=Host(`ohmbase.localhost`) || Host(`localhost`)"
+      - "traefik.http.services.ohmbase.loadbalancer.server.port=3000"
+      - "traefik.docker.network=8ohm-network"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------
+  # 6b. ohmbase Update Companion
+  # ---------------------------------------------------------
+  ohmbase_update_companion:
+    image: ghcr.io/requarks/wiki-update-companion:latest
+    container_name: coeus-ohmbase-update-companion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - 8ohm-network
+    restart: unless-stopped
 
 volumes:
   huggingface_cache:
