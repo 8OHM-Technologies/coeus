@@ -75,58 +75,67 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 
 
-      - name: Prepare writable deploy paths
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            set -euo pipefail
-            mkdir -p /home/deploy-user/coeus/orchestration/airflow_dags
-            mkdir -p /home/deploy-user/coeus/extraction_workers
-            mkdir -p /home/deploy-user/coeus/data
-            # CI cannot fix ownership when sudo requires a password.
-            # Fail early with a clear message instead of failing later in SCP.
-            if [ ! -w /home/deploy-user/coeus/orchestration/airflow_dags ] || [ ! -w /home/deploy-user/coeus/extraction_workers ] || [ ! -w /home/deploy-user/coeus/data ]; then
-              echo "ERROR: deploy-user cannot write Airflow bind-mount dirs."
-              echo "Run once on VPS as root:"
-              echo "chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
-              echo "chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
-              exit 1
-            fi
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Prepare writable deploy paths
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 10
+          command: |
+            ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -s' <<'EOF'
+              set -euo pipefail
+              mkdir -p /home/deploy-user/coeus/orchestration/airflow_dags
+              mkdir -p /home/deploy-user/coeus/extraction_workers
+              mkdir -p /home/deploy-user/coeus/data
+              # CI cannot fix ownership when sudo requires a password.
+              # Fail early with a clear message instead of failing later in SCP.
+              if [ ! -w /home/deploy-user/coeus/orchestration/airflow_dags ] || [ ! -w /home/deploy-user/coeus/extraction_workers ] || [ ! -w /home/deploy-user/coeus/data ]; then
+                echo "ERROR: deploy-user cannot write Airflow bind-mount dirs."
+                echo "Run once on VPS as root:"
+                echo "chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
+                echo "chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
+                exit 1
+              fi
+            EOF
 
       - name: Copy files to VPS
-        uses: appleboy/scp-action@a6e43c3aaf4e8e6b0b15bf34e19d71118f6b1ca7
+        uses: nick-fields/retry@v3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.prod.yml,landing_page,orchestration/airflow_dags,extraction_workers" 
-          target: "/home/deploy-user/coeus/"
-          strip_components: 0
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 10
+          command: |
+            set -o pipefail
+            tar czf - docker-compose.prod.yml landing_page orchestration/airflow_dags extraction_workers | ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "tar xzf - -C /home/deploy-user/coeus/"
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
+        uses: nick-fields/retry@v3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            set -euo pipefail
-            cd /home/deploy-user/coeus/
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 10
+          command: |
+            ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -s' <<'EOF'
+              set -euo pipefail
+              cd /home/deploy-user/coeus/
 
-            # Ensure bind-mounted DAG/worker paths are present and populated.
-            test -f orchestration/airflow_dags/dynamic_factory.py
-            test -n "$(ls -A extraction_workers)"
+              # Ensure bind-mounted DAG/worker paths are present and populated.
+              test -f orchestration/airflow_dags/dynamic_factory.py
+              test -n "$(ls -A extraction_workers)"
 
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d
+              echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+              
+              docker compose -f docker-compose.prod.yml pull
+              docker compose -f docker-compose.prod.yml up -d
 
-            # Fail fast if scheduler container still does not see DAG files.
-            docker exec coeus-airflow-scheduler test -f /opt/airflow/dags/dynamic_factory.py
-            docker exec coeus-airflow-scheduler sh -lc 'test -n "$(ls -A /opt/airflow/extraction_workers)"'
-            
-            docker image prune -f
+              # Fail fast if scheduler container still does not see DAG files.
+              docker exec coeus-airflow-scheduler test -f /opt/airflow/dags/dynamic_factory.py
+              docker exec coeus-airflow-scheduler sh -lc 'test -n "$(ls -A /opt/airflow/extraction_workers)"'
+              
+              docker image prune -f
+            EOF
