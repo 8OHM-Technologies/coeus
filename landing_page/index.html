@@ -6,7 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Infinity Ohm Technologies</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="msapplication-config" content="/browserconfig.xml">
+    <meta name="theme-color" content="#ffffff">
 
     <!-- Premium Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -508,6 +514,10 @@
             color: var(--color-accent-secondary);
         }
 
+        .bezel-card-outer.accent-glow:hover .card-icon i {
+            color: #050505;
+        }
+
         .card-title {
             font-family: var(--font-display);
             font-size: 1.5rem;
@@ -924,7 +934,7 @@
         <section class="hero container">
             <div class="eyebrow-badge reveal-item">
                 <span class="eyebrow-dot"></span>
-                <span class="eyebrow-text">SECURE SMART HOME SYSTEM</span>
+                <span class="eyebrow-text">Local Smart Home Security</span>
             </div>
 
             <h1 class="hero-title reveal-item">
@@ -933,25 +943,24 @@
             </h1>
 
             <p class="hero-tagline reveal-item">
-                You don't need to throw away your reliable, hardwired alarm, gate motor or intercom system to get a
-                modern smart home. We upgrade your existing security and home systems into a single, easy-to-use smart
-                network that works perfectly even when the internet is down. <br>No monthly subscriptions, absolute
-                privacy.
+                Don’t let your home's safety depend on an internet connection. We upgrade your existing alarm panels,
+                gate motors, intercoms, and lights into a unified local network that works perfectly offline. No monthly
+                subscriptions, absolute privacy.
             </p>
 
             <div class="cta-group reveal-item">
-                <a href="#shop" class="btn btn-primary">
-                    <span>Shop Components</span>
-                    <div class="btn-icon">
-                        <i class="ph-light ph-shopping-bag-open"></i>
-                    </div>
-                </a>
-                <button type="button" id="openContactBtnHero" class="btn btn-secondary">
-                    <span>Get in Touch</span>
+                <button type="button" id="openContactBtnHero" class="btn btn-primary">
+                    <span>Get a Free Quote</span>
                     <div class="btn-icon">
                         <i class="ph-light ph-arrow-up-right"></i>
                     </div>
                 </button>
+                <a href="#shop" class="btn btn-secondary">
+                    <span>Shop Offline Hardware</span>
+                    <div class="btn-icon">
+                        <i class="ph-light ph-shopping-bag-open"></i>
+                    </div>
+                </a>
                 <a href="#ohmbase" class="btn btn-secondary">
                     <span>DIY Guides & Wiki</span>
                     <div class="btn-icon">
@@ -972,9 +981,9 @@
                             <i class="ph-light ph-wrench"></i>
                         </div>
                         <h3 class="card-title">On-Site Installation & Support</h3>
-                        <p class="card-desc">We do the heavy lifting. We integrate and configure your smart home hub
-                            on-site, upgrading your existing alarm panel, outdoor beams, gate motors, and lighting into
-                            one seamless, easy-to-use smart home system.</p>
+                        <p class="card-desc">We do the heavy lifting for you. Our engineers integrate your existing
+                            wired alarm panels, outdoor beams, gate motors, and lighting into a single local dashboard.
+                            Get modern smart home convenience without rewiring your entire house.</p>
                     </div>
                 </div>
 
@@ -984,10 +993,10 @@
                         <div class="card-icon">
                             <i class="ph-light ph-cpu"></i>
                         </div>
-                        <h3 class="card-title">Reliable Hardware Sales</h3>
-                        <p class="card-desc">We only sell what we trust. Source the exact smart switches, relays, and
-                            sensors we use in our own professional installations. Everything in our store is tested to
-                            work perfectly in home labs without relying on cloud subscriptions.</p>
+                        <h3 class="card-title">Pre-Tested Offline Hardware</h3>
+                        <p class="card-desc">We only sell what we run in our own homes. Source pre-flashed, local-only
+                            smart switches, relays, and sensors that respond instantly. No hidden fees, no external
+                            servers, and complete compatibility with open standards.</p>
                     </div>
                 </div>
 
@@ -998,12 +1007,9 @@
                             <i class="ph-light ph-hard-drives"></i>
                         </div>
                         <h3 class="card-title">The FutureHome Hub</h3>
-                        <p class="card-desc">In active development: The 8OHM FutureHome Hub. A custom-built smart brain
-                            for your home designed to connect directly to your DB board, turning your old alarm systems,
-                            geysers,
-                            gate motors, outdoor beams, security lighting, and more into an all-in-one smart home
-                            system.
-                        </p>
+                        <p class="card-desc"><em>In active development:</em> The hardware brain for local automation.
+                            Installed directly at your distribution (DB) board, it links legacy analog security loops,
+                            geyser controllers, and gate triggers into a secure, modern network.</p>
                     </div>
                 </div>
 
@@ -1014,9 +1020,9 @@
                             <i class="ph-light ph-cloud-slash"></i>
                         </div>
                         <h3 class="card-title">Works When the Internet Doesn't</h3>
-                        <p class="card-desc">Most smart homes break the moment your internet connection drops. By
-                            keeping all the decision-making right inside your house, your lights, alarms, and cameras
-                            react instantly—even during internet outages or loadshedding.</p>
+                        <p class="card-desc">Most smart homes go blind during load-shedding or internet blackouts. By
+                            keeping all automation logic local, your security sensors, cameras, and gates respond
+                            instantly, keeping your home safe 24/7.</p>
                     </div>
                 </div>
 
@@ -1028,11 +1034,11 @@
                                 <i class="ph-light ph-book-open"></i>
                             </div>
                             <h3 class="card-title">Learn How We Do It</h3>
-                            <p class="card-desc">Explore <strong>The OhmBase</strong>, our comprehensive DIY wiki. We
-                                don't hide our secrets. Use our step-by-step guides and simple wiring diagrams to
-                                upgrade your home yourself for free—or hire us to get it done for you.</p>
+                            <p class="card-desc">We build in the open. Access our complete library of step-by-step
+                                wiring diagrams, configuration templates, and guides to build your own local smart home
+                                for free. You have full ownership—we’re here if you need us.</p>
                             <a href="#ohmbase" class="btn btn-secondary">
-                                <span>DIY Guides & Wiki</span>
+                                <span>Explore the OhmBase</span>
                                 <div class="btn-icon">
                                     <i class="ph-light ph-arrow-right"></i>
                                 </div>
@@ -1078,8 +1084,7 @@
     <footer>
         <div class="container">
             <p class="footer-text">&copy; 2026 Infinity Ohm Technologies Pty Ltd. All rights reserved.<br>Engineering
-                custom
-                secure hardware & software solutions.</p>
+                custom secure hardware & software solutions.</p>
         </div>
     </footer>
 
@@ -1091,7 +1096,7 @@
                     <i class="ph-light ph-x"></i>
                 </button>
                 <h2 class="modal-title">Get in Touch</h2>
-                <p class="modal-subtitle">Tell us about your home and what you'd like to automate or upgrade.</p>
+                <p class="modal-subtitle">Let's discuss your home and what you'd like to automate or secure.</p>
 
                 <form action="#" method="POST">
                     <div class="form-group">
@@ -1105,7 +1110,7 @@
                     <div class="form-group">
                         <label for="message">How can we help?</label>
                         <textarea id="message" name="message" rows="4" required
-                            placeholder="Tell us about your home and what you'd like to automate or upgrade..."></textarea>
+                            placeholder="Tell us about your home and what systems (alarms, gates, geysers) you would like to secure or automate..."></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary submit-btn">
                         <span>Send Message</span>
