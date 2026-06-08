@@ -206,6 +206,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ohmbase.rule=Host(`ohmbase.8ohm.co.za`)"
+      - "traefik.http.routers.ohmbase.entrypoints=websecure"
+      - "traefik.http.routers.ohmbase.tls=true"
       - "traefik.http.services.ohmbase.loadbalancer.server.port=3000"
       - "traefik.docker.network=8ohm-network"
     restart: unless-stopped
