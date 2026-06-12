@@ -4,7 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Infinity Ohm Technologies</title>
+    <title>8OHM | Enterprise Solutions & Custom Infrastructure</title>
+    <meta name="description" content="8OHM (Infinity Ohm Technologies) designs enterprise cloud-native web architectures, custom AI automation workflows, and developer-first hardware components. Home of Project COEUS.">
+    <meta name="keywords" content="8OHM, Infinity Ohm Technologies, Solutions Architecture, Project COEUS, AI Automation, ESPHome, Developer Hardware, Cloud Infrastructure">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -1040,6 +1042,271 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* --- B2B Navigation --- */
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+        }
+
+        .nav-link {
+            font-family: var(--font-body);
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            transition: all 0.3s ease;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-link:hover {
+            color: var(--color-accent-primary);
+            text-shadow: 0 0 8px rgba(255, 136, 0, 0.3);
+        }
+
+        /* --- Strategic Integration Architecture Diagram --- */
+        .coeus-diagram-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 5 / 3;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--color-border-outer);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.6);
+            margin: 0 auto;
+        }
+
+        .coeus-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .flow-base {
+            stroke: rgba(255, 255, 255, 0.05);
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .flow-path {
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-dasharray: 6 10;
+            animation: flow-anim 1.5s linear infinite;
+        }
+
+        .path-trigger {
+            stroke: var(--color-accent-primary);
+            filter: drop-shadow(0 0 3px rgba(255, 136, 0, 0.5));
+        }
+
+        .path-solve-req {
+            stroke: var(--color-accent-secondary);
+            filter: drop-shadow(0 0 3px rgba(141, 215, 218, 0.5));
+            animation-duration: 2s;
+        }
+
+        .path-solve-res {
+            stroke: var(--color-accent-secondary);
+            filter: drop-shadow(0 0 3px rgba(141, 215, 218, 0.5));
+            animation-direction: reverse;
+            animation-duration: 2s;
+        }
+
+        .path-store {
+            stroke: var(--color-accent-primary);
+            filter: drop-shadow(0 0 3px rgba(255, 136, 0, 0.5));
+            animation-duration: 1.2s;
+        }
+
+        @keyframes flow-anim {
+            to {
+                stroke-dashoffset: -16;
+            }
+        }
+
+        .diagram-node {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            background: rgba(11, 14, 18, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--color-border-inner);
+            border-radius: 12px;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 150px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            z-index: 2;
+            transition: all 0.3s ease;
+        }
+
+        .diagram-node:hover {
+            border-color: rgba(255, 136, 0, 0.3);
+            background: rgba(11, 14, 18, 0.9);
+            transform: translate(-50%, -52%);
+        }
+
+        .diagram-node.node-solver:hover {
+            border-color: rgba(141, 215, 218, 0.3);
+        }
+
+        .node-icon {
+            font-size: 1.25rem;
+            color: var(--color-accent-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .node-solver .node-icon {
+            color: var(--color-accent-secondary);
+        }
+
+        .node-content {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            text-align: left;
+        }
+
+        .node-title {
+            font-family: var(--font-display);
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        .node-subtitle {
+            font-size: 0.6rem;
+            color: var(--color-text-secondary);
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        .pulse-dot {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            width: 6px;
+            height: 6px;
+            background: var(--color-accent-primary);
+            border-radius: 50%;
+            box-shadow: 0 0 6px var(--color-accent-primary);
+            animation: node-pulse 2s infinite;
+        }
+
+        .pulse-dot-secondary {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            width: 6px;
+            height: 6px;
+            background: var(--color-accent-secondary);
+            border-radius: 50%;
+            box-shadow: 0 0 6px var(--color-accent-secondary);
+            animation: node-pulse-sec 2s infinite;
+        }
+
+        @keyframes node-pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 136, 0, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 6px rgba(255, 136, 0, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 136, 0, 0);
+            }
+        }
+
+        @keyframes node-pulse-sec {
+            0% {
+                box-shadow: 0 0 0 0 rgba(141, 215, 218, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 6px rgba(141, 215, 218, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(141, 215, 218, 0);
+            }
+        }
+
+        /* --- Select Dropdown Styling --- */
+        .form-group select {
+            width: 100%;
+            padding: 14px 16px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--color-border-outer);
+            border-radius: 12px;
+            color: var(--color-text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 256 256'%3E%3Cpath d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,164.69l74.34-74.34a8,8,0,0,1,11.32,11.32Z'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 16px center;
+            background-size: 16px;
+            padding-right: 40px;
+        }
+
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--color-accent-primary);
+            background-color: rgba(255, 255, 255, 0.02);
+            box-shadow:
+                0 0 20px rgba(255, 136, 0, 0.12),
+                inset 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        .form-group select option {
+            background-color: var(--color-surface-inner);
+            color: var(--color-text-primary);
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+            .coeus-diagram-container {
+                max-width: 100%;
+                margin-top: 24px;
+            }
+            .diagram-node {
+                width: 105px;
+                padding: 4px 6px;
+                gap: 4px;
+            }
+            .node-icon {
+                font-size: 0.9rem;
+            }
+            .node-title {
+                font-size: 0.55rem;
+            }
+            .node-subtitle {
+                font-size: 0.45rem;
+            }
+            .pulse-dot, .pulse-dot-secondary {
+                width: 4px;
+                height: 4px;
+            }
+        }
     </style>
 </head>
 
@@ -1062,14 +1329,13 @@
                 <span class="brand-text">8OHM</span>
             </a>
 
-            <button type="button" id="openContactBtn" class="nav-cta">
-                <span>Services</span>
-                <div class="nav-cta-icon">
-                    <i class="ph-light ph-arrow-up-right"></i>
-                </div>
-            </button>
+            <div class="nav-links">
+                <a href="#solutions" class="nav-link">Solutions</a>
+                <a href="#coeus" class="nav-link">Project COEUS</a>
+                <a href="#hardware" class="nav-link">Developer Kits</a>
+            </div>
 
-            <button type="button" id="openContactBtn" class="nav-cta">
+            <button type="button" class="nav-cta contact-trigger-btn" data-division="other">
                 <span>Contact Us</span>
                 <div class="nav-cta-icon">
                     <i class="ph-light ph-arrow-up-right"></i>
@@ -1087,31 +1353,29 @@
             </div>
 
             <h1 class="hero-title reveal-item">
-                Smart Home Security <br>You Can Actually Trust - <br>
-                <span class="gradient-text">No Cloud Required</span>
+                B2B Solutions Architecture & <br>
+                <span class="gradient-text">Distributed Data Engines</span>
             </h1>
 
             <p class="hero-tagline reveal-item">
-                Don’t let your home's safety depend on an internet connection or an unpaid subscription. We can upgrade
-                your existing alarm panels, gate motors, intercoms, and lights into a unified local network that works
-                perfectly offline. <br> No monthly subscriptions, local first, absolute privacy.
+                We design cloud-native web systems, orchestrate high-scale data pipelines, and engineer offline-first developer-first hardware. Tailored architecture and automation built for full data sovereignty, absolute privacy, and offline resilience.
             </p>
 
             <div class="cta-group reveal-item">
-                <button type="button" id="openContactBtnHero" class="btn btn-primary">
-                    <span>Get a Free Quote</span>
+                <button type="button" class="btn btn-primary contact-trigger-btn" data-division="solutions">
+                    <span>Consult with an Architect</span>
                     <div class="btn-icon">
                         <i class="ph-light ph-arrow-up-right"></i>
                     </div>
                 </button>
-                <a href="#shop" class="btn btn-secondary">
-                    <span>Shop Offline Hardware</span>
+                <a href="#coeus" class="btn btn-secondary">
+                    <span>Explore Project COEUS</span>
                     <div class="btn-icon">
-                        <i class="ph-light ph-shopping-bag-open"></i>
+                        <i class="ph-light ph-projector-screen"></i>
                     </div>
                 </a>
                 <a href="#ohmbase" class="btn btn-secondary">
-                    <span>DIY Guides & Wiki</span>
+                    <span>Developer Wiki</span>
                     <div class="btn-icon">
                         <i class="ph-light ph-book-open"></i>
                     </div>
@@ -1120,108 +1384,206 @@
         </section>
 
         <!-- Features Bento Grid -->
-        <section class="features-section container" aria-label="Main features">
+        <section class="features-section container" id="solutions" aria-label="Main divisions">
             <div class="bento-grid">
 
-                <!-- Card 1: On-Site Installation -->
+                <!-- Division 1: Solutions Architecture -->
                 <div class="bezel-card-outer col-span-7 reveal-item">
                     <div class="bezel-card-inner">
                         <div class="card-icon">
-                            <i class="ph-light ph-wrench"></i>
+                            <i class="ph-light ph-tree-structure"></i>
                         </div>
-                        <h3 class="card-title">On-Site Installation & Support</h3>
-                        <p class="card-desc">We do the heavy lifting for you. Our engineers integrate your existing
-                            wired alarm panels, outdoor beams, gate motors, and lighting into a single local dashboard.
-                            Get modern smart home convenience without rewiring your entire house.</p>
+                        <h3 class="card-title">Solutions Architecture</h3>
+                        <p class="card-desc" style="margin-bottom: 20px;">
+                            B2B consultation and engineering. We plan, validate, and blueprint robust cloud architectures, automation layers, and secure data pipelines for modern enterprises.
+                        </p>
+                        <ul style="list-style: none; display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; text-align: left;">
+                            <li style="display: flex; gap: 10px; align-items: flex-start; font-size: 0.9rem; color: var(--color-text-secondary);">
+                                <i class="ph-light ph-cpu" style="color: var(--color-accent-primary); font-size: 1.2rem; flex-shrink: 0; margin-top: 2px;"></i>
+                                <div>
+                                    <strong style="color: var(--color-text-primary);">AI Integration & Automation Blueprinting:</strong> Defining API boundaries, structured JSON schemas, and orchestration flows to safely inject LLMs into enterprise processes.
+                                </div>
+                            </li>
+                            <li style="display: flex; gap: 10px; align-items: flex-start; font-size: 0.9rem; color: var(--color-text-secondary);">
+                                <i class="ph-light ph-cloud" style="color: var(--color-accent-primary); font-size: 1.2rem; flex-shrink: 0; margin-top: 2px;"></i>
+                                <div>
+                                    <strong style="color: var(--color-text-primary);">Web & Cloud Infrastructure Design:</strong> Secure, cloud-native architectures utilizing modern IaC. We build data flow networks and secure perimeter controls.
+                                </div>
+                            </li>
+                            <li style="display: flex; gap: 10px; align-items: flex-start; font-size: 0.9rem; color: var(--color-text-secondary);">
+                                <i class="ph-light ph-shield-check" style="color: var(--color-accent-primary); font-size: 1.2rem; flex-shrink: 0; margin-top: 2px;"></i>
+                                <div>
+                                    <strong style="color: var(--color-text-primary);">IoT Edge & Embedded Systems:</strong> Engineering specifications, localized device telemetry, and hardware validation checklists for offline automation.
+                                </div>
+                            </li>
+                        </ul>
+                        <button type="button" class="btn btn-secondary contact-trigger-btn" data-division="solutions" style="align-self: flex-start; margin-top: auto;">
+                            <span>Request Architecture Blueprint</span>
+                            <div class="btn-icon">
+                                <i class="ph-light ph-arrow-right"></i>
+                            </div>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Card 2: Reliable Hardware Sales -->
-                <div class="bezel-card-outer col-span-5 reveal-item accent-glow">
+                <!-- Division 2: Components & Kits -->
+                <div class="bezel-card-outer col-span-5 reveal-item accent-glow" id="hardware">
                     <div class="bezel-card-inner">
                         <div class="card-icon">
                             <i class="ph-light ph-cpu"></i>
                         </div>
-                        <h3 class="card-title">Pre-Tested Offline Hardware</h3>
-                        <p class="card-desc">We only sell what we run in our own homes. Source pre-flashed, local-only
-                            smart switches, relays, and sensors that respond instantly. No hidden fees, no external
-                            servers, and complete compatibility with open standards.</p>
-                    </div>
-                </div>
-
-                <!-- Card 3: The FutureHome Hub -->
-                <div class="bezel-card-outer col-span-5 reveal-item">
-                    <div class="bezel-card-inner">
-                        <div class="card-icon">
-                            <i class="ph-light ph-hard-drives"></i>
+                        <h3 class="card-title">Developer Kits & Components</h3>
+                        <p class="card-desc" style="margin-bottom: 24px;">
+                            Developer-first, offline-only hardware modules engineered for absolute data sovereignty. Pre-flashed with ESPHome, our relays, sensors, and low-voltage triggers integrate seamlessly into Home Assistant and open ecosystems without cloud dependencies.
+                        </p>
+                        <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--color-border-inner); border-radius: 12px; padding: 16px; margin-bottom: 24px; font-family: 'Fira Code', monospace; font-size: 0.75rem; color: var(--color-text-secondary); text-align: left;">
+                            <span style="color: var(--color-text-muted);"># Offline ESPHome Config</span><br>
+                            <span style="color: var(--color-accent-primary);">api:</span><br>
+                            &nbsp;&nbsp;<span style="color: var(--color-accent-primary);">encryption:</span><br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span style="color: var(--color-accent-primary);">key:</span> <span style="color: var(--color-text-primary);">"static_psk_key..."</span><br>
+                            <span style="color: var(--color-accent-primary);">ota:</span><br>
+                            &nbsp;&nbsp;<span style="color: var(--color-accent-primary);">safe_mode:</span> <span style="color: var(--color-text-primary);">true</span>
                         </div>
-                        <h3 class="card-title">The FutureHome Hub</h3>
-                        <p class="card-desc"><em>In active development:</em> The hardware brain for local automation.
-                            Installed directly at your distribution (DB) board, it links legacy analog security loops,
-                            geyser controllers, and gate triggers into a secure, modern network. Without any third-party
-                            subscriptions or cloud dependancies.</p>
+                        <a href="#shop" class="btn btn-secondary" style="align-self: flex-start; margin-top: auto; width: 100%; justify-content: space-between;">
+                            <span>Shop Developer Hardware</span>
+                            <div class="btn-icon">
+                                <i class="ph-light ph-shopping-bag"></i>
+                            </div>
+                        </a>
                     </div>
                 </div>
 
-                <!-- Card 4: Works offline -->
-                <div class="bezel-card-outer col-span-7 reveal-item accent-glow">
-                    <div class="bezel-card-inner">
-                        <div class="card-icon">
-                            <i class="ph-light ph-cloud-slash"></i>
-                        </div>
-                        <h3 class="card-title">Works When the Internet Doesn't</h3>
-                        <p class="card-desc">Most smart homes go blind during internet blackouts. By keeping all
-                            automation logic local, your security sensors, cameras, and gates respond instantly,
-                            keeping your home safe 24/7.</p>
-                    </div>
-                </div>
-
-                <!-- Card 5 (Editorial Split): Learn How We Do It -->
-                <div class="bezel-card-outer col-span-12 reveal-item" id="ohmbase">
+                <!-- Division 3: Project COEUS (Editorial Split layout) -->
+                <div class="bezel-card-outer col-span-12 reveal-item" id="coeus">
                     <div class="bezel-card-inner editorial-card">
                         <div class="editorial-left">
-                            <div class="card-icon">
-                                <i class="ph-light ph-book-open"></i>
+                            <div class="card-icon" style="background: rgba(141, 215, 218, 0.04); border-color: rgba(141, 215, 218, 0.15);">
+                                <i class="ph-light ph-projector-screen" style="color: var(--color-accent-secondary);"></i>
                             </div>
-                            <h3 class="card-title">Learn How We Do It</h3>
-                            <p class="card-desc">We build in the open. Access our complete library of step-by-step
-                                wiring diagrams, configuration templates, and guides to build your own local smart home
-                                for free. You have full ownership—we’re here if you need us.</p>
-                            <a href="https://ohmbase.8ohm.co.za" class="btn btn-secondary">
-                                <span>Explore the OhmBase</span>
-                                <div class="btn-icon">
-                                    <i class="ph-light ph-arrow-right"></i>
+                            <h3 class="card-title">Project COEUS: Data Platform</h3>
+                            <p class="card-desc" style="margin-bottom: 20px;">
+                                A high-performance, distributed scraping and document-extraction engine. Built to traverse complex web environments, COEUS handles anti-bot measures, bypasses CAPTCHAs natively via AI vision solvers, and operates as an adaptive data pipeline managed by Apache Airflow.
+                            </p>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; text-align: left;">
+                                <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
+                                    <strong style="color: var(--color-text-primary); display: block; margin-bottom: 4px;">Dynamic DAG Factory:</strong> Orchestrates hundreds of scraper pipelines automatically based on active database configs.
                                 </div>
-                            </a>
+                                <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
+                                    <strong style="color: var(--color-text-primary); display: block; margin-bottom: 4px;">AI-Powered Solver:</strong> Natively integrates misstcha visual solvers to bypass Cloudflare Turnstile & hCaptcha.
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-primary contact-trigger-btn" data-division="coeus" style="align-self: flex-start;">
+                                <span>Request Pipeline Demo</span>
+                                <div class="btn-icon">
+                                    <i class="ph-light ph-arrow-up-right"></i>
+                                </div>
+                            </button>
                         </div>
                         <div class="editorial-right">
-                            <div class="mock-diagram">
-                                <div class="mock-header">
-                                    <span class="mock-dot red"></span>
-                                    <span class="mock-dot yellow"></span>
-                                    <span class="mock-dot green"></span>
-                                    <span class="mock-title">ohmbase_smart_relay.yaml</span>
+                            <!-- Strategic Integration Architecture Diagram -->
+                            <div class="coeus-diagram-container">
+                                <svg class="coeus-svg" viewBox="0 0 500 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <!-- Orchestrator to Worker -->
+                                    <path d="M 75 150 Q 150 240 250 240" class="flow-base" />
+                                    <path d="M 75 150 Q 150 240 250 240" class="flow-path path-trigger" />
+
+                                    <!-- Worker to Solver -->
+                                    <path d="M 240 240 L 240 60" class="flow-base" />
+                                    <path d="M 240 240 L 240 60" class="flow-path path-solve-req" />
+
+                                    <!-- Solver to Worker -->
+                                    <path d="M 260 60 L 260 240" class="flow-base" />
+                                    <path d="M 260 60 L 260 240" class="flow-path path-solve-res" />
+
+                                    <!-- Worker to Storage -->
+                                    <path d="M 250 240 Q 350 240 425 150" class="flow-base" />
+                                    <path d="M 250 240 Q 350 240 425 150" class="flow-path path-store" />
+                                </svg>
+
+                                <!-- Orchestrator Node -->
+                                <div class="diagram-node" style="left: 15%; top: 50%;">
+                                    <div class="node-icon"><i class="ph-light ph-git-branch"></i></div>
+                                    <div class="node-content">
+                                        <span class="node-title">Orchestrator</span>
+                                        <span class="node-subtitle">Apache Airflow</span>
+                                    </div>
+                                    <span class="pulse-dot"></span>
                                 </div>
-                                <pre class="mock-code"><code><span class="yaml-key">esphome</span>:
-  <span class="yaml-key">name</span>: <span class="yaml-val">ohm-relay-01</span>
 
-<span class="yaml-key">esp8266</span>:
-  <span class="yaml-key">board</span>: <span class="yaml-val">esp01_1m</span>
+                                <!-- AI Solver Node -->
+                                <div class="diagram-node node-solver" style="left: 50%; top: 20%;">
+                                    <div class="node-icon"><i class="ph-light ph-brain"></i></div>
+                                    <div class="node-content">
+                                        <span class="node-title">AI Captcha Solver</span>
+                                        <span class="node-subtitle">misstcha Vision</span>
+                                    </div>
+                                    <span class="pulse-dot-secondary"></span>
+                                </div>
 
-<span class="yaml-comment"># Local automation fallback</span>
-<span class="yaml-key">binary_sensor</span>:
-  - <span class="yaml-key">platform</span>: <span class="yaml-val">gpio</span>
-    <span class="yaml-key">pin</span>: <span class="yaml-val">GPIO0</span>
-    <span class="yaml-key">name</span>: <span class="yaml-val">"Physical Switch"</span>
-    <span class="yaml-key">on_press</span>:
-      - <span class="yaml-key">switch.toggle</span>: <span class="yaml-val">relay_1</span>
+                                <!-- Worker Node -->
+                                <div class="diagram-node" style="left: 50%; top: 80%;">
+                                    <div class="node-icon"><i class="ph-light ph-terminal-window"></i></div>
+                                    <div class="node-content">
+                                        <span class="node-title">Extraction Worker</span>
+                                        <span class="node-subtitle">Playwright / BS4</span>
+                                    </div>
+                                    <span class="pulse-dot"></span>
+                                </div>
 
-<span class="yaml-key">switch</span>:
-  - <span class="yaml-key">platform</span>: <span class="yaml-val">gpio</span>
-    <span class="yaml-key">pin</span>: <span class="yaml-val">GPIO2</span>
-    <span class="yaml-key">name</span>: <span class="yaml-val">"Ohm Relay Channel 1"</span>
-    <span class="yaml-key">id</span>: <span class="yaml-val">relay_1</span></code></pre>
+                                <!-- Storage Node -->
+                                <div class="diagram-node" style="left: 85%; top: 50%;">
+                                    <div class="node-icon"><i class="ph-light ph-database"></i></div>
+                                    <div class="node-content">
+                                        <span class="node-title">Secure Storage</span>
+                                        <span class="node-subtitle">Postgres & S3</span>
+                                    </div>
+                                    <span class="pulse-dot"></span>
+                                </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 4: DIY Wiki & OhmBase -->
+                <div class="bezel-card-outer col-span-6 reveal-item" id="ohmbase">
+                    <div class="bezel-card-inner">
+                        <div class="card-icon">
+                            <i class="ph-light ph-book-open"></i>
+                        </div>
+                        <h3 class="card-title">Open-Source Developer Wiki</h3>
+                        <p class="card-desc" style="margin-bottom: 24px;">
+                            We build in the open. Our OhmBase Wiki hosts wiring diagrams, integration templates, and custom ESPHome firmware config guides to let you build, flash, and host your own telemetry networks locally.
+                        </p>
+                        <a href="https://ohmbase.8ohm.co.za" class="btn btn-secondary" style="align-self: flex-start; margin-top: auto;">
+                            <span>Explore OhmBase Wiki</span>
+                            <div class="btn-icon">
+                                <i class="ph-light ph-arrow-right"></i>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Card 5: Custom YAML blueprint -->
+                <div class="bezel-card-outer col-span-6 reveal-item accent-glow">
+                    <div class="bezel-card-inner" style="padding: 0; overflow: hidden; display: flex; flex-direction: column;">
+                        <div class="mock-diagram" style="border: none; border-radius: 0; height: 100%;">
+                            <div class="mock-header">
+                                <span class="mock-dot red"></span>
+                                <span class="mock-dot yellow"></span>
+                                <span class="mock-dot green"></span>
+                                <span class="mock-title">coeus_pipeline_config.py</span>
+                            </div>
+                            <pre class="mock-code" style="border-radius: 0; margin: 0; height: 100%;"><code style="font-size: 0.75rem; text-align: left;"><span class="yaml-comment"># COEUS Scraper Configuration Schema</span>
+<span class="yaml-key">class</span> <span class="yaml-val">PipelineConfiguration</span>(models.Model):
+    name = models.CharField(max_length=255)
+    active = models.BooleanField(default=True)
+    schedule_interval = models.CharField(max_length=50)
+    scraper_type = models.CharField(
+        max_length=50, 
+        choices=SCRAPER_CHOICES
+    )
+    solver_enabled = models.BooleanField(default=True)
+    storage_destination = models.CharField(max_length=100)</code></pre>
                         </div>
                     </div>
                 </div>
@@ -1232,10 +1594,8 @@
         <!-- Shop Section -->
         <section id="shop" class="shop-section container reveal-item">
             <div class="shop-header">
-                <h2 class="shop-title">Offline First <span class="gradient-text">Local Hardware</span></h2>
-                <p class="shop-subtitle">Source high-quality, devices that work 100% locally. Zero cloud
-                    connections, zero tracking. While we're working on the FutureHome Hub, we've put together a few
-                    kits, if you'd like to build it like we do.</p>
+                <h2 class="shop-title">Offline Developer <span class="gradient-text">Hardware & Kits</span></h2>
+                <p class="shop-subtitle">Source high-quality, pre-flashed developer modules that work 100% locally. Zero cloud connections, zero tracking. Build telemetry and automation with robust local networks.</p>
             </div>
 
             <div id="productGrid" class="product-grid">
@@ -1247,8 +1607,7 @@
                             <i class="ph-light ph-plug-charging"></i>
                         </div>
                         <h3 class="product-title">Smart Security Kit</h3>
-                        <p class="product-description">The Smart Security Kit includes everything you need to convert
-                            your existing alarm system into</p>
+                        <p class="product-description">Connects traditional alarm relays to your local Home Assistant telemetry node. Features ESPHome local security firmware.</p>
                         <div class="product-meta">
                             <span class="product-price">R 299.00</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
@@ -1268,8 +1627,7 @@
                             <i class="ph-light ph-cpu"></i>
                         </div>
                         <h3 class="product-title">Ohm Smart Relay</h3>
-                        <p class="product-description">Dual-channel relay module for gates, garage doors, or geysers.
-                            Low-voltage trigger, ESPHome loaded.</p>
+                        <p class="product-description">Dual-channel relay module for gates, garage doors, or geysers. Low-voltage trigger, ESPHome loaded.</p>
                         <div class="product-meta">
                             <span class="product-price">R 399.00</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
@@ -1289,8 +1647,7 @@
                             <i class="ph-light ph-wind"></i>
                         </div>
                         <h3 class="product-title">Ohm Air Quality Sensor</h3>
-                        <p class="product-description">Local temperature, humidity, and CO2 monitor. ESP32-powered,
-                            connects directly to Home Assistant via ESPHome.</p>
+                        <p class="product-description">Local temperature, humidity, and CO2 monitor. ESP32-powered, connects directly to Home Assistant via ESPHome.</p>
                         <div class="product-meta">
                             <span class="product-price">R 699.00</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
@@ -1309,8 +1666,7 @@
     <!-- Footer -->
     <footer>
         <div class="container">
-            <p class="footer-text">&copy; 2026 Infinity Ohm Technologies Pty Ltd. All rights reserved.<br>Engineering
-                custom secure hardware & software solutions.</p>
+            <p class="footer-text">&copy; 2026 Infinity Ohm Technologies Pty Ltd. All rights reserved.<br>Engineering custom secure hardware & software solutions.</p>
         </div>
     </footer>
 
@@ -1322,21 +1678,31 @@
                     <i class="ph-light ph-x"></i>
                 </button>
                 <h2 class="modal-title">Get in Touch</h2>
-                <p class="modal-subtitle">Let's discuss your home and what you'd like to automate or secure.</p>
+                <p class="modal-subtitle">Let's discuss your enterprise requirements or project specifications.</p>
 
                 <form action="#" method="POST">
                     <div class="form-group">
-                        <label for="name">Name</label>
-                        <input type="text" id="name" name="name" required placeholder="John Doe">
+                        <label for="name">Name / Company</label>
+                        <input type="text" id="name" name="name" required placeholder="Jane Doe | Acme Corp">
                     </div>
                     <div class="form-group">
-                        <label for="email">Email</label>
-                        <input type="email" id="email" name="email" required placeholder="john@example.com">
+                        <label for="email">Corporate Email</label>
+                        <input type="email" id="email" name="email" required placeholder="jane@acme.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="division">Select Division</label>
+                        <select id="division" name="division" required>
+                            <option value="" disabled selected>Choose a division...</option>
+                            <option value="solutions">Solutions Architecture Services</option>
+                            <option value="kits">Developer Components & Kits</option>
+                            <option value="coeus">Project COEUS (Data Platform)</option>
+                            <option value="other">General B2B Inquiry</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="message">How can we help?</label>
                         <textarea id="message" name="message" rows="4" required
-                            placeholder="Tell us about your home and what systems (alarms, gates, geysers) you would like to secure or automate..."></textarea>
+                            placeholder="Provide details about your project, architecture needs, or data pipeline specifications..."></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary submit-btn">
                         <span>Send Message</span>
@@ -1354,20 +1720,32 @@
         document.addEventListener('DOMContentLoaded', () => {
             // Modal Elements
             const modal = document.getElementById('contactModal');
-            const openBtns = [
-                document.getElementById('openContactBtn'),
-                document.getElementById('openContactBtnHero')
-            ];
             const closeBtn = document.getElementById('closeContactBtn');
+            const divisionSelect = document.getElementById('division');
+            const messageArea = document.getElementById('message');
 
-            // Open Modal
-            openBtns.forEach(btn => {
-                if (btn) {
-                    btn.addEventListener('click', () => {
-                        modal.classList.add('active');
-                        document.body.style.overflow = 'hidden'; // Prevents background scroll
-                    });
-                }
+            // Trigger Modal Open (Class-based selection)
+            document.querySelectorAll('.contact-trigger-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const division = btn.getAttribute('data-division');
+                    if (division && divisionSelect) {
+                        divisionSelect.value = division;
+                    }
+                    
+                    // Add standard B2B inquiry templates based on selected division
+                    if (messageArea) {
+                        if (division === 'solutions') {
+                            messageArea.value = "Hi Infinity Ohm team,\n\nI would like to request a solutions architecture consultation. We are looking to blueprint:\n- AI/Automation workflows\n- Web & cloud infrastructure\n- IoT/Edge systems\n\nLooking forward to discussing our requirements.";
+                        } else if (division === 'coeus') {
+                            messageArea.value = "Hi Infinity Ohm team,\n\nI am interested in a pipeline demo of Project COEUS. We need automated scraping/extraction for our enterprise operations. Please contact us to schedule a brief walkthrough.";
+                        } else {
+                            messageArea.value = "";
+                        }
+                    }
+
+                    modal.classList.add('active');
+                    document.body.style.overflow = 'hidden'; // Prevents background scroll
+                });
             });
 
             // Close Modal
@@ -1376,7 +1754,9 @@
                 document.body.style.overflow = 'auto'; // Restores background scroll
             };
 
-            closeBtn.addEventListener('click', closeModal);
+            if (closeBtn) {
+                closeBtn.addEventListener('click', closeModal);
+            }
 
             // Close modal when clicking on overlay background
             window.addEventListener('click', (e) => {
@@ -1433,15 +1813,18 @@
             window.openPurchaseModal = (productName, price) => {
                 modal.classList.add('active');
                 document.body.style.overflow = 'hidden';
-                const messageArea = document.getElementById('message');
                 if (messageArea) {
                     messageArea.value = `Hi Infinity Ohm team,\n\nI am interested in purchasing the ${productName} (${price}). Please let me know how we can proceed with payment and delivery/collection.\n\nThanks!`;
+                }
+                if (divisionSelect) {
+                    divisionSelect.value = 'kits';
                 }
             };
 
             // Dynamically load products from MedusaJS API
             const loadProducts = async () => {
                 const grid = document.getElementById('productGrid');
+                if (!grid) return;
                 const storeUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
                     ? 'http://store.localhost/store/products'
                     : 'https://store.8ohm.co.za/store/products';

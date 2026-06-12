@@ -186,6 +186,8 @@ services:
     image: nginx:alpine
     container_name: coeus-landing-page
     restart: always
+    ports:
+      - "8081:80"
     volumes:
       - ./landing_page:/usr/share/nginx/html:ro
     networks:
