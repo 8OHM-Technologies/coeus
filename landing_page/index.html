@@ -257,7 +257,7 @@
         .hero {
             position: relative;
             z-index: 10;
-            padding: 180px 0 80px;
+            padding: 150px 0 80px;
             text-align: center;
             display: flex;
             flex-direction: column;
@@ -899,6 +899,147 @@
                 transform: none !important;
             }
         }
+
+        /* --- Shop Section & Product Cards --- */
+        .shop-section {
+            padding: 80px 0 160px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .shop-header {
+            text-align: center;
+            margin-bottom: 56px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .shop-title {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1.2;
+            color: var(--color-text-primary);
+            margin: 16px 0;
+        }
+
+        .shop-subtitle {
+            font-size: 1.1rem;
+            color: var(--color-text-secondary);
+            max-width: 650px;
+            line-height: 1.6;
+        }
+
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 24px;
+        }
+
+        .product-card .bezel-card-inner {
+            padding: 24px;
+            align-items: stretch;
+        }
+
+        .product-badge {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 136, 0, 0.08);
+            border: 1px solid rgba(255, 136, 0, 0.25);
+            color: var(--color-accent-primary);
+            padding: 4px 12px;
+            border-radius: 100px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            z-index: 2;
+        }
+
+        .product-image-placeholder {
+            height: 200px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--color-border-outer);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .product-image-placeholder i {
+            font-size: 3.5rem;
+            color: var(--color-accent-primary);
+            opacity: 0.6;
+            transition: all 0.5s var(--ease-premium);
+        }
+
+        .product-card:hover .product-image-placeholder i {
+            transform: scale(1.1);
+            opacity: 1;
+        }
+
+        .product-title {
+            font-family: var(--font-display);
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--color-text-primary);
+            margin-bottom: 10px;
+        }
+
+        .product-description {
+            color: var(--color-text-secondary);
+            font-size: 0.88rem;
+            line-height: 1.5;
+            margin-bottom: 20px;
+            flex-grow: 1;
+        }
+
+        .product-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--color-border-inner);
+        }
+
+        .product-price {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--color-text-primary);
+            font-family: var(--font-display);
+        }
+
+        .product-status {
+            font-size: 0.75rem;
+            color: var(--color-accent-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 600;
+        }
+
+        .buy-btn {
+            width: 100%;
+            justify-content: space-between;
+            padding: 8px 8px 8px 20px;
+        }
+
+        @media (max-width: 768px) {
+            .shop-title {
+                font-size: 2.2rem;
+            }
+
+            .product-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 
@@ -918,11 +1059,18 @@
         <nav class="navbar">
             <a href="#" class="nav-brand">
                 <span class="brand-logo-dot"></span>
-                <span class="brand-text">Infinity Ohm Technologies (Pty) Ltd</span>
+                <span class="brand-text">8OHM</span>
             </a>
 
             <button type="button" id="openContactBtn" class="nav-cta">
-                <span>Get in Touch</span>
+                <span>Services</span>
+                <div class="nav-cta-icon">
+                    <i class="ph-light ph-arrow-up-right"></i>
+                </div>
+            </button>
+
+            <button type="button" id="openContactBtn" class="nav-cta">
+                <span>Contact Us</span>
                 <div class="nav-cta-icon">
                     <i class="ph-light ph-arrow-up-right"></i>
                 </div>
@@ -935,7 +1083,7 @@
         <section class="hero container">
             <div class="eyebrow-badge reveal-item">
                 <span class="eyebrow-dot"></span>
-                <span class="eyebrow-text">Local Smart Home Security</span>
+                <span class="eyebrow-text">Infinity Ohm Technologies (Pty) Ltd</span>
             </div>
 
             <h1 class="hero-title reveal-item">
@@ -944,9 +1092,9 @@
             </h1>
 
             <p class="hero-tagline reveal-item">
-                Don’t let your home's safety depend on an internet connection. We upgrade your existing alarm panels,
-                gate motors, intercoms, and lights into a unified local network that works perfectly offline. No monthly
-                subscriptions, absolute privacy.
+                Don’t let your home's safety depend on an internet connection or an unpaid subscription. We can upgrade
+                your existing alarm panels, gate motors, intercoms, and lights into a unified local network that works
+                perfectly offline. <br> No monthly subscriptions, local first, absolute privacy.
             </p>
 
             <div class="cta-group reveal-item">
@@ -1010,7 +1158,8 @@
                         <h3 class="card-title">The FutureHome Hub</h3>
                         <p class="card-desc"><em>In active development:</em> The hardware brain for local automation.
                             Installed directly at your distribution (DB) board, it links legacy analog security loops,
-                            geyser controllers, and gate triggers into a secure, modern network.</p>
+                            geyser controllers, and gate triggers into a secure, modern network. Without any third-party
+                            subscriptions or cloud dependancies.</p>
                     </div>
                 </div>
 
@@ -1021,9 +1170,9 @@
                             <i class="ph-light ph-cloud-slash"></i>
                         </div>
                         <h3 class="card-title">Works When the Internet Doesn't</h3>
-                        <p class="card-desc">Most smart homes go blind during load-shedding or internet blackouts. By
-                            keeping all automation logic local, your security sensors, cameras, and gates respond
-                            instantly, keeping your home safe 24/7.</p>
+                        <p class="card-desc">Most smart homes go blind during internet blackouts. By keeping all
+                            automation logic local, your security sensors, cameras, and gates respond instantly,
+                            keeping your home safe 24/7.</p>
                     </div>
                 </div>
 
@@ -1038,7 +1187,7 @@
                             <p class="card-desc">We build in the open. Access our complete library of step-by-step
                                 wiring diagrams, configuration templates, and guides to build your own local smart home
                                 for free. You have full ownership—we’re here if you need us.</p>
-                            <a href="#ohmbase" class="btn btn-secondary">
+                            <a href="https://ohmbase.8ohm.co.za" class="btn btn-secondary">
                                 <span>Explore the OhmBase</span>
                                 <div class="btn-icon">
                                     <i class="ph-light ph-arrow-right"></i>
@@ -1077,6 +1226,82 @@
                     </div>
                 </div>
 
+            </div>
+        </section>
+
+        <!-- Shop Section -->
+        <section id="shop" class="shop-section container reveal-item">
+            <div class="shop-header">
+                <h2 class="shop-title">Offline First <span class="gradient-text">Local Hardware</span></h2>
+                <p class="shop-subtitle">Source high-quality, devices that work 100% locally. Zero cloud
+                    connections, zero tracking. While we're working on the FutureHome Hub, we've put together a few
+                    kits, if you'd like to build it like we do.</p>
+            </div>
+
+            <div id="productGrid" class="product-grid">
+                <!-- Fallback Static Products - will be overwritten if API is live -->
+                <div class="bezel-card-outer product-card reveal-item">
+                    <div class="bezel-card-inner">
+                        <div class="product-badge">Starter Kit</div>
+                        <div class="product-image-placeholder">
+                            <i class="ph-light ph-plug-charging"></i>
+                        </div>
+                        <h3 class="product-title">Smart Security Kit</h3>
+                        <p class="product-description">The Smart Security Kit includes everything you need to convert
+                            your existing alarm system into</p>
+                        <div class="product-meta">
+                            <span class="product-price">R 299.00</span>
+                            <span class="product-status"><span class="status-dot"></span>In Stock</span>
+                        </div>
+                        <button class="btn btn-secondary buy-btn"
+                            onclick="openPurchaseModal('Ohm Smart Plug', 'R 299.00')">
+                            <span>Purchase</span>
+                            <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bezel-card-outer product-card reveal-item">
+                    <div class="bezel-card-inner">
+                        <div class="product-badge">Starter Kit</div>
+                        <div class="product-image-placeholder">
+                            <i class="ph-light ph-cpu"></i>
+                        </div>
+                        <h3 class="product-title">Ohm Smart Relay</h3>
+                        <p class="product-description">Dual-channel relay module for gates, garage doors, or geysers.
+                            Low-voltage trigger, ESPHome loaded.</p>
+                        <div class="product-meta">
+                            <span class="product-price">R 399.00</span>
+                            <span class="product-status"><span class="status-dot"></span>In Stock</span>
+                        </div>
+                        <button class="btn btn-secondary buy-btn"
+                            onclick="openPurchaseModal('Ohm Smart Relay', 'R 399.00')">
+                            <span>Purchase</span>
+                            <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bezel-card-outer product-card reveal-item">
+                    <div class="bezel-card-inner">
+                        <div class="product-badge">Starter Kit</div>
+                        <div class="product-image-placeholder">
+                            <i class="ph-light ph-wind"></i>
+                        </div>
+                        <h3 class="product-title">Ohm Air Quality Sensor</h3>
+                        <p class="product-description">Local temperature, humidity, and CO2 monitor. ESP32-powered,
+                            connects directly to Home Assistant via ESPHome.</p>
+                        <div class="product-meta">
+                            <span class="product-price">R 699.00</span>
+                            <span class="product-status"><span class="status-dot"></span>In Stock</span>
+                        </div>
+                        <button class="btn btn-secondary buy-btn"
+                            onclick="openPurchaseModal('Ohm Air Quality Sensor', 'R 699.00')">
+                            <span>Purchase</span>
+                            <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
+                        </button>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
@@ -1203,9 +1428,106 @@
             document.querySelectorAll('.reveal-item').forEach(item => {
                 revealObserver.observe(item);
             });
+
+            // Purchase Modal Opener
+            window.openPurchaseModal = (productName, price) => {
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                const messageArea = document.getElementById('message');
+                if (messageArea) {
+                    messageArea.value = `Hi Infinity Ohm team,\n\nI am interested in purchasing the ${productName} (${price}). Please let me know how we can proceed with payment and delivery/collection.\n\nThanks!`;
+                }
+            };
+
+            // Dynamically load products from MedusaJS API
+            const loadProducts = async () => {
+                const grid = document.getElementById('productGrid');
+                const storeUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                    ? 'http://store.localhost/store/products'
+                    : 'https://store.8ohm.co.za/store/products';
+
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+
+                    const response = await fetch(storeUrl, {
+                        signal: controller.signal,
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) throw new Error('Network response not ok');
+                    const data = await response.json();
+
+                    if (data && data.products && data.products.length > 0) {
+                        grid.innerHTML = ''; // Clear fallback products
+
+                        data.products.forEach((product) => {
+                            // Find price
+                            let priceStr = 'R 299.00'; // Default fallback price if not found
+                            if (product.variants && product.variants.length > 0) {
+                                const variant = product.variants[0];
+                                if (variant.calculated_price) {
+                                    const amount = variant.calculated_price.calculated_amount;
+                                    const currency = variant.calculated_price.currency_code === 'zar' ? 'R' : '$';
+                                    priceStr = `${currency} ${amount}`;
+                                } else if (variant.prices && variant.prices.length > 0) {
+                                    const price = variant.prices[0];
+                                    const amount = (price.amount / 100).toFixed(2);
+                                    const currency = price.currency_code === 'zar' ? 'R' : '$';
+                                    priceStr = `${currency} ${amount}`;
+                                }
+                            }
+
+                            // Choose icon based on product title/description
+                            let iconClass = 'ph-plug-charging';
+                            const titleLower = product.title.toLowerCase();
+                            if (titleLower.includes('relay') || titleLower.includes('switch')) {
+                                iconClass = 'ph-cpu';
+                            } else if (titleLower.includes('sensor') || titleLower.includes('air') || titleLower.includes('temp')) {
+                                iconClass = 'ph-wind';
+                            } else if (titleLower.includes('hub') || titleLower.includes('brain') || titleLower.includes('gateway')) {
+                                iconClass = 'ph-hard-drives';
+                            }
+
+                            const cardHtml = `
+                                <div class="bezel-card-outer product-card reveal-item">
+                                    <div class="bezel-card-inner">
+                                        <div class="product-badge">Pre-Flashed</div>
+                                        <div class="product-image-placeholder">
+                                            <i class="ph-light ${iconClass}"></i>
+                                        </div>
+                                        <h3 class="product-title">${product.title}</h3>
+                                        <p class="product-description">${product.description || ''}</p>
+                                        <div class="product-meta">
+                                            <span class="product-price">${priceStr}</span>
+                                            <span class="product-status"><span class="status-dot"></span>In Stock</span>
+                                        </div>
+                                        <button class="btn btn-secondary buy-btn" onclick="openPurchaseModal('${product.title.replace(/'/g, "\\'")}', '${priceStr}')">
+                                            <span>Purchase</span>
+                                            <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                            grid.insertAdjacentHTML('beforeend', cardHtml);
+                        });
+
+                        // Re-observe new elements
+                        document.querySelectorAll('#productGrid .reveal-item').forEach(item => {
+                            revealObserver.observe(item);
+                        });
+                    }
+                } catch (err) {
+                    console.log('Failed to fetch from MedusaJS API, using high-fidelity fallback catalog:', err);
+                }
+            };
+
+            loadProducts();
         });
     </script>
-
 </body>
 
 </html>

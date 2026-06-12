@@ -224,6 +224,45 @@ services:
       - 8ohm-network
     restart: unless-stopped
 
+  # ---------------------------------------------------------
+  # 7a. Redis Cache Service
+  # ---------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: coeus-redis
+    networks:
+      - 8ohm-network
+    restart: always
+
+  # ---------------------------------------------------------
+  # 7b. MedusaJS Store Backend & Admin
+  # ---------------------------------------------------------
+  online_store:
+    image: ghcr.io/8ohm-technologies/coeus-store:latest
+    container_name: coeus-online-store
+    depends_on:
+      - cloud-sql-proxy
+      - redis
+    command: sh -c "npm run db:migrate --workspace=apps/backend && npm run start --workspace=apps/backend"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379
+      STORE_CORS: https://8ohm.co.za,https://www.8ohm.co.za,https://store.8ohm.co.za
+      ADMIN_CORS: https://store.8ohm.co.za
+      AUTH_CORS: https://store.8ohm.co.za
+    networks:
+      - 8ohm-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.online-store.rule=Host(`store.8ohm.co.za`)"
+      - "traefik.http.routers.online-store.entrypoints=websecure"
+      - "traefik.http.routers.online-store.tls=true"
+      - "traefik.http.services.online-store.loadbalancer.server.port=9000"
+      - "traefik.docker.network=8ohm-network"
+    restart: always
+
 volumes:
   traefik_certificates:
   static_assets:
