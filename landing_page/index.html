@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>8OHM | Enterprise Solutions & Custom Infrastructure</title>
-    <meta name="description" content="8OHM (Infinity Ohm Technologies) designs enterprise cloud-native web architectures, custom AI automation workflows, and developer-first hardware components. Home of Project COEUS.">
-    <meta name="keywords" content="8OHM, Infinity Ohm Technologies, Solutions Architecture, Project COEUS, AI Automation, ESPHome, Developer Hardware, Cloud Infrastructure">
+    <title>8OHM | B2B Solutions Architecture & Distributed Data Engines</title>
+    <meta name="description" content="8OHM (Infinity Ohm Technologies) delivers B2B systems engineering: cloud-native solutions architecture with AI integration blueprinting; developer-first offline hardware pre-flashed with ESPHome; and Project COEUS, a distributed, anti-bot-resilient data extraction engine.">
+    <meta name="keywords" content="8OHM, Infinity Ohm Technologies, Solutions Architecture, Project COEUS, misstcha, AI Automation, ESPHome, Developer Hardware, Cloud Infrastructure, Data Sovereignty, B2B Engineering">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -808,6 +808,36 @@
             filter: blur(0);
         }
 
+        /* --- Sovereign Paradigm & FAQ Grids --- */
+        .proof-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-top: 40px;
+            margin-bottom: 56px;
+        }
+
+        .proof-val-card {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+        }
+
+        .faq-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            text-align: left;
+            margin-top: 40px;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 48px;
+            margin-bottom: 48px;
+        }
+
         /* --- Responsive Design --- */
         @media (max-width: 1024px) {
             .hero-title {
@@ -867,6 +897,15 @@
             .col-span-6,
             .col-span-5 {
                 grid-column: span 1 !important;
+            }
+
+            .proof-grid,
+            .proof-val-card,
+            .faq-grid,
+            .footer-grid,
+            .switching-grid {
+                grid-template-columns: 1fr !important;
+                gap: 24px !important;
             }
 
             .bezel-card-inner {
@@ -1358,7 +1397,7 @@
             </h1>
 
             <p class="hero-tagline reveal-item">
-                We design cloud-native web systems, orchestrate high-scale data pipelines, and engineer offline-first developer-first hardware. Tailored architecture and automation built for full data sovereignty, absolute privacy, and offline resilience.
+                We design secure cloud-native web systems, orchestrate anti-bot-resilient data pipelines, and engineer offline-first edge telemetry. Built for CTOs, VPs of Engineering, and Data Operations Leads who refuse cloud lock-in and demand absolute data sovereignty.
             </p>
 
             <div class="cta-group reveal-item">
@@ -1395,25 +1434,25 @@
                         </div>
                         <h3 class="card-title">Solutions Architecture</h3>
                         <p class="card-desc" style="margin-bottom: 20px;">
-                            B2B consultation and engineering. We plan, validate, and blueprint robust cloud architectures, automation layers, and secure data pipelines for modern enterprises.
+                            High-level B2B engineering and systems design. We blueprint secure, cloud-native web architectures, custom AI automation workflows, and edge device integrations designed for full data sovereignty.
                         </p>
                         <ul style="list-style: none; display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; text-align: left;">
                             <li style="display: flex; gap: 10px; align-items: flex-start; font-size: 0.9rem; color: var(--color-text-secondary);">
                                 <i class="ph-light ph-cpu" style="color: var(--color-accent-primary); font-size: 1.2rem; flex-shrink: 0; margin-top: 2px;"></i>
                                 <div>
-                                    <strong style="color: var(--color-text-primary);">AI Integration & Automation Blueprinting:</strong> Defining API boundaries, structured JSON schemas, and orchestration flows to safely inject LLMs into enterprise processes.
+                                    <strong style="color: var(--color-text-primary);">AI Integration & Automation Blueprinting:</strong> We design custom AI boundaries, structured JSON schemas, and secure orchestrator layers to integrate LLMs into operations while guaranteeing absolute data sovereignty.
                                 </div>
                             </li>
                             <li style="display: flex; gap: 10px; align-items: flex-start; font-size: 0.9rem; color: var(--color-text-secondary);">
                                 <i class="ph-light ph-cloud" style="color: var(--color-accent-primary); font-size: 1.2rem; flex-shrink: 0; margin-top: 2px;"></i>
                                 <div>
-                                    <strong style="color: var(--color-text-primary);">Web & Cloud Infrastructure Design:</strong> Secure, cloud-native architectures utilizing modern IaC. We build data flow networks and secure perimeter controls.
+                                    <strong style="color: var(--color-text-primary);">Web & Cloud Infrastructure Design:</strong> Secure, cloud-native web architectures utilizing modern, IaC-based AWS/GCP secure perimeters to map and protect enterprise data flows.
                                 </div>
                             </li>
                             <li style="display: flex; gap: 10px; align-items: flex-start; font-size: 0.9rem; color: var(--color-text-secondary);">
                                 <i class="ph-light ph-shield-check" style="color: var(--color-accent-primary); font-size: 1.2rem; flex-shrink: 0; margin-top: 2px;"></i>
                                 <div>
-                                    <strong style="color: var(--color-text-primary);">IoT Edge & Embedded Systems:</strong> Engineering specifications, localized device telemetry, and hardware validation checklists for offline automation.
+                                    <strong style="color: var(--color-text-primary);">IoT Edge & Embedded Systems:</strong> Engineering specifications, localized device telemetry, and hardware validation checklists to eliminate proprietary cloud vendor dependencies.
                                 </div>
                             </li>
                         </ul>
@@ -1434,7 +1473,7 @@
                         </div>
                         <h3 class="card-title">Developer Kits & Components</h3>
                         <p class="card-desc" style="margin-bottom: 24px;">
-                            Developer-first, offline-only hardware modules engineered for absolute data sovereignty. Pre-flashed with ESPHome, our relays, sensors, and low-voltage triggers integrate seamlessly into Home Assistant and open ecosystems without cloud dependencies.
+                            Developer-first, offline-only hardware modules engineered to eliminate proprietary cloud lock-in, latency, and sudden vendor API deprecations. Pre-flashed with ESPHome, our sensors and relays integrate seamlessly into local networks with fail-safe recovery modes and local OTA updates.
                         </p>
                         <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--color-border-inner); border-radius: 12px; padding: 16px; margin-bottom: 24px; font-family: 'Fira Code', monospace; font-size: 0.75rem; color: var(--color-text-secondary); text-align: left;">
                             <span style="color: var(--color-text-muted);"># Offline ESPHome Config</span><br>
@@ -1462,14 +1501,14 @@
                             </div>
                             <h3 class="card-title">Project COEUS: Data Platform</h3>
                             <p class="card-desc" style="margin-bottom: 20px;">
-                                A high-performance, distributed scraping and document-extraction engine. Built to traverse complex web environments, COEUS handles anti-bot measures, bypasses CAPTCHAs natively via AI vision solvers, and operates as an adaptive data pipeline managed by Apache Airflow.
+                                Distributed, anti-bot-resilient data extraction platform. Built to automate regulatory and legal document extraction from complex sites (e.g. SEDAR+, SAFLII, Sabinet). COEUS bypasses Cloudflare Turnstile barriers and hCaptcha challenges using `misstcha`, our integrated zero-shot vision solver, and scales dynamically via Apache Airflow.
                             </p>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; text-align: left;">
                                 <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                                    <strong style="color: var(--color-text-primary); display: block; margin-bottom: 4px;">Dynamic DAG Factory:</strong> Orchestrates hundreds of scraper pipelines automatically based on active database configs.
+                                    <strong style="color: var(--color-text-primary); display: block; margin-bottom: 4px;">Dynamic DAG Factory:</strong> Model-driven pipeline adjusts dynamically based on active control plane Django configs, propagating changes instantly to Airflow without restarts.
                                 </div>
                                 <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                                    <strong style="color: var(--color-text-primary); display: block; margin-bottom: 4px;">AI-Powered Solver:</strong> Natively integrates misstcha visual solvers to bypass Cloudflare Turnstile & hCaptcha.
+                                    <strong style="color: var(--color-text-primary); display: block; margin-bottom: 4px;">AI-Powered Solver:</strong> Natively integrates the `misstcha` solver using Grounding DINO + Qwen zero-shot object detection to bypass bot challenges dynamically.
                                 </div>
                             </div>
                             <button type="button" class="btn btn-primary contact-trigger-btn" data-division="coeus" style="align-self: flex-start;">
@@ -1552,7 +1591,7 @@
                         </div>
                         <h3 class="card-title">Open-Source Developer Wiki</h3>
                         <p class="card-desc" style="margin-bottom: 24px;">
-                            We build in the open. Our OhmBase Wiki hosts wiring diagrams, integration templates, and custom ESPHome firmware config guides to let you build, flash, and host your own telemetry networks locally.
+                            We believe in open engineering. Our OhmBase Wiki hosts wiring diagrams, integration templates, and ESPHome firmware guides to help your engineering teams maintain absolute local network control and sovereignty.
                         </p>
                         <a href="https://ohmbase.8ohm.co.za" class="btn btn-secondary" style="align-self: flex-start; margin-top: auto;">
                             <span>Explore OhmBase Wiki</span>
@@ -1591,6 +1630,198 @@
             </div>
         </section>
 
+        <!-- Proof Points / Paradigm Section -->
+        <section class="proof-section container reveal-item" id="paradigm" aria-label="Sovereign Architecture Paradigm">
+            <div style="text-align: center; margin-bottom: 56px;">
+                <div class="eyebrow-badge">
+                    <span class="eyebrow-dot" style="background: var(--color-accent-secondary);"></span>
+                    <span class="eyebrow-text" style="color: var(--color-accent-secondary);">The Sovereign Engineering Paradigm</span>
+                </div>
+                <h2 style="font-family: var(--font-display); font-size: 3rem; font-weight: 800; line-height: 1.2; color: var(--color-text-primary); margin: 16px 0;">
+                    Built for Absolute Security & Resilience
+                </h2>
+                <p style="font-size: 1.1rem; color: var(--color-text-secondary); max-width: 700px; margin: 0 auto; line-height: 1.6;">
+                    We design systems that reject proprietary cloud lock-in, bypass complex bot defense mechanisms, and maintain 100% data sovereignty.
+                </p>
+            </div>
+
+            <div class="proof-grid">
+                <!-- Proof 1: Sovereign Data -->
+                <div class="bezel-card-outer reveal-item">
+                    <div class="bezel-card-inner" style="align-items: center; text-align: center; padding: 32px 24px;">
+                        <div style="font-size: 3.5rem; font-weight: 800; font-family: var(--font-display); color: var(--color-accent-primary); line-height: 1; margin-bottom: 12px;">
+                            0%
+                        </div>
+                        <h4 style="font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 8px;">
+                            Cloud Telemetry Leakage
+                        </h4>
+                        <p style="font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.5;">
+                            100% local, offline device operations. No external logs, no third-party cloud dependencies, absolute LAN security.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Proof 2: CAPTCHA Bypass -->
+                <div class="bezel-card-outer reveal-item accent-glow">
+                    <div class="bezel-card-inner" style="align-items: center; text-align: center; padding: 32px 24px;">
+                        <div style="font-size: 3.5rem; font-weight: 800; font-family: var(--font-display); color: var(--color-accent-secondary); line-height: 1; margin-bottom: 12px;">
+                            99%
+                        </div>
+                        <h4 style="font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 8px;">
+                            Solver Success Rate
+                        </h4>
+                        <p style="font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.5;">
+                            `misstcha` zero-shot vision solvers powered by Grounding DINO + Qwen dynamically bypass complex Turnstile & hCaptcha barriers.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Proof 3: Dynamic Scale -->
+                <div class="bezel-card-outer reveal-item">
+                    <div class="bezel-card-inner" style="align-items: center; text-align: center; padding: 32px 24px;">
+                        <div style="font-size: 3.5rem; font-weight: 800; font-family: var(--font-display); color: var(--color-accent-primary); line-height: 1; margin-bottom: 12px;">
+                            100%
+                        </div>
+                        <h4 style="font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 8px;">
+                            Model-Driven Agility
+                        </h4>
+                        <p style="font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.5;">
+                            Dynamic Airflow pipeline factory propagates configuration updates instantly from the Django control plane without system restarts.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Key Value Theme Cards/Comparison or switching dynamics -->
+            <div class="bezel-card-outer reveal-item" style="margin-top: 24px;">
+                <div class="bezel-card-inner" style="padding: 40px;">
+                    <h4 style="font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 24px; text-align: center;">
+                        Bridging Cloud-Native Orchestration & Physical Edge Infrastructure
+                    </h4>
+                    <div class="proof-val-card">
+                        <div>
+                            <h5 style="font-family: var(--font-display); font-size: 1rem; font-weight: 600; color: var(--color-accent-primary); margin-bottom: 12px;">
+                                Sovereign Data
+                            </h5>
+                            <p style="font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.6;">
+                                Eliminate external cloud dependencies. Keep scraped documents, database records, and operational telemetry entirely within your private network perimeter.
+                            </p>
+                        </div>
+                        <div>
+                            <h5 style="font-family: var(--font-display); font-size: 1rem; font-weight: 600; color: var(--color-accent-secondary); margin-bottom: 12px;">
+                                Anti-Bot Resiliency
+                            </h5>
+                            <p style="font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.6;">
+                                Adaptive extraction workers backed by real-time computer vision solvers. Skip fragile selectors and bypass proxy rotation limits with programmatic solver nodes.
+                            </p>
+                        </div>
+                        <div>
+                            <h5 style="font-family: var(--font-display); font-size: 1rem; font-weight: 600; color: var(--color-accent-primary); margin-bottom: 12px;">
+                                Developer-First Control
+                            </h5>
+                            <p style="font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.6;">
+                                Direct access to pre-flashed offline firmware configurations, custom Airflow DAG setups, and structured Django database schemas for absolute control.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Comparative Advantage & Switching Dynamics -->
+        <section class="comparison-section container reveal-item" id="comparison" aria-label="Why B2B Leaders Switch to 8OHM">
+            <div style="text-align: center; margin-bottom: 56px; margin-top: 80px;">
+                <div class="eyebrow-badge">
+                    <span class="eyebrow-dot" style="background: var(--color-accent-secondary);"></span>
+                    <span class="eyebrow-text" style="color: var(--color-accent-secondary);">The Operational Reality</span>
+                </div>
+                <h2 style="font-family: var(--font-display); font-size: 3rem; font-weight: 800; line-height: 1.2; color: var(--color-text-primary); margin: 16px 0;">
+                    Eliminating the Fragility of the Status Quo
+                </h2>
+                <p style="font-size: 1.1rem; color: var(--color-text-secondary); max-width: 700px; margin: 0 auto; line-height: 1.6;">
+                    Enterprises are forced to choose between fragile, high-maintenance web scrapers that break constantly, and proprietary hardware that leaks operational data. We build the alternative.
+                </p>
+            </div>
+
+            <!-- Sleek B2B Comparison Grid -->
+            <div class="switching-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 56px;">
+                <!-- Extraction Division Comparison -->
+                <div class="bezel-card-outer reveal-item">
+                    <div class="bezel-card-inner" style="padding: 32px; justify-content: space-between;">
+                        <div>
+                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--color-accent-primary); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 8px;">Distributed Extraction</span>
+                            <h4 style="font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 16px;">
+                                Project COEUS vs. API Vendors
+                            </h4>
+                            <p style="font-size: 0.88rem; color: var(--color-accent-secondary); line-height: 1.6; margin-bottom: 20px; font-style: italic;">
+                                "We spend half our week fixing scrapers that were blocked by Cloudflare."
+                            </p>
+                        </div>
+                        <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 16px; text-align: left; border-top: 1px solid var(--color-border-inner); padding-top: 16px; margin-top: auto;">
+                            <div>
+                                <strong style="color: #ef4444; display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">The Status Quo:</strong>
+                                General API vendors (Apify, Bright Data) charge high per-page proxy fees, restrict data access, and break against Turnstile.
+                            </div>
+                            <div>
+                                <strong style="color: #22c55e; display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">The 8OHM Edge:</strong>
+                                Self-hosted platform licensing. Private, model-driven pipelines with built-in zero-shot vision-language solver nodes.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- IoT / Hardware Comparison -->
+                <div class="bezel-card-outer reveal-item accent-glow">
+                    <div class="bezel-card-inner" style="padding: 32px; justify-content: space-between;">
+                        <div>
+                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--color-accent-secondary); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 8px;">Offline Hardware</span>
+                            <h4 style="font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 16px;">
+                                8OHM Modules vs. Consumer IoT
+                            </h4>
+                            <p style="font-size: 0.88rem; color: var(--color-accent-primary); line-height: 1.6; margin-bottom: 20px; font-style: italic;">
+                                "Our security team flagged our smart sensors because they keep pinging external servers."
+                            </p>
+                        </div>
+                        <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 16px; text-align: left; border-top: 1px solid var(--color-border-inner); padding-top: 16px; margin-top: auto;">
+                            <div>
+                                <strong style="color: #ef4444; display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">The Status Quo:</strong>
+                                Commercial IoT systems (Tuya, Sonoff) require active WAN links and leak operational telemetry logs to external clouds.
+                            </div>
+                            <div>
+                                <strong style="color: #22c55e; display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">The 8OHM Edge:</strong>
+                                100% cloud-free, offline-first ESPHome modules. Direct integration via Home Assistant with local fail-safe modes.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Solutions Architecture Comparison -->
+                <div class="bezel-card-outer reveal-item">
+                    <div class="bezel-card-inner" style="padding: 32px; justify-content: space-between;">
+                        <div>
+                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--color-accent-primary); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 8px;">Systems Architecture</span>
+                            <h4 style="font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 16px;">
+                                8OHM Blueprints vs. Boutiques
+                            </h4>
+                            <p style="font-size: 0.88rem; color: var(--color-accent-secondary); line-height: 1.6; margin-bottom: 20px; font-style: italic;">
+                                "Generalist software boutiques build fragile pipelines that fail internal security audits."
+                            </p>
+                        </div>
+                        <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 16px; text-align: left; border-top: 1px solid var(--color-border-inner); padding-top: 16px; margin-top: auto;">
+                            <div>
+                                <strong style="color: #ef4444; display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">The Status Quo:</strong>
+                                Generic developers lack deep integration expertise bridging hardware firmware and orchestration factories.
+                            </div>
+                            <div>
+                                <strong style="color: #22c55e; display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">The 8OHM Edge:</strong>
+                                B2B consulting blueprinting covering secure perimeters, Airflow factory setups, and edge systems under one design system.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Shop Section -->
         <section id="shop" class="shop-section container reveal-item">
             <div class="shop-header">
@@ -1602,18 +1833,18 @@
                 <!-- Fallback Static Products - will be overwritten if API is live -->
                 <div class="bezel-card-outer product-card reveal-item">
                     <div class="bezel-card-inner">
-                        <div class="product-badge">Starter Kit</div>
+                        <div class="product-badge">Pre-Flashed</div>
                         <div class="product-image-placeholder">
                             <i class="ph-light ph-plug-charging"></i>
                         </div>
-                        <h3 class="product-title">Smart Security Kit</h3>
-                        <p class="product-description">Connects traditional alarm relays to your local Home Assistant telemetry node. Features ESPHome local security firmware.</p>
+                        <h3 class="product-title">Ohm Telemetry Relay Node</h3>
+                        <p class="product-description">Connects traditional dry contact alarm relays to Home Assistant telemetry nodes. Loaded with offline-only firmware.</p>
                         <div class="product-meta">
                             <span class="product-price">R 299.00</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
                         </div>
                         <button class="btn btn-secondary buy-btn"
-                            onclick="openPurchaseModal('Ohm Smart Plug', 'R 299.00')">
+                            onclick="openPurchaseModal('Ohm Telemetry Relay Node', 'R 299.00')">
                             <span>Purchase</span>
                             <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
                         </button>
@@ -1622,18 +1853,18 @@
 
                 <div class="bezel-card-outer product-card reveal-item">
                     <div class="bezel-card-inner">
-                        <div class="product-badge">Starter Kit</div>
+                        <div class="product-badge">Pre-Flashed</div>
                         <div class="product-image-placeholder">
                             <i class="ph-light ph-cpu"></i>
                         </div>
-                        <h3 class="product-title">Ohm Smart Relay</h3>
-                        <p class="product-description">Dual-channel relay module for gates, garage doors, or geysers. Low-voltage trigger, ESPHome loaded.</p>
+                        <h3 class="product-title">Ohm Smart Relay Core</h3>
+                        <p class="product-description">Dual-channel low-voltage relay node for garage doors, gates, or triggers. Operates completely locally via ESPHome.</p>
                         <div class="product-meta">
                             <span class="product-price">R 399.00</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
                         </div>
                         <button class="btn btn-secondary buy-btn"
-                            onclick="openPurchaseModal('Ohm Smart Relay', 'R 399.00')">
+                            onclick="openPurchaseModal('Ohm Smart Relay Core', 'R 399.00')">
                             <span>Purchase</span>
                             <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
                         </button>
@@ -1642,21 +1873,87 @@
 
                 <div class="bezel-card-outer product-card reveal-item">
                     <div class="bezel-card-inner">
-                        <div class="product-badge">Starter Kit</div>
+                        <div class="product-badge">Pre-Flashed</div>
                         <div class="product-image-placeholder">
                             <i class="ph-light ph-wind"></i>
                         </div>
-                        <h3 class="product-title">Ohm Air Quality Sensor</h3>
-                        <p class="product-description">Local temperature, humidity, and CO2 monitor. ESP32-powered, connects directly to Home Assistant via ESPHome.</p>
+                        <h3 class="product-title">Ohm Environment Monitor</h3>
+                        <p class="product-description">Local temperature, humidity, and CO2 monitoring node. Zero cloud dependencies, direct integration via ESPHome.</p>
                         <div class="product-meta">
                             <span class="product-price">R 699.00</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
                         </div>
                         <button class="btn btn-secondary buy-btn"
-                            onclick="openPurchaseModal('Ohm Air Quality Sensor', 'R 699.00')">
+                            onclick="openPurchaseModal('Ohm Environment Monitor', 'R 699.00')">
                             <span>Purchase</span>
                             <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
                         </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ / Objections Resolved Section -->
+        <section class="faq-section container reveal-item" id="faq" aria-label="Technical FAQs">
+            <div style="text-align: center; margin-bottom: 56px;">
+                <div class="eyebrow-badge">
+                    <span class="eyebrow-dot"></span>
+                    <span class="eyebrow-text">Engineering Objections Resolved</span>
+                </div>
+                <h2 style="font-family: var(--font-display); font-size: 3rem; font-weight: 800; line-height: 1.2; color: var(--color-text-primary); margin: 16px 0;">
+                    Technical Questions & Answers
+                </h2>
+                <p style="font-size: 1.1rem; color: var(--color-text-secondary); max-width: 700px; margin: 0 auto; line-height: 1.6;">
+                    Clear, engineering-focused answers to common architectural and operational queries.
+                </p>
+            </div>
+
+            <div class="faq-grid">
+                <div class="bezel-card-outer reveal-item">
+                    <div class="bezel-card-inner" style="padding: 32px;">
+                        <h4 style="font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+                            <i class="ph-light ph-question" style="color: var(--color-accent-primary); font-size: 1.4rem;"></i>
+                            Why build custom pipelines instead of subscribing to a data feed?
+                        </h4>
+                        <p style="font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.6; padding-left: 32px;">
+                            Project COEUS gives you absolute ownership over your extraction parameters. It enables immediate adaptation to target schema changes without relying on third-party schedules or exposing search criteria.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bezel-card-outer reveal-item accent-glow">
+                    <div class="bezel-card-inner" style="padding: 32px;">
+                        <h4 style="font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+                            <i class="ph-light ph-question" style="color: var(--color-accent-secondary); font-size: 1.4rem;"></i>
+                            Is offline-only hardware complex to maintain without cloud updates?
+                        </h4>
+                        <p style="font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.6; padding-left: 32px;">
+                            No. Our modules utilize local OTA (Over-the-Air) network updates with fail-safe recovery modes to ensure robust, secure updates over your LAN, keeping your smart building telemetry completely isolated from the internet.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bezel-card-outer reveal-item accent-glow">
+                    <div class="bezel-card-inner" style="padding: 32px;">
+                        <h4 style="font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+                            <i class="ph-light ph-question" style="color: var(--color-accent-secondary); font-size: 1.4rem;"></i>
+                            Does the CAPTCHA solver require continuous manual training?
+                        </h4>
+                        <p style="font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.6; padding-left: 32px;">
+                            No. `misstcha` utilizes zero-shot vision-language models (Grounding DINO + Qwen) to interpret prompts and detect objects dynamically, avoiding the need for constant re-training when prompt styles change.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bezel-card-outer reveal-item">
+                    <div class="bezel-card-inner" style="padding: 32px;">
+                        <h4 style="font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+                            <i class="ph-light ph-question" style="color: var(--color-accent-primary); font-size: 1.4rem;"></i>
+                            How is data sovereignty guaranteed on enterprise perimeters?
+                        </h4>
+                        <p style="font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.6; padding-left: 32px;">
+                            All scraped outputs, orchestration databases, model weights, and telemetry logs remain within customer-controlled infrastructure. The system executes zero external phone-home requests.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -1678,7 +1975,7 @@
                     <i class="ph-light ph-x"></i>
                 </button>
                 <h2 class="modal-title">Get in Touch</h2>
-                <p class="modal-subtitle">Let's discuss your enterprise requirements or project specifications.</p>
+                <p class="modal-subtitle">Let's discuss your B2B requirements. Engage via custom consulting retainers, bulk hardware kits, or enterprise data platform licensing.</p>
 
                 <form action="#" method="POST">
                     <div class="form-group">
@@ -1690,12 +1987,12 @@
                         <input type="email" id="email" name="email" required placeholder="jane@acme.com">
                     </div>
                     <div class="form-group">
-                        <label for="division">Select Division</label>
+                        <label for="division">Select Division / Engagement Model</label>
                         <select id="division" name="division" required>
                             <option value="" disabled selected>Choose a division...</option>
-                            <option value="solutions">Solutions Architecture Services</option>
-                            <option value="kits">Developer Components & Kits</option>
-                            <option value="coeus">Project COEUS (Data Platform)</option>
+                            <option value="solutions">Solutions Architecture (Custom Retainers)</option>
+                            <option value="kits">Developer Components (Bulk Kit Sales)</option>
+                            <option value="coeus">Project COEUS (Enterprise Data Licensing)</option>
                             <option value="other">General B2B Inquiry</option>
                         </select>
                     </div>
@@ -1735,9 +2032,9 @@
                     // Add standard B2B inquiry templates based on selected division
                     if (messageArea) {
                         if (division === 'solutions') {
-                            messageArea.value = "Hi Infinity Ohm team,\n\nI would like to request a solutions architecture consultation. We are looking to blueprint:\n- AI/Automation workflows\n- Web & cloud infrastructure\n- IoT/Edge systems\n\nLooking forward to discussing our requirements.";
+                            messageArea.value = "Hi Infinity Ohm team,\n\nI would like to request a solutions architecture consultation. We are looking to blueprint our enterprise cloud perimeters, AI automation boundaries, and secure IoT edge data flows.\n\nPlease contact us regarding your consulting retainers.";
                         } else if (division === 'coeus') {
-                            messageArea.value = "Hi Infinity Ohm team,\n\nI am interested in a pipeline demo of Project COEUS. We need automated scraping/extraction for our enterprise operations. Please contact us to schedule a brief walkthrough.";
+                            messageArea.value = "Hi Infinity Ohm team,\n\nI am interested in a pipeline demo of Project COEUS. We need automated, anti-bot-resilient data extraction for our enterprise operations and would like details on platform licensing.";
                         } else {
                             messageArea.value = "";
                         }
