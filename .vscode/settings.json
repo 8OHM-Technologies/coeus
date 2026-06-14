@@ -8,5 +8,8 @@
             "database": "coeus",
             "username": "postgres"
         }
+    ],
+    "github-actions.workflows.pinned.workflows": [
+        ".github/workflows/deploy.yml"
     ]
 }

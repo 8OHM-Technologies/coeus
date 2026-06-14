@@ -15,7 +15,9 @@ ENV NODE_ENV=production
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/backend/package*.json ./apps/backend/
 COPY --from=builder /app/apps/backend/.medusa ./apps/backend/.medusa
+COPY --from=builder /app/apps/backend/.medusa/server/medusa-config.js ./apps/backend/medusa-config.js
 RUN npm ci --omit=dev --workspace=apps/backend
 
 EXPOSE 9000
 CMD ["npm", "run", "start", "--workspace=apps/backend"]
+
