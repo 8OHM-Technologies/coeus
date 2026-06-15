@@ -214,7 +214,8 @@ services:
       - DB_PORT=5432
       - DB_USER=${POSTGRES_USER}
       - DB_PASS=${POSTGRES_PASSWORD}
-      - DB_NAME=${POSTGRES_DB}
+      - DB_NAME=wiki
+      - DATABASE_URL=
       - UPGRADE_COMPANION=1
     networks:
       - 8ohm-network
