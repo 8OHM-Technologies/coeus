@@ -162,7 +162,7 @@ body {
 /* --- Navigation --- */
 .navbar-wrapper {
     position: fixed;
-    top: 42px;
+    top: 30px;
     left: 0;
     width: 100%;
     z-index: 100;
@@ -794,7 +794,7 @@ body {
 }
 
 .mock-code {
-    padding: 24px;
+    padding: 10px;
     margin: 0;
     overflow-x: auto;
     font-family: 'Fira Code', monospace;
