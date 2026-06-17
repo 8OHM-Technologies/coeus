@@ -15,13 +15,13 @@ from pipelines.models import PipelineConfiguration, ScraperType
 logger = logging.getLogger(__name__)
 
 
-def run_saleor_sync():
-    """Trigger the sync_saleor management command."""
+def run_medusa_sync():
+    """Trigger the sync_medusa management command."""
     try:
-        logger.info("Triggering Saleor synchronization...")
-        call_command("sync_saleor")
+        logger.info("Triggering Medusa synchronization...")
+        call_command("sync_medusa")
     except Exception as e:
-        logger.error(f"Saleor synchronization failed: {e}")
+        logger.error(f"Medusa synchronization failed: {e}")
 
 
 def get_pipeline_file_path(pipeline):
@@ -217,14 +217,14 @@ class Command(BaseCommand):
             help="Run the combination task immediately and exit.",
         )
         parser.add_argument(
-            "--sync-saleor",
+            "--sync-medusa",
             action="store_true",
-            help="Run the Saleor synchronization immediately and exit.",
+            help="Run the Medusa synchronization immediately and exit.",
         )
 
     def handle(self, *args, **options):
-        if options["sync_saleor"]:
-            run_saleor_sync()
+        if options["sync_medusa"]:
+            run_medusa_sync()
             return
 
         if options["now"]:
