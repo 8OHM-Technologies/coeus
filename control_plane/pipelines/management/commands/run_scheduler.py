@@ -190,8 +190,8 @@ def combine_scraper_data():
         logger.info(
             f"Successfully combined {len(final_results)} records into {output_file}"
         )
-        # Trigger Saleor Sync after successful combination
-        run_saleor_sync()
+        # Trigger Medusa Sync after successful combination
+        run_medusa_sync()
     except Exception as e:
         logger.error(f"Failed to save combined data: {e}")
 
