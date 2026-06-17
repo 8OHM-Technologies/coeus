@@ -91,29 +91,6 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
 
-      - name: Prepare writable deploy paths
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 1
-          max_attempts: 3
-          retry_wait_seconds: 10
-          command: |
-            ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -s' <<'EOF'
-              set -euo pipefail
-              mkdir -p /home/deploy-user/coeus/orchestration/airflow_dags
-              mkdir -p /home/deploy-user/coeus/extraction_workers
-              mkdir -p /home/deploy-user/coeus/data
-              # CI cannot fix ownership when sudo requires a password.
-              # Fail early with a clear message instead of failing later in SCP.
-              if [ ! -w /home/deploy-user/coeus/orchestration/airflow_dags ] || [ ! -w /home/deploy-user/coeus/extraction_workers ] || [ ! -w /home/deploy-user/coeus/data ]; then
-                echo "ERROR: deploy-user cannot write Airflow bind-mount dirs."
-                echo "Run once on VPS as root:"
-                echo "chown -R deploy-user:deploy-user /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
-                echo "chmod -R u+rwX /home/deploy-user/coeus/orchestration /home/deploy-user/coeus/extraction_workers /home/deploy-user/coeus/data"
-                exit 1
-              fi
-            EOF
-
       - name: Copy files to VPS
         uses: nick-fields/retry@v3
         with:
@@ -122,7 +99,7 @@ jobs:
           retry_wait_seconds: 10
           command: |
             set -o pipefail
-            tar czf - docker-compose.prod.yml landing_page orchestration/airflow_dags extraction_workers | ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "tar xzf - -C /home/deploy-user/coeus/"
+            tar czf - docker-compose.prod.yml landing_page orchestration/airflow_dags extraction_workers | ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p /home/deploy-user/coeus/ && tar xzf - -C /home/deploy-user/coeus/"
 
       - name: Deploy via SSH
         uses: nick-fields/retry@v3
