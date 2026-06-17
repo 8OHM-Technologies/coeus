@@ -276,8 +276,7 @@
                             <span class="product-price">R ####.##</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
                         </div>
-                        <button class="btn btn-secondary buy-btn"
-                            onclick="openPurchaseModal('Home Automation Core', 'R ###.##')">
+                        <button class="btn btn-secondary buy-btn" onclick="openStore()">
                             <span>Order Kit</span>
                             <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
                         </button>
@@ -298,8 +297,7 @@
                             <span class="product-price">R ###.##</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
                         </div>
-                        <button class="btn btn-secondary buy-btn"
-                            onclick="openPurchaseModal('Home Automation Core', 'R ###.##')">
+                        <button class="btn btn-secondary buy-btn" onclick="openStore()">
                             <span>Order Kit</span>
                             <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
                         </button>
@@ -317,8 +315,7 @@
                             <span class="product-price">R ###.##</span>
                             <span class="product-status"><span class="status-dot"></span>In Stock</span>
                         </div>
-                        <button class="btn btn-secondary buy-btn"
-                            onclick="openPurchaseModal('Legacy Alarm Conversion Kit', 'R ###.##')">
+                        <button class="btn btn-secondary buy-btn" onclick="openStore()">
                             <span>Order Kit</span>
                             <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
                         </button>
@@ -576,9 +573,9 @@
                         <label for="division">Which division would you like to speak to?</label>
                         <select id="division" name="division" required>
                             <option value="" disabled selected>Choose a division...</option>
-                            <option value="ohmbase">Consumer: DIY Kits & Hardware</option>
-                            <option value="architecture">B2B: Self-Hosted Architecture & AI Consultancy</option>
-                            <option value="coeus">B2B: Data Engineering & Analytics Pipelines</option>
+                            <option value="consumer">Consumer: DIY Kits & Hardware</option>
+                            <option value="b2b-architecture">B2B: Self-Hosted Architecture & AI Consultancy</option>
+                            <option value="b2b-data">B2B: Data Engineering & Analytics Pipelines</option>
                             <option value="general">General Enquiry</option>
                         </select>
                     </div>
@@ -603,6 +600,11 @@
             const divisionSelect = document.getElementById('division');
             const messageArea = document.getElementById('message');
 
+            // Open the 8ohm Store
+            function openStore() {
+                window.location.href = 'https://store.8ohm.co.za';
+            }
+
             // Trigger Modal Open via CTA Bindings
             document.querySelectorAll('.contact-trigger-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -613,14 +615,6 @@
                         } else {
                             divisionSelect.value = division;
                         }
-                    }
-
-                    if (messageArea && division === 'architecture') {
-                        messageArea.value = "Greetings Infinity Ohm team,\n\nWe are looking to retain your Solutions Architecture division regarding an on-premise AI/IT configuration strategy. Please outline your consultation parameters and data containment frameworks.";
-                    } else if (messageArea && (division === 'coeus' || division === 'data-engineering')) {
-                        messageArea.value = "Greetings Infinity Ohm team,\n\nWe require structured access to your corporate data engineering pipeline engine. Please share data schemas and technical subscription options.";
-                    } else if (messageArea) {
-                        messageArea.value = "";
                     }
 
                     modal.classList.add('active');
@@ -666,58 +660,6 @@
 
             document.querySelectorAll('.reveal-item').forEach(item => { revealObserver.observe(item); });
 
-            // Store Purchase Handler
-            window.openPurchaseModal = (productName, price) => {
-                modal.classList.add('active');
-                document.body.style.overflow = 'hidden';
-                if (messageArea) {
-                    messageArea.value = `Greetings Infinity Ohm team,\n\nWe wish to arrange procurement for the following hardware item: ${productName} (${price}). Please forward the invoicing details and dispatch schedules.\n\nRegards.`;
-                }
-                if (divisionSelect) { divisionSelect.value = 'ohmbase'; }
-            };
-
-            // Dynamic Medusa API E-commerce Store Ingestion
-            const loadProducts = async () => {
-                const grid = document.getElementById('productGrid');
-                if (!grid) return;
-                try {
-                    const storeUrl = window.location.hostname === 'localhost'
-                        ? 'http://localhost:9000/store/products'
-                        : 'https://api.8ohm.co.za/store/products';
-                    const response = await fetch(storeUrl);
-                    if (!response.ok) throw new Error('Network response was not ok');
-                    const { products } = await response.json();
-                    if (products && products.length > 0) {
-                        grid.innerHTML = products.map(product => {
-                            const variant = product.variants[0];
-                            const price = variant ? `R ${(variant.prices[0].amount / 100).toFixed(2)}` : 'Contact for Price';
-                            return `
-                                <div class="bezel-card-outer product-card reveal-item revealed">
-                                    <div class="bezel-card-inner">
-                                        <div class="product-badge">${product.subtitle || 'Edge'}</div>
-                                        <div class="product-image-placeholder">
-                                            <i class="ph-light ph-cpu"></i>
-                                        </div>
-                                        <h3 class="product-title">${product.title}</h3>
-                                        <p class="product-description">${product.description}</p>
-                                        <div class="product-meta">
-                                            <span class="product-price">${price}</span>
-                                            <span class="product-status"><span class="status-dot"></span>In Stock</span>
-                                        </div>
-                                        <button class="btn btn-secondary buy-btn" onclick="openPurchaseModal('${product.title}', '${price}')">
-                                            <span>Order Kit</span>
-                                            <div class="btn-icon"><i class="ph-light ph-shopping-cart"></i></div>
-                                        </button>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('');
-                    }
-                } catch (error) {
-                    console.log('Using static product fallback:', error);
-                }
-            };
-            loadProducts();
         });
     </script>
 </body>

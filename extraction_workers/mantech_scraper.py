@@ -94,7 +94,6 @@ async def run_extraction(
     product_urls = []
 
     async with async_playwright() as p:
-        # headless=True is faster, but keep False if you want to watch it work
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             ignore_https_errors=config.get("allow_insecure_https", False)
@@ -292,7 +291,7 @@ async def run_extraction(
                     product_data["pricing"] = pricing_tiers
                     extracted_data.append(product_data)
 
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)
 
                 except Exception as e:
                     logger.error(f"Error scraping {url}: {e}")
