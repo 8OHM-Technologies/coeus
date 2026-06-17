@@ -95,7 +95,7 @@ jobs:
       - name: Configure SSH ProxyCommand
         run: |
           mkdir -p ~/.ssh
-          echo "Host deploy.8ohm.co.za" >> ~/.ssh/config
+          echo "Host ${{ secrets.SSH_HOST }}" >> ~/.ssh/config
           echo "  ProxyCommand cloudflared access ssh --hostname %h" >> ~/.ssh/config
           echo "  StrictHostKeyChecking no" >> ~/.ssh/config
 
