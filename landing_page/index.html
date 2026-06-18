@@ -585,7 +585,8 @@
 
                 <div id="contactFormWrapper">
                     <h2 class="modal-title">Enquiry</h2>
-                    <p class="modal-subtitle">Our online store and the OhmBase guides are in the works, but until then, let
+                    <p class="modal-subtitle">Our online store and the OhmBase guides are in the works, but until then,
+                        let
                         us know what you need and we'll get back to you within 48 hours.</p>
 
                     <form action="#" method="POST">
@@ -628,7 +629,8 @@
                         <i class="ph-light ph-check-circle"></i>
                     </div>
                     <h3 class="success-title">Enquiry Sent!</h3>
-                    <p class="success-desc">Thank you for your enquiry. Our team will get back to you within 48 hours.</p>
+                    <p class="success-desc">Thank you for your enquiry. Our team will get back to you within 48 hours.
+                    </p>
                     <button class="btn btn-primary" id="successCloseBtn">
                         <span>Close Window</span>
                     </button>
@@ -711,16 +713,7 @@
                     submitBtn.style.opacity = '0.7';
                     submitBtn.querySelector('span').innerText = 'Sending...';
 
-                    // Determine API URL
-                    let apiUrl = '/api/send-website-enquiry';
-                    if (window.location.hostname === 'localhost' || window.location.hostname.endsWith('.localhost')) {
-                        const port = window.location.port ? `:${window.location.port}` : '';
-                        if (window.location.hostname === 'control-plane.localhost') {
-                            apiUrl = '/api/send-website-enquiry';
-                        } else {
-                            apiUrl = `${window.location.protocol}//control-plane.localhost${port}/api/send-website-enquiry`;
-                        }
-                    }
+                    let apiUrl = 'https://control-plane.8ohm.co.za/api/send-website-enquiry';
 
                     try {
                         const response = await fetch(apiUrl, {
