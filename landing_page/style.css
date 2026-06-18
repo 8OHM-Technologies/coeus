@@ -1159,17 +1159,38 @@ footer {
 
 @media (max-width: 768px) {
     .navbar-wrapper {
-        top: 75px;
-        padding: 16px;
+        top: 16px;
+        padding: 12px;
+        box-sizing: border-box;
     }
 
     .navbar {
-        padding: 8px 8px 8px 16px;
-        gap: 16px;
+        padding: 6px 6px 6px 14px;
+        gap: 8px;
+        box-sizing: border-box;
+    }
+
+    .brand-text {
+        font-size: 0.85rem;
+        letter-spacing: 1px;
+    }
+
+    .nav-cta {
+        padding: 6px 6px 6px 12px;
+        gap: 6px;
+    }
+    
+    .nav-cta span {
+        font-size: 0.8rem;
+    }
+
+    .nav-cta-icon {
+        width: 24px;
+        height: 24px;
     }
 
     .hero {
-        padding: 210px 0 60px;
+        padding: 160px 0 60px;
     }
 
     .hero-title {
