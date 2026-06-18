@@ -1,4 +1,10 @@
 /* --- Global Reset & Custom Properties --- */
+/* --- 8OHM BRAND COLOURS --- */
+/* --- Warm Copper / Orange:  --- */
+/* ---     #ff8800     --- */
+/* --- Electric Cyan: --- */
+/* ---     #8dd7da     --- */
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -15,10 +21,11 @@
     --color-border-outer: rgba(255, 255, 255, 0.05);
     --color-border-inner: rgba(255, 255, 255, 0.03);
 
-    --color-accent-primary: #ff8800;
     /* Warm Copper / Orange */
-    --color-accent-secondary: #8dd7da;
+    --color-accent-primary: #ff8800;
     /* Electric Cyan */
+    --color-accent-secondary: #8dd7da;
+
     --color-text-primary: #ffffff;
     --color-text-secondary: #94a3b8;
     --color-text-muted: #475569;
