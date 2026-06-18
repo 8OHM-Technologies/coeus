@@ -26,6 +26,11 @@
         href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/light/style.css" />
 
     <link rel="stylesheet" href="style.css">
+    <style>
+        .modal-overlay {
+            display: none;
+        }
+    </style>
 </head>
 
 <body>
@@ -659,9 +664,21 @@
                 window.location.href = 'https://store.8ohm.co.za';
             }
 
+            const resetFormState = () => {
+                if (form) form.reset();
+                if (formWrapper) formWrapper.style.display = '';
+                if (successMessage) successMessage.classList.remove('active');
+                if (formError) {
+                    formError.classList.remove('active');
+                    const errorText = formError.querySelector('.error-text');
+                    if (errorText) errorText.innerText = '';
+                }
+            };
+
             // Trigger Modal Open via CTA Bindings
             document.querySelectorAll('.contact-trigger-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
+                    resetFormState();
                     const division = btn.getAttribute('data-division');
                     if (division && divisionSelect) {
                         if (division === 'coeus') {
@@ -679,9 +696,11 @@
             const closeModal = () => {
                 modal.classList.remove('active');
                 document.body.style.overflow = 'auto';
+                setTimeout(resetFormState, 500);
             };
 
             if (closeBtn) closeBtn.addEventListener('click', closeModal);
+            if (successCloseBtn) successCloseBtn.addEventListener('click', closeModal);
             window.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('active')) closeModal(); });
 
