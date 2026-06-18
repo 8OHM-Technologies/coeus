@@ -582,39 +582,57 @@
                 <button class="close-btn" id="closeContactBtn" aria-label="Close modal">
                     <i class="ph-light ph-x"></i>
                 </button>
-                <h2 class="modal-title">Enquiry</h2>
-                <p class="modal-subtitle">Our online store and the OhmBase guides are in the works, but until then, let
-                    us know what you need and we'll get back to you within 48 hours.</p>
 
-                <form action="#" method="POST">
-                    <div class="form-group">
-                        <label for="name">What do we call you?</label>
-                        <input type="text" id="name" name="name" required placeholder="John Doe">
+                <div id="contactFormWrapper">
+                    <h2 class="modal-title">Enquiry</h2>
+                    <p class="modal-subtitle">Our online store and the OhmBase guides are in the works, but until then, let
+                        us know what you need and we'll get back to you within 48 hours.</p>
+
+                    <form action="#" method="POST">
+                        <div class="form-status error" id="formError">
+                            <i class="ph-light ph-warning-circle"></i>
+                            <span class="error-text"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="name">What do we call you?</label>
+                            <input type="text" id="name" name="name" required placeholder="John Doe">
+                        </div>
+                        <div class="form-group">
+                            <label for="email">How do we get in touch?</label>
+                            <input type="email" id="email" name="email" required placeholder="example@email.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="division">Which division would you like to speak to?</label>
+                            <select id="division" name="division" required>
+                                <option value="" disabled selected>Choose a division...</option>
+                                <option value="consumer">Consumer: DIY Kits & Hardware</option>
+                                <option value="b2b-architecture">B2B: Self-Hosted Architecture & AI Consultancy</option>
+                                <option value="b2b-data">B2B: Data Engineering & Analytics Pipelines</option>
+                                <option value="general">General Enquiry</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="message">How can we help you?</label>
+                            <textarea id="message" name="message" rows="4" required
+                                placeholder="Detail your requirements..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary submit-btn">
+                            <span>Send Message</span>
+                            <div class="btn-icon"><i class="ph-light ph-paper-plane-tilt"></i></div>
+                        </button>
+                    </form>
+                </div>
+
+                <div class="form-status-success" id="successMessage">
+                    <div class="success-icon">
+                        <i class="ph-light ph-check-circle"></i>
                     </div>
-                    <div class="form-group">
-                        <label for="email">How do we get in touch?</label>
-                        <input type="email" id="email" name="email" required placeholder="example@email.com">
-                    </div>
-                    <div class="form-group">
-                        <label for="division">Which division would you like to speak to?</label>
-                        <select id="division" name="division" required>
-                            <option value="" disabled selected>Choose a division...</option>
-                            <option value="consumer">Consumer: DIY Kits & Hardware</option>
-                            <option value="b2b-architecture">B2B: Self-Hosted Architecture & AI Consultancy</option>
-                            <option value="b2b-data">B2B: Data Engineering & Analytics Pipelines</option>
-                            <option value="general">General Enquiry</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="message">How can we help you?</label>
-                        <textarea id="message" name="message" rows="4" required
-                            placeholder="Detail your requirements..."></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary submit-btn">
-                        <span>Send Message</span>
-                        <div class="btn-icon"><i class="ph-light ph-paper-plane-tilt"></i></div>
+                    <h3 class="success-title">Enquiry Sent!</h3>
+                    <p class="success-desc">Thank you for your enquiry. Our team will get back to you within 48 hours.</p>
+                    <button class="btn btn-primary" id="successCloseBtn">
+                        <span>Close Window</span>
                     </button>
-                </form>
+                </div>
             </div>
         </div>
     </div>
@@ -625,6 +643,13 @@
             const closeBtn = document.getElementById('closeContactBtn');
             const divisionSelect = document.getElementById('division');
             const messageArea = document.getElementById('message');
+
+            const form = modal.querySelector('form');
+            const formWrapper = document.getElementById('contactFormWrapper');
+            const successMessage = document.getElementById('successMessage');
+            const formError = document.getElementById('formError');
+            const submitBtn = form ? form.querySelector('.submit-btn') : null;
+            const successCloseBtn = document.getElementById('successCloseBtn');
 
             // Open the 8ohm Store
             function openStore() {
@@ -656,6 +681,99 @@
             if (closeBtn) closeBtn.addEventListener('click', closeModal);
             window.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('active')) closeModal(); });
+
+            // Form submission logic
+            if (form) {
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+
+                    // Hide any existing error
+                    if (formError) {
+                        formError.style.display = 'none';
+                        formError.querySelector('.error-text').innerText = '';
+                    }
+
+                    // Get values
+                    const name = document.getElementById('name').value.trim();
+                    const email = document.getElementById('email').value.trim();
+                    const division = document.getElementById('division').value;
+                    const message = document.getElementById('message').value.trim();
+
+                    // Basic check
+                    if (!name || !email || !division || !message) {
+                        showError("Please fill out all required fields.");
+                        return;
+                    }
+
+                    // Show loading state
+                    const originalBtnHtml = submitBtn.innerHTML;
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.7';
+                    submitBtn.querySelector('span').innerText = 'Sending...';
+
+                    // Determine API URL
+                    let apiUrl = '/api/send-website-enquiry';
+                    if (window.location.hostname === 'localhost' || window.location.hostname.endsWith('.localhost')) {
+                        const port = window.location.port ? `:${window.location.port}` : '';
+                        if (window.location.hostname === 'control-plane.localhost') {
+                            apiUrl = '/api/send-website-enquiry';
+                        } else {
+                            apiUrl = `${window.location.protocol}//control-plane.localhost${port}/api/send-website-enquiry`;
+                        }
+                    }
+
+                    try {
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ name, email, division, message })
+                        });
+
+                        const result = await response.json();
+
+                        if (response.ok) {
+                            // Reset form
+                            form.reset();
+                            // Transition views
+                            if (formWrapper) formWrapper.style.display = 'none';
+                            if (successMessage) successMessage.classList.add('active');
+                        } else {
+                            showError(result.message || "Something went wrong. Please try again.");
+                        }
+                    } catch (err) {
+                        console.error('Submission error:', err);
+                        showError("Failed to connect to the server. Please check your connection and try again.");
+                    } finally {
+                        // Reset submit button state
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.style.opacity = '';
+                            submitBtn.innerHTML = originalBtnHtml;
+                        }
+                    }
+                });
+            }
+
+            function showError(msg) {
+                if (formError) {
+                    formError.querySelector('.error-text').innerText = msg;
+                    formError.style.display = 'flex';
+                }
+            }
+
+            if (successCloseBtn) {
+                successCloseBtn.addEventListener('click', () => {
+                    closeModal();
+                    // Reset modal state back to form for subsequent clicks
+                    setTimeout(() => {
+                        if (formWrapper) formWrapper.style.display = 'block';
+                        if (successMessage) successMessage.classList.remove('active');
+                    }, 300);
+                });
+            }
+
 
             // Magnetic Glow Movement Logic
             document.addEventListener('mousemove', (e) => {

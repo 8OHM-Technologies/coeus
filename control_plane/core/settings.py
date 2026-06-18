@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "core",
     "pipelines.apps.PipelinesConfig",
     "extracted_data.apps.ExtractedDataConfig",
     "django_apscheduler",

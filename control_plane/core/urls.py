@@ -17,8 +17,11 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
+from .views import send_website_enquiry
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/pipelines/", include("pipelines.urls")),
+
+    path("api/send-website-enquiry", send_website_enquiry, name="send_website_enquiry"),
 ]
