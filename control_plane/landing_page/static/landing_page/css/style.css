@@ -3,7 +3,7 @@
 /* --- Warm Copper / Orange:  --- */
 /* ---     #ff8800     --- */
 /* --- Electric Cyan: --- */
-/* ---     #8dd7da     --- */
+/* ---     #00f7ff     --- */
 
 * {
     box-sizing: border-box;
@@ -24,7 +24,7 @@
     /* Warm Copper / Orange */
     --color-accent-primary: #ff8800;
     /* Electric Cyan */
-    --color-accent-secondary: #8dd7da;
+    --color-accent-secondary: #00f7ff;
 
     --color-text-primary: #ffffff;
     --color-text-secondary: #94a3b8;
