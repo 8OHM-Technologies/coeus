@@ -30,7 +30,7 @@ html {
     scroll-behavior: smooth;
 }
 
-body {
+html, body {
     font-family: var(--font-body);
     background-color: var(--color-bg);
     color: var(--color-text-primary);
@@ -1211,6 +1211,8 @@ footer {
     .btn {
         width: 100%;
         justify-content: space-between;
+        white-space: normal;
+        text-align: left;
     }
 
     .bento-grid {
@@ -1226,7 +1228,8 @@ footer {
     }
 
     .proof-grid,
-    .faq-grid {
+    .faq-grid,
+    .product-grid {
         grid-template-columns: 1fr !important;
         gap: 24px !important;
     }
