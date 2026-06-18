@@ -53,7 +53,6 @@ INSTALLED_APPS = [
     "pipelines.apps.PipelinesConfig",
     "extracted_data.apps.ExtractedDataConfig",
     "django_apscheduler",
-    "landing_page.apps.LandingPageConfig",
 ]
 
 MIDDLEWARE = [

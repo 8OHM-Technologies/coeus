@@ -1,4 +1,3 @@
-{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 
@@ -10,11 +9,11 @@
         content="Achieve digital sovereignty. Consumer DIY self-hosting kits and B2B on-premises AI and Data Engineering consultancy.">
     <meta name="keywords"
         content="Infinity Ohm, Edge Computing, Self-Hosted AI, On-Premise LLM, Home Assistant Guides, Private Cloud South Africa, Data Engineering, Hardware Retrofitting, Digital Sovereignty">
-    <link rel="icon" type="image/x-icon" href="{% static 'landing_page/img/favicon.ico' %}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'landing_page/img/apple-touch-icon.png' %}">
-    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'landing_page/img/favicon-32x32.png' %}">
-    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'landing_page/img/favicon-16x16.png' %}">
-    <link rel="manifest" href="{% static 'landing_page/manifest.json' %}">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
     <meta name="theme-color" content="#050505">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,7 +25,7 @@
     <link rel="stylesheet" type="text/css"
         href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/light/style.css" />
 
-    <link rel="stylesheet" href="{% static 'landing_page/css/style.css' %}">
+    <link rel="stylesheet" href="style.css">
     <style>
         .modal-overlay {
             display: none;
@@ -254,7 +253,7 @@
                         </p>
                         <button type="button" class="btn btn-primary contact-trigger-btn"
                             style="align-self: flex-start; margin-top: auto; justify-content: space-between;">
-                            <span>Browse OhmShop</span>
+                            <span>Browse Store</span>
                             <div class="btn-icon"><i class="ph-light ph-shopping-bag"></i></div>
                         </button>
                     </div>
@@ -262,10 +261,10 @@
             </div>
         </section>
 
-        <section id="ohmshop" class="ohmshop-section container reveal-item">
-            <div class="ohmshop-header">
-                <h2 class="ohmshop-title">Hardware Kits</h2>
-                <p class="ohmshop-subtitle">Purpose-built platforms acting as your secure edge servers. No cloud
+        <section id="store" class="store-section container reveal-item">
+            <div class="store-header">
+                <h2 class="store-title">Hardware Kits</h2>
+                <p class="store-subtitle">Purpose-built platforms acting as your secure edge servers. No cloud
                     tethers, no forced subscriptions, just pure local compute power.</p>
             </div>
 
@@ -393,7 +392,7 @@
                                 <path d="M 260 60 L 260 240" class="flow-base" />
                                 <path d="M 260 60 L 260 240" class="flow-path path-solve-res" />
                                 <path d="M 250 240 Q 325 240 400 150" class="flow-base" />
-                                <path d="M 250 240 Q 325 240 400 150" class="flow-path path-ohmshop" />
+                                <path d="M 250 240 Q 325 240 400 150" class="flow-path path-store" />
                             </svg>
 
                             <div class="diagram-node" style="left: 20%; top: 50%;">
@@ -601,8 +600,7 @@
 
                 <div id="contactFormWrapper">
                     <h2 class="modal-title">Enquiry</h2>
-                    <p class="modal-subtitle">Our online ohmshop and the OhmBase guides are in the works, but until
-                        then,
+                    <p class="modal-subtitle">Our online store and the OhmBase guides are in the works, but until then,
                         let
                         us know what you need and we'll get back to you within 48 hours.</p>
 
@@ -671,9 +669,9 @@
             const submitBtn = form ? form.querySelector('.submit-btn') : null;
             const successCloseBtn = document.getElementById('successCloseBtn');
 
-            // Open the 8ohm OhmShop
+            // Open the 8ohm Store
             function openStore() {
-                window.location.href = 'https://ohmshop.8ohm.co.za';
+                window.location.href = 'https://store.8ohm.co.za';
             }
 
             const resetFormState = () => {
@@ -829,22 +827,8 @@
 
             document.querySelectorAll('.reveal-item').forEach(item => { revealObserver.observe(item); });
 
-            // Handle GET parameters for contact modal
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('contact') === 'true' || urlParams.get('enquire') === 'true') {
-                const division = urlParams.get('division');
-                if (division && divisionSelect) {
-                    const validOptions = Array.from(divisionSelect.options).map(opt => opt.value);
-                    if (validOptions.includes(division)) {
-                        divisionSelect.value = division;
-                    }
-                }
-                modal.classList.add('active');
-                document.body.style.overflow = 'hidden';
-            }
         });
     </script>
-    <script src="{% static 'landing_page/js/app.js' %}"></script>
 </body>
 
 </html>

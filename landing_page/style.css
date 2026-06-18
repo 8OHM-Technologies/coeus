@@ -1,10 +1,4 @@
 /* --- Global Reset & Custom Properties --- */
-/* --- 8OHM BRAND COLOURS --- */
-/* --- Warm Copper / Orange:  --- */
-/* ---     #ff8800     --- */
-/* --- Electric Cyan: --- */
-/* ---     #00f7ff     --- */
-
 * {
     box-sizing: border-box;
     margin: 0;
@@ -21,11 +15,10 @@
     --color-border-outer: rgba(255, 255, 255, 0.05);
     --color-border-inner: rgba(255, 255, 255, 0.03);
 
-    /* Warm Copper / Orange */
     --color-accent-primary: #ff8800;
+    /* Warm Copper / Orange */
+    --color-accent-secondary: #8dd7da;
     /* Electric Cyan */
-    --color-accent-secondary: #00f7ff;
-
     --color-text-primary: #ffffff;
     --color-text-secondary: #94a3b8;
     --color-text-muted: #475569;
@@ -37,8 +30,7 @@ html {
     scroll-behavior: smooth;
 }
 
-html,
-body {
+html, body {
     font-family: var(--font-body);
     background-color: var(--color-bg);
     color: var(--color-text-primary);
@@ -456,7 +448,6 @@ body {
     border-radius: 28px;
     transition: all 0.6s var(--ease-premium);
     display: flex;
-    min-width: 0;
 }
 
 .bezel-card-outer:hover {
@@ -482,7 +473,6 @@ body {
     box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
     position: relative;
     overflow: hidden;
-    min-width: 0;
 }
 
 .card-icon {
@@ -630,7 +620,7 @@ body {
     animation-duration: 2s;
 }
 
-.path-ohmshop {
+.path-store {
     stroke: var(--color-accent-primary);
     filter: drop-shadow(0 0 3px rgba(255, 136, 0, 0.5));
     animation-duration: 1.2s;
@@ -842,13 +832,13 @@ body {
 }
 
 /* --- Shop Section --- */
-.ohmshop-section {
+.store-section {
     padding: 60px 0 100px;
     position: relative;
     z-index: 10;
 }
 
-.ohmshop-header {
+.store-header {
     text-align: center;
     margin-bottom: 56px;
     display: flex;
@@ -856,7 +846,7 @@ body {
     align-items: center;
 }
 
-.ohmshop-title {
+.store-title {
     font-family: var(--font-display);
     font-size: 3rem;
     font-weight: 800;
@@ -865,7 +855,7 @@ body {
     margin: 16px 0;
 }
 
-.ohmshop-subtitle {
+.store-subtitle {
     font-size: 1.1rem;
     color: var(--color-text-secondary);
     max-width: 650px;
@@ -1189,7 +1179,7 @@ footer {
         padding: 6px 6px 6px 12px;
         gap: 6px;
     }
-
+    
     .nav-cta span {
         font-size: 0.8rem;
     }
@@ -1376,7 +1366,6 @@ footer {
         opacity: 0;
         transform: translateY(10px);
     }
-
     to {
         opacity: 1;
         transform: translateY(0);
