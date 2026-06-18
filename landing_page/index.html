@@ -628,11 +628,12 @@
                     <div class="success-icon">
                         <i class="ph-light ph-check-circle"></i>
                     </div>
-                    <h3 class="success-title">Enquiry Sent!</h3>
+                    <h3 class="success-title">Enquiry Sent</h3>
                     <p class="success-desc">Thank you for your enquiry. Our team will get back to you within 48 hours.
                     </p>
-                    <button class="btn btn-primary" id="successCloseBtn">
+                    <button class="btn btn-primary submit-btn" id="successCloseBtn">
                         <span>Close Window</span>
+                        <div class="btn-icon"><i class="ph-light ph-x"></i></div>
                     </button>
                 </div>
             </div>
@@ -691,7 +692,7 @@
 
                     // Hide any existing error
                     if (formError) {
-                        formError.style.display = 'none';
+                        formError.classList.remove('active');
                         formError.querySelector('.error-text').innerText = '';
                     }
 
@@ -752,7 +753,7 @@
             function showError(msg) {
                 if (formError) {
                     formError.querySelector('.error-text').innerText = msg;
-                    formError.style.display = 'flex';
+                    formError.classList.add('active');
                 }
             }
 

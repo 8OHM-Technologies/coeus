@@ -1284,10 +1284,13 @@ footer {
 }
 
 .form-status.error {
-    display: flex;
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.25);
     color: #ef4444;
+}
+
+.form-status.active {
+    display: flex;
 }
 
 .form-status-success {
