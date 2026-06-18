@@ -112,7 +112,7 @@ jobs:
           retry_wait_seconds: 10
           command: |
             set -o pipefail
-            tar czf - docker-compose.prod.yml landing_page orchestration/airflow_dags extraction_workers | ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p /home/deploy-user/coeus/ && tar xzf - -C /home/deploy-user/coeus/"
+            tar czf - docker-compose.prod.yml orchestration/airflow_dags extraction_workers | ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p /home/deploy-user/coeus/ && tar xzf - -C /home/deploy-user/coeus/"
 
       - name: Deploy via SSH
         uses: nick-fields/retry@v3
