@@ -20,6 +20,7 @@ from django.urls import include, path
 from .views import send_website_enquiry
 
 urlpatterns = [
+    path("", include("landing_page.urls")),
     path("admin/", admin.site.urls),
     path("api/pipelines/", include("pipelines.urls")),
 

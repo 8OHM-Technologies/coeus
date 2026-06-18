@@ -24,7 +24,7 @@ jobs:
               - 'control_plane/**'
               - 'extraction_workers/**'
               - 'solver/**'
-              - 'online_store/**'
+              - 'ohmshop/**'
 
   # 2. Build and Push (Only runs if 'detect-changes' found backend updates)
   build-and-push:
@@ -67,13 +67,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and Push Store
+      - name: Build and Push OhmShop
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
-          context: online_store
-          file: online_store/apps/backend/Dockerfile
+          context: ohmshop
+          file: ohmshop/apps/backend/Dockerfile
           push: true
-          tags: ghcr.io/8ohm-technologies/coeus-store:latest
+          tags: ghcr.io/8ohm-technologies/coeus-ohmshop:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

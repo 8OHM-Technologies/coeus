@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 
@@ -9,11 +10,11 @@
         content="Achieve digital sovereignty. Consumer DIY self-hosting kits and B2B on-premises AI and Data Engineering consultancy.">
     <meta name="keywords"
         content="Infinity Ohm, Edge Computing, Self-Hosted AI, On-Premise LLM, Home Assistant Guides, Private Cloud South Africa, Data Engineering, Hardware Retrofitting, Digital Sovereignty">
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
+    <link rel="icon" type="image/x-icon" href="{% static 'landing_page/img/favicon.ico' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'landing_page/img/apple-touch-icon.png' %}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'landing_page/img/favicon-32x32.png' %}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'landing_page/img/favicon-16x16.png' %}">
+    <link rel="manifest" href="{% static 'landing_page/manifest.json' %}">
     <meta name="theme-color" content="#050505">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,7 +26,7 @@
     <link rel="stylesheet" type="text/css"
         href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/light/style.css" />
 
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="{% static 'landing_page/css/style.css' %}">
     <style>
         .modal-overlay {
             display: none;
@@ -828,8 +829,22 @@
 
             document.querySelectorAll('.reveal-item').forEach(item => { revealObserver.observe(item); });
 
+            // Handle GET parameters for contact modal
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('contact') === 'true' || urlParams.get('enquire') === 'true') {
+                const division = urlParams.get('division');
+                if (division && divisionSelect) {
+                    const validOptions = Array.from(divisionSelect.options).map(opt => opt.value);
+                    if (validOptions.includes(division)) {
+                        divisionSelect.value = division;
+                    }
+                }
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
         });
     </script>
+    <script src="{% static 'landing_page/js/app.js' %}"></script>
 </body>
 
 </html>
