@@ -73,7 +73,7 @@ jobs:
           context: ohmshop
           file: ohmshop/apps/backend/Dockerfile
           push: true
-          tags: ghcr.io/8ohm-technologies/coeus-ohmshop:latest
+          tags: ghcr.io/8ohm-technologies/ohmshop:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
