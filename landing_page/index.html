@@ -669,9 +669,21 @@
             const submitBtn = form ? form.querySelector('.submit-btn') : null;
             const successCloseBtn = document.getElementById('successCloseBtn');
 
-            // Open the 8ohm Store
-            function openStore() {
-                window.location.href = 'https://store.8ohm.co.za';
+            // Check for GET parameters to open contact modal or show success message modal (For Google Ads)
+            const params = new URLSearchParams(window.location.search);
+            const contact = params.get('contact');
+            const success = params.get('success');
+
+            if (contact === 'true') {
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+
+            if (success === 'true') {
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                formWrapper.style.display = 'none';
+                successMessage.classList.add('active');
             }
 
             const resetFormState = () => {
