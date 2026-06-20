@@ -280,6 +280,7 @@ volumes:
   static_assets:
   huggingface_cache:
   airflow_logs:
+  postgres_data:
 
 networks:
   8ohm-network:
