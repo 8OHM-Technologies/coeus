@@ -259,7 +259,6 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379
       STORE_CORS: https://8ohm.co.za,https://www.8ohm.co.za,https://ohmshop.8ohm.co.za
       ADMIN_CORS: https://ohmshop.8ohm.co.za
