@@ -207,40 +207,48 @@ services:
       - "traefik.docker.network=8ohm-network"
 
   # ---------------------------------------------------------
-  # 6a. ohmbase Application (Wiki.js)
+  # 6a. ohmbase Application (BookStack)
   # ---------------------------------------------------------
   ohmbase:
-    image: ghcr.io/requarks/wiki:2
-    container_name: coeus-ohmbase
-    depends_on:
-      - postgres
+    image: ghcr.io/linuxserver/bookstack:sha256:7c23212220ee65245ca1b87015a88c0894db0833dfd937574f305ec9c834f547
+    container_name: ohmbase
     environment:
-      - DB_TYPE=postgres
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER}
-      - DB_PASS=${POSTGRES_PASSWORD}
-      - DB_NAME=wiki
-      - UPGRADE_COMPANION=1
+      - PUID=1000
+      - PGID=1000
+      - TZ=Africa/Johannesburg
+      - APP_URL=http://ohmbase.localhost:6875
+      # docker run -it --rm --entrypoint /bin/bash lscr.io/linuxserver/bookstack:latest appkey
+      - APP_KEY=base64:3qjlIoUX4Tw6fUQgZcxMbz6lb8+dAzqpvItqHvahW1c=
+
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_DATABASE=bookstack
+      - DB_USERNAME=bookstack
+      - DB_PASSWORD=bookstack8432
     volumes:
-      - ./ohmbase/assets/favicons/favicon.ico:/wiki/client/static/assets/icons/favicon.ico
+      - ./bookstack_app_data:/config
     networks:
       - 8ohm-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.ohmbase.rule=Host(`ohmbase.localhost`) || Host(`localhost`)"
-      - "traefik.http.services.ohmbase.loadbalancer.server.port=3000"
-      - "traefik.docker.network=8ohm-network"
+    ports:
+      - 6875:80
     restart: unless-stopped
 
   # ---------------------------------------------------------
-  # 6b. ohmbase Update Companion
+  # 6b. ohmbase MariaDB
   # ---------------------------------------------------------
-  ohmbase_update_companion:
-    image: ghcr.io/requarks/wiki-update-companion:latest
-    container_name: coeus-ohmbase-update-companion
+  ohmbase_mariadb:
+    image: ghcr.io/linuxserver/mariadb:sha256:ac08dd6cf5fb6699c68e77d8afe454d41ea6aaed163817e43011597a60e8f7f1
+    container_name: ohmbase-mariadb
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Africa/Johannesburg
+      - MYSQL_ROOT_PASSWORD=mysupersecretrootpassword
+      - MYSQL_DATABASE=bookstack
+      - MYSQL_USER=bookstack
+      - MYSQL_PASSWORD=bookstack8432
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./bookstack_db_data:/config
     networks:
       - 8ohm-network
     restart: unless-stopped
@@ -254,6 +262,7 @@ services:
     networks:
       - 8ohm-network
     restart: always
+
   # ---------------------------------------------------------
   # 7b. MedusaJS OhmShop Backend & Admin
   # ---------------------------------------------------------
