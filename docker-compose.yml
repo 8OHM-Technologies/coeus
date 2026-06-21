@@ -216,7 +216,7 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Africa/Johannesburg
-      - APP_URL=http://ohmbase.localhost:6875
+      - APP_URL=http://ohmbase.localhost
       # docker run -it --rm --entrypoint /bin/bash lscr.io/linuxserver/bookstack:latest appkey
       - APP_KEY=base64:3qjlIoUX4Tw6fUQgZcxMbz6lb8+dAzqpvItqHvahW1c=
 
