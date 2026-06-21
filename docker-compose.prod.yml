@@ -290,7 +290,7 @@ services:
   # 7c. Next.js OhmShop Storefront (ohmshop)
   # ---------------------------------------------------------
   ohmshop:
-    image: ghcr.io/8ohm-technologies/coeus-ohmshop-storefront:latest
+    image: ghcr.io/8ohm-technologies/coeus-ohmshop:latest
     container_name: coeus-ohmshop
     depends_on:
       - ohmshop-server
