@@ -210,7 +210,7 @@ services:
   # 6a. ohmbase Application (BookStack)
   # ---------------------------------------------------------
   ohmbase:
-    image: ghcr.io/linuxserver/bookstack:sha256:7c23212220ee65245ca1b87015a88c0894db0833dfd937574f305ec9c834f547
+    image: ghcr.io/linuxserver/bookstack:7c23212220ee65245ca1b87015a88c0894db0833dfd937574f305ec9c834f547
     container_name: ohmbase
     environment:
       - PUID=1000
@@ -237,7 +237,7 @@ services:
   # 6b. ohmbase MariaDB
   # ---------------------------------------------------------
   ohmbase_mariadb:
-    image: ghcr.io/linuxserver/mariadb:sha256:ac08dd6cf5fb6699c68e77d8afe454d41ea6aaed163817e43011597a60e8f7f1
+    image: ghcr.io/linuxserver/mariadb:ac08dd6cf5fb6699c68e77d8afe454d41ea6aaed163817e43011597a60e8f7f1
     container_name: ohmbase-mariadb
     environment:
       - PUID=1000
