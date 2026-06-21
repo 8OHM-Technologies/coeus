@@ -221,10 +221,10 @@ services:
       - APP_KEY=base64:3qjlIoUX4Tw6fUQgZcxMbz6lb8+dAzqpvItqHvahW1c=
 
       - DB_HOST=ohmbase-mariadb
-      - DB_PORT=3306
+      - DB_PORT=${DB_PORT}
       - DB_DATABASE=bookstack
-      - DB_USERNAME=bookstack
-      - DB_PASSWORD=bookstack8432
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
     volumes:
       - ./bookstack_app_data:/config
     networks:
