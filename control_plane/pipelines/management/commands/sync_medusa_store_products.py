@@ -27,7 +27,7 @@ class Command(BaseCommand):
         logger.info("Starting MedusaJS v2 infrastructure synchronization...")
 
         # 1. Configuration Validation
-        api_url = os.environ.get("MEDUSA_API_URL", "http://ohmshop:9000")
+        api_url = os.environ.get("MEDUSA_API_URL", "http://ohmshop-server:9000")
         admin_email = os.environ.get("MEDUSA_ADMIN_EMAIL", "tiaanf@8ohm.co.za")
         admin_password = os.environ.get("MEDUSA_ADMIN_PASSWORD", "!DNsEA#5kU")
 

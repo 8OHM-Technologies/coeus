@@ -34,7 +34,7 @@ export default async function initial_data_seed({
     ModuleRegistrationName.FULFILLMENT
   );
 
-  const countries = ["za", "gb", "us"];
+  const countries = ["gb", "de", "dk", "se", "fr", "es", "it"];
 
   logger.info("Seeding store data...");
   const {
@@ -77,18 +77,14 @@ export default async function initial_data_seed({
     input: {
       stores: [
         {
-          name: "Infinity Ohm Technologies Store",
+          name: "Default Store",
           supported_currencies: [
             {
-              currency_code: "zar",
+              currency_code: "eur",
               is_default: true,
             },
             {
               currency_code: "usd",
-              is_default: false,
-            },
-            {
-              currency_code: "eur",
               is_default: false,
             },
           ],
@@ -103,15 +99,9 @@ export default async function initial_data_seed({
     input: {
       regions: [
         {
-          name: "South Africa",
-          currency_code: "zar",
-          countries: ["za"],
-          payment_providers: ["pp_system_default"],
-        },
-        {
-          name: "International",
-          currency_code: "usd",
-          countries: ["gb", "us"],
+          name: "Europe",
+          currency_code: "eur",
+          countries,
           payment_providers: ["pp_system_default"],
         },
       ],
@@ -136,11 +126,11 @@ export default async function initial_data_seed({
     input: {
       locations: [
         {
-          name: "Main Warehouse",
+          name: "European Warehouse",
           address: {
-            city: "Johannesburg",
-            country_code: "ZA",
-            address_1: "Infinity Road",
+            city: "Copenhagen",
+            country_code: "DK",
+            address_1: "",
           },
         },
       ],
@@ -158,6 +148,7 @@ export default async function initial_data_seed({
   });
 
   logger.info("Seeding fulfillment data...");
+  // This is created by a migration script in core.
   const { data: shippingProfileResult } = await query.graph({
     entity: "shipping_profile",
     fields: ["id"],
@@ -165,22 +156,38 @@ export default async function initial_data_seed({
   const shippingProfile = shippingProfileResult[0];
 
   const fulfillmentSet = await fulfillmentModuleService.createFulfillmentSets({
-    name: "Standard Delivery",
+    name: "European Warehouse delivery",
     type: "shipping",
     service_zones: [
       {
-        name: "Standard Zones",
+        name: "Europe",
         geo_zones: [
-          {
-            country_code: "za",
-            type: "country",
-          },
           {
             country_code: "gb",
             type: "country",
           },
           {
-            country_code: "us",
+            country_code: "de",
+            type: "country",
+          },
+          {
+            country_code: "dk",
+            type: "country",
+          },
+          {
+            country_code: "se",
+            type: "country",
+          },
+          {
+            country_code: "fr",
+            type: "country",
+          },
+          {
+            country_code: "es",
+            type: "country",
+          },
+          {
+            country_code: "it",
             type: "country",
           },
         ],
@@ -200,28 +207,66 @@ export default async function initial_data_seed({
   await createShippingOptionsWorkflow(container).run({
     input: [
       {
-        name: "Standard Courier",
+        name: "Standard Shipping",
         price_type: "flat",
         provider_id: "manual_manual",
         service_zone_id: fulfillmentSet.service_zones[0].id,
         shipping_profile_id: shippingProfile.id,
         type: {
           label: "Standard",
-          description: "Deliver within 2-5 business days.",
+          description: "Ship in 2-3 days.",
           code: "standard",
         },
         prices: [
-          {
-            currency_code: "zar",
-            amount: 99,
-          },
           {
             currency_code: "usd",
             amount: 10,
           },
           {
+            currency_code: "eur",
+            amount: 10,
+          },
+          {
             region_id: region.id,
-            amount: 99,
+            amount: 10,
+          },
+        ],
+        rules: [
+          {
+            attribute: "enabled_in_store",
+            value: "true",
+            operator: "eq",
+          },
+          {
+            attribute: "is_return",
+            value: "false",
+            operator: "eq",
+          },
+        ],
+      },
+      {
+        name: "Express Shipping",
+        price_type: "flat",
+        provider_id: "manual_manual",
+        service_zone_id: fulfillmentSet.service_zones[0].id,
+        shipping_profile_id: shippingProfile.id,
+        type: {
+          label: "Express",
+          description: "Ship in 24 hours.",
+          code: "express",
+        },
+        prices: [
+          {
+            currency_code: "usd",
+            amount: 10,
+          },
+          {
+            currency_code: "eur",
+            amount: 10,
+          },
+          {
+            region_id: region.id,
+            amount: 10,
           },
         ],
         rules: [
@@ -257,15 +302,19 @@ export default async function initial_data_seed({
     input: {
       product_categories: [
         {
-          name: "Controllers",
+          name: "Shirts",
           is_active: true,
         },
         {
-          name: "Bridges",
+          name: "Sweatshirts",
           is_active: true,
         },
         {
-          name: "Sensors",
+          name: "Pants",
+          is_active: true,
+        },
+        {
+          name: "Merch",
           is_active: true,
         },
       ],
@@ -276,53 +325,181 @@ export default async function initial_data_seed({
     input: {
       products: [
         {
-          title: "OhmGate Smart Gate Controller",
+          title: "Medusa T-Shirt",
           category_ids: [
-            categoryResult.find((cat) => cat.name === "Controllers")!.id,
+            categoryResult.find((cat) => cat.name === "Shirts")!.id,
           ],
           description:
-            "Upgrade your existing gate motor to be smart, secure, and completely offline. Supports local logging, home automation integration (Home Assistant/MQTT), and physical overrides.",
-          handle: "ohmgate-controller",
-          weight: 250,
+            "Reimagine the feeling of a classic T-shirt. With our cotton T-shirts, everyday essentials no longer have to be ordinary.",
+          handle: "t-shirt",
+          weight: 400,
           status: ProductStatus.PUBLISHED,
           shipping_profile_id: shippingProfile.id,
+          images: [
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-black-front.png",
+            },
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-black-back.png",
+            },
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-white-front.png",
+            },
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-white-back.png",
+            },
+          ],
           options: [
             {
-              title: "Power Source",
-              values: ["12V DC", "24V AC", "Battery Backup"],
+              title: "Size",
+              values: ["S", "M", "L", "XL"],
+            },
+            {
+              title: "Color",
+              values: ["Black", "White"],
             },
           ],
           variants: [
             {
-              title: "OhmGate / 12V DC",
-              sku: "OHM-GATE-12V",
+              title: "S / Black",
+              sku: "SHIRT-S-BLACK",
               options: {
-                "Power Source": "12V DC",
+                Size: "S",
+                Color: "Black",
               },
               prices: [
                 {
-                  amount: 1450,
-                  currency_code: "zar",
+                  amount: 10,
+                  currency_code: "eur",
                 },
                 {
-                  amount: 79,
+                  amount: 15,
                   currency_code: "usd",
                 },
               ],
             },
             {
-              title: "OhmGate / 24V AC",
-              sku: "OHM-GATE-24V",
+              title: "S / White",
+              sku: "SHIRT-S-WHITE",
               options: {
-                "Power Source": "24V AC",
+                Size: "S",
+                Color: "White",
               },
               prices: [
                 {
-                  amount: 1550,
-                  currency_code: "zar",
+                  amount: 10,
+                  currency_code: "eur",
                 },
                 {
-                  amount: 85,
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "M / Black",
+              sku: "SHIRT-M-BLACK",
+              options: {
+                Size: "M",
+                Color: "Black",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "M / White",
+              sku: "SHIRT-M-WHITE",
+              options: {
+                Size: "M",
+                Color: "White",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "L / Black",
+              sku: "SHIRT-L-BLACK",
+              options: {
+                Size: "L",
+                Color: "Black",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "L / White",
+              sku: "SHIRT-L-WHITE",
+              options: {
+                Size: "L",
+                Color: "White",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "XL / Black",
+              sku: "SHIRT-XL-BLACK",
+              options: {
+                Size: "XL",
+                Color: "Black",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "XL / White",
+              sku: "SHIRT-XL-WHITE",
+              options: {
+                Size: "XL",
+                Color: "White",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
                   currency_code: "usd",
                 },
               ],
@@ -335,53 +512,95 @@ export default async function initial_data_seed({
           ],
         },
         {
-          title: "OhmVoice Offline Assistant Node",
+          title: "Medusa Sweatshirt",
           category_ids: [
-            categoryResult.find((cat) => cat.name === "Controllers")!.id,
+            categoryResult.find((cat) => cat.name === "Sweatshirts")!.id,
           ],
           description:
-            "A fully offline voice assistant node running local wake word and speech-to-text. Protects your privacy while providing instant local smart home control. Built-in high-quality microphone array.",
-          handle: "ohmvoice-assistant",
-          weight: 350,
+            "Reimagine the feeling of a classic sweatshirt. With our cotton sweatshirt, everyday essentials no longer have to be ordinary.",
+          handle: "sweatshirt",
+          weight: 400,
           status: ProductStatus.PUBLISHED,
           shipping_profile_id: shippingProfile.id,
+          images: [
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatshirt-vintage-front.png",
+            },
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatshirt-vintage-back.png",
+            },
+          ],
           options: [
             {
-              title: "Finish",
-              values: ["Anodized Silver", "Matte Obsidian"],
+              title: "Size",
+              values: ["S", "M", "L", "XL"],
             },
           ],
           variants: [
             {
-              title: "OhmVoice / Silver",
-              sku: "OHM-VOICE-SILVER",
+              title: "S",
+              sku: "SWEATSHIRT-S",
               options: {
-                Finish: "Anodized Silver",
+                Size: "S",
               },
               prices: [
                 {
-                  amount: 2999,
-                  currency_code: "zar",
+                  amount: 10,
+                  currency_code: "eur",
                 },
                 {
-                  amount: 169,
+                  amount: 15,
                   currency_code: "usd",
                 },
               ],
             },
             {
-              title: "OhmVoice / Obsidian",
-              sku: "OHM-VOICE-OBSIDIAN",
+              title: "M",
+              sku: "SWEATSHIRT-M",
               options: {
-                Finish: "Matte Obsidian",
+                Size: "M",
               },
               prices: [
                 {
-                  amount: 2999,
-                  currency_code: "zar",
+                  amount: 10,
+                  currency_code: "eur",
                 },
                 {
-                  amount: 169,
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "L",
+              sku: "SWEATSHIRT-L",
+              options: {
+                Size: "L",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "XL",
+              sku: "SWEATSHIRT-XL",
+              options: {
+                Size: "XL",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
                   currency_code: "usd",
                 },
               ],
@@ -394,36 +613,196 @@ export default async function initial_data_seed({
           ],
         },
         {
-          title: "OhmLink Alarm Panel Bridge",
+          title: "Medusa Sweatpants",
           category_ids: [
-            categoryResult.find((cat) => cat.name === "Bridges")!.id,
+            categoryResult.find((cat) => cat.name === "Pants")!.id,
           ],
           description:
-            "Integrate your legacy DSC PowerSeries or Texecom Premier alarm panel with your local network. Decodes physical keybus signals into secure local MQTT topics without breaking existing keypads.",
-          handle: "ohmlink-alarm-bridge",
-          weight: 150,
+            "Reimagine the feeling of classic sweatpants. With our cotton sweatpants, everyday essentials no longer have to be ordinary.",
+          handle: "sweatpants",
+          weight: 400,
           status: ProductStatus.PUBLISHED,
           shipping_profile_id: shippingProfile.id,
+          images: [
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatpants-gray-front.png",
+            },
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatpants-gray-back.png",
+            },
+          ],
           options: [
             {
-              title: "Protocol",
-              values: ["MQTT Only", "Home Assistant Native"],
+              title: "Size",
+              values: ["S", "M", "L", "XL"],
             },
           ],
           variants: [
             {
-              title: "OhmLink Bridge / HA Native",
-              sku: "OHM-LINK-HA",
+              title: "S",
+              sku: "SWEATPANTS-S",
               options: {
-                Protocol: "Home Assistant Native",
+                Size: "S",
               },
               prices: [
                 {
-                  amount: 1950,
-                  currency_code: "zar",
+                  amount: 10,
+                  currency_code: "eur",
                 },
                 {
-                  amount: 109,
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "M",
+              sku: "SWEATPANTS-M",
+              options: {
+                Size: "M",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "L",
+              sku: "SWEATPANTS-L",
+              options: {
+                Size: "L",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "XL",
+              sku: "SWEATPANTS-XL",
+              options: {
+                Size: "XL",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+          ],
+          sales_channels: [
+            {
+              id: defaultSalesChannel.id,
+            },
+          ],
+        },
+        {
+          title: "Medusa Shorts",
+          category_ids: [
+            categoryResult.find((cat) => cat.name === "Merch")!.id,
+          ],
+          description:
+            "Reimagine the feeling of classic shorts. With our cotton shorts, everyday essentials no longer have to be ordinary.",
+          handle: "shorts",
+          weight: 400,
+          status: ProductStatus.PUBLISHED,
+          shipping_profile_id: shippingProfile.id,
+          images: [
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/shorts-vintage-front.png",
+            },
+            {
+              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/shorts-vintage-back.png",
+            },
+          ],
+          options: [
+            {
+              title: "Size",
+              values: ["S", "M", "L", "XL"],
+            },
+          ],
+          variants: [
+            {
+              title: "S",
+              sku: "SHORTS-S",
+              options: {
+                Size: "S",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "M",
+              sku: "SHORTS-M",
+              options: {
+                Size: "M",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "L",
+              sku: "SHORTS-L",
+              options: {
+                Size: "L",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
+                  currency_code: "usd",
+                },
+              ],
+            },
+            {
+              title: "XL",
+              sku: "SHORTS-XL",
+              options: {
+                Size: "XL",
+              },
+              prices: [
+                {
+                  amount: 10,
+                  currency_code: "eur",
+                },
+                {
+                  amount: 15,
                   currency_code: "usd",
                 },
               ],
@@ -451,7 +830,7 @@ export default async function initial_data_seed({
     input: {
       inventory_levels: inventoryItems.map((item) => ({
         location_id: stockLocation.id,
-        stocked_quantity: 1000,
+        stocked_quantity: 1000000,
         inventory_item_id: item.id,
       })),
     },

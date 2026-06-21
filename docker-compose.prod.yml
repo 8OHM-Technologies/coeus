@@ -246,43 +246,72 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------
-  # 7a. Redis Cache Service
+  # 7a. MedusaJS OhmShop Redis Cache Service
   # ---------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: coeus-redis
     networks:
       - 8ohm-network
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
-  # 7b. MedusaJS OhmShop Backend & Admin
+  # 7b. MedusaJS OhmShop Backend & Admin (ohmshop-server)
   # ---------------------------------------------------------
-  ohmshop:
-    image: ghcr.io/8ohm-technologies/coeus-ohmshop:latest
-    container_name: coeus-ohmshop
+  ohmshop-server:
+    image: ghcr.io/8ohm-technologies/coeus-ohmshop-server:latest
+    container_name: coeus-ohmshop-server
     depends_on:
       - postgres
       - redis
-    command: sh -c "npm run db:migrate --workspace=apps/backend && npm run start --workspace=apps/backend"
+    command: sh -c "pnpm --filter=@dtc/backend exec medusa db:migrate && pnpm --filter=@dtc/backend start"
     env_file:
       - .env
     environment:
-      MEDUSA_DATABASE_URL: ${MEDUSA_DATABASE_URL}
+      DATABASE_URL: ${MEDUSA_DATABASE_URL}
       REDIS_URL: redis://redis:6379
       STORE_CORS: https://8ohm.co.za,https://ohmshop.8ohm.co.za,https://docs.medusajs.com
-      ADMIN_CORS: https://ohmshop.8ohm.co.za,https://docs.medusajs.com
-      AUTH_CORS: https://ohmshop.8ohm.co.za,https://docs.medusajs.com
+      ADMIN_CORS: https://ohmshop-server.8ohm.co.za,https://docs.medusajs.com
+      AUTH_CORS: https://ohmshop-server.8ohm.co.za,https://docs.medusajs.com
+      JWT_SECRET: ${MEDUSA_JWT_SECRET}
+      COOKIE_SECRET: ${MEDUSA_COOKIE_SECRET}
     networks:
       - 8ohm-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ohmshop-server.rule=Host(`ohmshop-server.8ohm.co.za`)"
+      - "traefik.http.routers.ohmshop-server.entrypoints=websecure"
+      - "traefik.http.routers.ohmshop-server.tls=true"
+      - "traefik.http.services.ohmshop-server.loadbalancer.server.port=9000"
+      - "traefik.docker.network=8ohm-network"
+
+  # ---------------------------------------------------------
+  # 7c. Next.js OhmShop Storefront (ohmshop)
+  # ---------------------------------------------------------
+  ohmshop:
+    image: ghcr.io/8ohm-technologies/coeus-ohmshop-storefront:latest
+    container_name: coeus-ohmshop
+    depends_on:
+      - ohmshop-server
+    command: pnpm --filter=@dtc/storefront start
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ${MEDUSA_PUBLISHABLE_KEY}
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: https://ohmshop-server.8ohm.co.za
+      NEXT_PUBLIC_DEFAULT_REGION: za
+      NEXT_PUBLIC_BASE_URL: https://ohmshop.8ohm.co.za
+    networks:
+      - 8ohm-network
+    restart: unless-stopped
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ohmshop.rule=Host(`ohmshop.8ohm.co.za`)"
       - "traefik.http.routers.ohmshop.entrypoints=websecure"
       - "traefik.http.routers.ohmshop.tls=true"
-      - "traefik.http.services.ohmshop.loadbalancer.server.port=9000"
+      - "traefik.http.services.ohmshop.loadbalancer.server.port=8000"
       - "traefik.docker.network=8ohm-network"
-    restart: always
 
 volumes:
   traefik_certificates:

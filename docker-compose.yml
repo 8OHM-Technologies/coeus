@@ -269,34 +269,83 @@ services:
     restart: always
 
   # ---------------------------------------------------------
-  # 7b. MedusaJS OhmShop Backend & Admin
+  # 7b. MedusaJS OhmShop Backend & Admin (ohmshop-server)
+  # ---------------------------------------------------------
+  ohmshop-server:
+    build:
+      context: ./ohmshop
+      dockerfile: Dockerfile
+      target: base
+    container_name: coeus-ohmshop-server
+    depends_on:
+      - postgres
+      - redis
+    command: sh -c "pnpm --filter=@dtc/backend exec medusa db:migrate && pnpm run backend:dev"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${MEDUSA_DATABASE_URL}
+      REDIS_URL: redis://redis:6379
+      STORE_CORS: http://localhost:8000,http://ohmshop.localhost,https://docs.medusajs.com
+      ADMIN_CORS: http://localhost:5173,http://localhost:9000,http://ohmshop-server.localhost,http://ohmshop-admin.localhost,https://docs.medusajs.com
+      AUTH_CORS: http://localhost:5173,http://localhost:9000,http://ohmshop-server.localhost,http://ohmshop-admin.localhost,https://docs.medusajs.com
+      JWT_SECRET: ${MEDUSA_JWT_SECRET}
+      COOKIE_SECRET: ${MEDUSA_COOKIE_SECRET}
+    volumes:
+      - ./ohmshop:/app
+      - /app/node_modules
+      - /app/apps/backend/node_modules
+      - /app/apps/storefront/node_modules
+      - /app/apps/backend/.medusa
+    networks:
+      - 8ohm-network
+    labels:
+      - "traefik.enable=true"
+      # API / Backend Route
+      - "traefik.http.routers.ohmshop-server.rule=Host(`ohmshop-server.localhost`)"
+      - "traefik.http.routers.ohmshop-server.service=ohmshop-server-api"
+      - "traefik.http.services.ohmshop-server-api.loadbalancer.server.port=9000"
+      # Dev Admin Dashboard Route
+      - "traefik.http.routers.ohmshop-admin.rule=Host(`ohmshop-admin.localhost`)"
+      - "traefik.http.routers.ohmshop-admin.service=ohmshop-server-admin"
+      - "traefik.http.services.ohmshop-server-admin.loadbalancer.server.port=5173"
+      - "traefik.docker.network=8ohm-network"
+    restart: always
+
+  # ---------------------------------------------------------
+  # 7c. Next.js OhmShop Storefront (ohmshop)
   # ---------------------------------------------------------
   ohmshop:
     build:
       context: ./ohmshop
-      dockerfile: ./apps/backend/Dockerfile
+      dockerfile: Dockerfile
+      target: base
     container_name: coeus-ohmshop
     depends_on:
-      - postgres
-      - redis
-    command: sh -c "npm run db:migrate --workspace=apps/backend && npm run start --workspace=apps/backend"
+      - ohmshop-server
+    command: pnpm run storefront:dev
     env_file:
       - .env
     environment:
-      MEDUSA_DATABASE_URL: ${MEDUSA_DATABASE_URL}
-      REDIS_URL: redis://redis:6379
-      STORE_CORS: http://localhost:8000,http://ohmshop.localhost,https://docs.medusajs.com
-      ADMIN_CORS: http://localhost:5173,http://ohmshop.localhost,https://docs.medusajs.com
-      AUTH_CORS: http://localhost:5173,http://ohmshop.localhost,https://docs.medusajs.com
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ${MEDUSA_PUBLISHABLE_KEY}
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://ohmshop-server.localhost
+      NEXT_PUBLIC_DEFAULT_REGION: za
+      NEXT_PUBLIC_BASE_URL: http://ohmshop.localhost
+    volumes:
+      - ./ohmshop:/app
+      - /app/node_modules
+      - /app/apps/backend/node_modules
+      - /app/apps/storefront/node_modules
+    extra_hosts:
+      - "ohmshop-server.localhost:host-gateway"
     networks:
       - 8ohm-network
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ohmshop.rule=Host(`ohmshop.localhost`)"
-      - "traefik.http.services.ohmshop.loadbalancer.server.port=9000"
+      - "traefik.http.services.ohmshop.loadbalancer.server.port=8000"
       - "traefik.docker.network=8ohm-network"
     restart: always
-
 volumes:
   huggingface_cache:
   airflow_logs:
