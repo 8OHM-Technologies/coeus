@@ -280,7 +280,10 @@ services:
       - postgres
       - redis
     command: sh -c "npm run db:migrate --workspace=apps/backend && npm run start --workspace=apps/backend"
+    env_file:
+      - .env
     environment:
+      MEDUSA_DATABASE_URL: ${MEDUSA_DATABASE_URL}
       REDIS_URL: redis://redis:6379
       STORE_CORS: http://localhost:8000,http://ohmshop.localhost,https://docs.medusajs.com
       ADMIN_CORS: http://localhost:5173,http://ohmshop.localhost,https://docs.medusajs.com

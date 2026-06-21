@@ -270,10 +270,11 @@ services:
     env_file:
       - .env
     environment:
+      MEDUSA_DATABASE_URL: ${MEDUSA_DATABASE_URL}
       REDIS_URL: redis://redis:6379
-      STORE_CORS: https://8ohm.co.za,https://www.8ohm.co.za,https://ohmshop.8ohm.co.za
-      ADMIN_CORS: https://ohmshop.8ohm.co.za
-      AUTH_CORS: https://ohmshop.8ohm.co.za
+      STORE_CORS: http://localhost:8000,http://ohmshop.localhost,https://docs.medusajs.com
+      ADMIN_CORS: http://localhost:5173,http://ohmshop.localhost,https://docs.medusajs.com
+      AUTH_CORS: http://localhost:5173,http://ohmshop.localhost,https://docs.medusajs.com
     networks:
       - 8ohm-network
     labels:
