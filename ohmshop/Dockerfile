@@ -18,7 +18,7 @@ COPY . .
 
 # --- BACKEND BUILDER ---
 FROM base AS backend-builder
-RUN pnpm run build --filter=@dtc/backend
+RUN pnpm --filter=@dtc/backend build
 
 # --- STOREFRONT BUILDER ---
 FROM base AS storefront-builder
@@ -30,7 +30,7 @@ ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=${NEXT_PUBLIC_MEDUSA_BACKEND_URL}
 ENV NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=${NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY}
 ENV NEXT_PUBLIC_DEFAULT_REGION=${NEXT_PUBLIC_DEFAULT_REGION}
 ENV NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}
-RUN pnpm run build --filter=@dtc/storefront
+RUN pnpm --filter=@dtc/storefront build
 
 # --- BACKEND RUNTIME (PRODUCTION) ---
 FROM node:20-alpine AS backend
