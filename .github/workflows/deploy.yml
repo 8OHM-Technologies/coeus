@@ -22,8 +22,6 @@ jobs:
               - 'Dockerfile.*'
               - 'requirements*.txt'
               - 'control_plane/**'
-              - 'extraction_workers/**'
-              - 'solver/**'
               - 'ohmshop/**'
 
   # 2. Build and Push (Only runs if 'detect-changes' found backend updates)
