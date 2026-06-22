@@ -105,7 +105,7 @@ services:
   # ---------------------------------------------------------
   # 4a. Airflow Scheduler Daemon
   # ---------------------------------------------------------
-  airflow_scheduler:
+  airflow-scheduler:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow-scheduler
     hostname: coeus-airflow-scheduler
@@ -141,7 +141,7 @@ services:
   # ---------------------------------------------------------
   # 4b. Airflow Web Management UI
   # ---------------------------------------------------------
-  airflow_webserver:
+  airflow-webserver:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow-webserver
     restart: unless-stopped
@@ -228,7 +228,7 @@ services:
   # ---------------------------------------------------------
   # 6b. ohmbase MariaDB
   # ---------------------------------------------------------
-  ohmbase_mariadb:
+  ohmbase-mariadb:
     image: ghcr.io/linuxserver/mariadb:latest
     container_name: ohmbase-mariadb
     environment:
@@ -258,7 +258,7 @@ services:
   # ---------------------------------------------------------
   # 7b. MedusaJS OhmShop Backend & Admin (ohmshop-server)
   # ---------------------------------------------------------
-  ohmshop_server:
+  ohmshop-server:
     image: ghcr.io/8ohm-technologies/ohmshop-server:latest
     container_name: ohmshop-server
     depends_on:
@@ -293,7 +293,7 @@ services:
     image: ghcr.io/8ohm-technologies/ohmshop:latest
     container_name: ohmshop
     depends_on:
-      - ohmshop_server
+      - ohmshop-server
     command: pnpm --filter=@dtc/storefront start
     env_file:
       - .env

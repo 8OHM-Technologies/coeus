@@ -64,7 +64,6 @@ services:
       context: .
       dockerfile: Dockerfile.app
     container_name: coeus-control-plane
-    image: coeus_app_image
     depends_on:
       - postgres
     env_file:
@@ -102,7 +101,6 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: coeus-worker
-    image: coeus_worker_image
     depends_on:
       - postgres
     env_file:
@@ -241,7 +239,7 @@ services:
   # ---------------------------------------------------------
   # 6b. ohmbase MariaDB
   # ---------------------------------------------------------
-  ohmbase_mariadb:
+  ohmbase-mariadb:
     image: ghcr.io/linuxserver/mariadb:latest
     container_name: ohmbase-mariadb
     environment:
@@ -271,7 +269,7 @@ services:
   # ---------------------------------------------------------
   # 7b. MedusaJS OhmShop Backend & Admin (ohmshop-server)
   # ---------------------------------------------------------
-  ohmshop_server:
+  ohmshop-server:
     build:
       context: ./ohmshop
       dockerfile: Dockerfile
@@ -321,7 +319,7 @@ services:
       target: base
     container_name: ohmshop
     depends_on:
-      - ohmshop_server
+      - ohmshop-server
     command: pnpm run storefront:dev
     env_file:
       - .env
