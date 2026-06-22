@@ -39,10 +39,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 1024M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
     command: >
       postgres -c shared_buffers=256MB -c work_mem=16MB -c maintenance_work_mem=64MB -c max_connections=50 -c effective_cache_size=768MB
