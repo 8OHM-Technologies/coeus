@@ -97,14 +97,14 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=${{github.action}} | ✅ Build SUCCEEDED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/{{$github.run_id}}"
+          -d "text=✅ Build SUCCEEDED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
 
       - name: Notify on Failure
         if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=${{github.action}} | ❌ Build FAILED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/{{$github.run_id}}"
+          -d "text=❌ Build FAILED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
 
   # 3. Always deploy (Performs a remote Git Pull and updates Docker)
   deploy:
@@ -185,11 +185,11 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=${{github.action}} | ✅ Build SUCCEEDED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/{{$github.run_id}}"
+          -d "text=✅ Build SUCCEEDED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
 
       - name: Notify on Failure
         if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=${{github.action}} | ❌ Build FAILED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/{{$github.run_id}}"
+          -d "text=❌ Build FAILED for ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
