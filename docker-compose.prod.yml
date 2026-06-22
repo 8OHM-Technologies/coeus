@@ -258,7 +258,7 @@ services:
   # ---------------------------------------------------------
   # 7b. MedusaJS OhmShop Backend & Admin (ohmshop-server)
   # ---------------------------------------------------------
-  ohmshop-server:
+  ohmshop_server:
     image: ghcr.io/8ohm-technologies/coeus-ohmshop-server:latest
     container_name: coeus-ohmshop-server
     depends_on:
