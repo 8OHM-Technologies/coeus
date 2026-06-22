@@ -1,5 +1,7 @@
 FROM node:20-alpine AS base
 
+RUN corepack enable
+
 # Install pnpm and curl for health check / utilities
 RUN npm install -g pnpm@10.11.1 && apk add --no-cache curl
 
@@ -18,6 +20,7 @@ COPY . .
 
 # --- BACKEND BUILDER ---
 FROM base AS backend-builder
+RUN corepack enable
 RUN pnpm --filter=@dtc/backend build
 
 # --- STOREFRONT BUILDER ---
@@ -34,6 +37,7 @@ RUN pnpm --filter=@dtc/storefront build
 
 # --- BACKEND RUNTIME (PRODUCTION) ---
 FROM node:20-alpine AS backend
+RUN corepack enable
 RUN npm install -g pnpm@10.11.1 && apk add --no-cache curl
 WORKDIR /app
 COPY --from=backend-builder /app /app
@@ -43,6 +47,7 @@ CMD ["pnpm", "--filter", "@dtc/backend", "start"]
 
 # --- STOREFRONT RUNTIME (PRODUCTION) ---
 FROM node:20-alpine AS storefront
+RUN corepack enable
 RUN npm install -g pnpm@10.11.1 && apk add --no-cache curl
 WORKDIR /app
 COPY --from=storefront-builder /app /app
