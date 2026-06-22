@@ -95,14 +95,14 @@ jobs:
       - name: Notify on Success
         if: success()
         run: |
-          curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "text=✅ Build Succeeded for ${{ github.repository }}!"
 
       - name: Notify on Failure
         if: failure()
         run: |
-          curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "text=❌ Build FAILED for ${{ github.repository }}."
 
@@ -183,13 +183,13 @@ jobs:
       - name: Notify on Success
         if: success()
         run: |
-          curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "text=✅ Build Succeeded for ${{ github.repository }}!"
 
       - name: Notify on Failure
         if: failure()
         run: |
-          curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "text=❌ Build FAILED for ${{ github.repository }}."
