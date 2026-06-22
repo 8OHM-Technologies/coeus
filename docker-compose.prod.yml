@@ -6,7 +6,7 @@ services:
   # ---------------------------------------------------------
   traefik:
     image: traefik:latest
-    container_name: coeus-traefik
+    container_name: traefik
     command:
       - "--api.insecure=false"
       - "--providers.docker=true"
@@ -27,15 +27,15 @@ services:
       - /home/deploy-user/coeus/traefik-config:/etc/traefik/dynamic:ro
     networks:
       - 8ohm-network
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
   # 1. PostgreSQL DB
   # ---------------------------------------------------------
   postgres:
     image: postgres:17-alpine
-    container_name: coeus-postgres
-    restart: always
+    container_name: postgres
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -80,7 +80,7 @@ services:
       - "traefik.docker.network=8ohm-network"
     command: >
       bash -c "python control_plane/manage.py migrate && python control_plane/manage.py collectstatic --noinput && gunicorn core.wsgi:application --chdir control_plane --bind 0.0.0.0:8001 --workers 3"
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
   # 3. Extraction Worker Unit (Playwright)
@@ -88,7 +88,7 @@ services:
   pipeline_worker:
     image: ghcr.io/8ohm-technologies/coeus-worker:latest
     container_name: coeus-pipeline-worker
-    restart: always
+    restart: unless-stopped
     depends_on:
       - postgres
     env_file:
@@ -109,7 +109,7 @@ services:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow-scheduler
     hostname: coeus-airflow-scheduler
-    restart: always
+    restart: unless-stopped
     user: "50000:0"
     # Host docker group GID (verify with: getent group docker | cut -d: -f3)
     group_add:
@@ -144,7 +144,7 @@ services:
   airflow_webserver:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow-webserver
-    restart: always
+    restart: unless-stopped
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - postgres
@@ -179,8 +179,8 @@ services:
   # ---------------------------------------------------------
   landing_page:
     image: nginx:alpine
-    container_name: coeus-landing-page
-    restart: always
+    container_name: landing-page
+    restart: unless-stopped
     volumes:
       - /home/deploy-user/coeus/landing_page:/usr/share/nginx/html:ro
     networks:
@@ -250,7 +250,7 @@ services:
   # ---------------------------------------------------------
   redis:
     image: redis:7-alpine
-    container_name: coeus-redis
+    container_name: redis
     networks:
       - 8ohm-network
     restart: unless-stopped
@@ -259,8 +259,8 @@ services:
   # 7b. MedusaJS OhmShop Backend & Admin (ohmshop-server)
   # ---------------------------------------------------------
   ohmshop_server:
-    image: ghcr.io/8ohm-technologies/coeus-ohmshop-server:latest
-    container_name: coeus-ohmshop-server
+    image: ghcr.io/8ohm-technologies/ohmshop-server:latest
+    container_name: ohmshop-server
     depends_on:
       - postgres
       - redis
@@ -290,8 +290,8 @@ services:
   # 7c. Next.js OhmShop Storefront (ohmshop)
   # ---------------------------------------------------------
   ohmshop:
-    image: ghcr.io/8ohm-technologies/coeus-ohmshop:latest
-    container_name: coeus-ohmshop
+    image: ghcr.io/8ohm-technologies/ohmshop:latest
+    container_name: ohmshop
     depends_on:
       - ohmshop-server
     command: pnpm --filter=@dtc/storefront start

@@ -6,7 +6,7 @@ services:
   # ---------------------------------------------------------
   traefik:
     image: traefik:latest
-    container_name: coeus-traefik
+    container_name: traefik
     environment:
       - TZ=Africa/Johannesburg
     command:
@@ -26,22 +26,22 @@ services:
       - ./ohmbase/logs:/logs
     networks:
       - 8ohm-network
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
   # 1. PostgreSQL DB
   # ---------------------------------------------------------
   postgres:
     image: postgres:17-alpine
-    container_name: coeus-postgres
-    restart: always
+    container_name: postgres
+    restart: unless-stopped
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 1024M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
     command: >
       postgres -c shared_buffers=256MB -c work_mem=16MB -c maintenance_work_mem=64MB -c max_connections=200 -c effective_cache_size=768MB
@@ -92,7 +92,7 @@ services:
                 python control_plane/manage.py migrate &&
                 python control_plane/manage.py createsuperuser --noinput || true &&
                 python control_plane/manage.py runserver 0.0.0.0:8001"
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
   # 3. Extraction Worker Unit (Playwright)
@@ -118,7 +118,7 @@ services:
     networks:
       - 8ohm-network
     command: tail -f /dev/null
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
   # 4a. Airflow Scheduler Daemon
@@ -126,7 +126,7 @@ services:
   airflow_scheduler:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow-scheduler
-    restart: always
+    restart: unless-stopped
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - postgres
@@ -156,7 +156,7 @@ services:
   airflow_webserver:
     image: apache/airflow:2.9.1-python3.11
     container_name: coeus-airflow-webserver
-    restart: always
+    restart: unless-stopped
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - postgres
@@ -194,8 +194,8 @@ services:
   # ---------------------------------------------------------
   landing_page:
     image: nginx:alpine
-    container_name: coeus-landing-page
-    restart: always
+    container_name: landing-page
+    restart: unless-stopped
     volumes:
       - ./landing_page:/usr/share/nginx/html:ro
     networks:
@@ -263,20 +263,20 @@ services:
   # ---------------------------------------------------------
   redis:
     image: redis:7-alpine
-    container_name: coeus-redis
+    container_name: redis
     networks:
       - 8ohm-network
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
   # 7b. MedusaJS OhmShop Backend & Admin (ohmshop-server)
   # ---------------------------------------------------------
-  ohmshop-server:
+  ohmshop_server:
     build:
       context: ./ohmshop
       dockerfile: Dockerfile
       target: base
-    container_name: coeus-ohmshop-server
+    container_name: ohmshop-server
     depends_on:
       - postgres
       - redis
@@ -301,16 +301,15 @@ services:
       - 8ohm-network
     labels:
       - "traefik.enable=true"
-      # API / Backend Route
       - "traefik.http.routers.ohmshop-server.rule=Host(`ohmshop-server.localhost`)"
       - "traefik.http.routers.ohmshop-server.service=ohmshop-server-api"
       - "traefik.http.services.ohmshop-server-api.loadbalancer.server.port=9000"
-      # Dev Admin Dashboard Route
+
       - "traefik.http.routers.ohmshop-admin.rule=Host(`ohmshop-admin.localhost`)"
       - "traefik.http.routers.ohmshop-admin.service=ohmshop-server-admin"
       - "traefik.http.services.ohmshop-server-admin.loadbalancer.server.port=5173"
       - "traefik.docker.network=8ohm-network"
-    restart: always
+    restart: unless-stopped
 
   # ---------------------------------------------------------
   # 7c. Next.js OhmShop Storefront (ohmshop)
@@ -320,7 +319,7 @@ services:
       context: ./ohmshop
       dockerfile: Dockerfile
       target: base
-    container_name: coeus-ohmshop
+    container_name: ohmshop
     depends_on:
       - ohmshop-server
     command: pnpm run storefront:dev
@@ -345,7 +344,7 @@ services:
       - "traefik.http.routers.ohmshop.rule=Host(`ohmshop.localhost`)"
       - "traefik.http.services.ohmshop.loadbalancer.server.port=8000"
       - "traefik.docker.network=8ohm-network"
-    restart: always
+    restart: unless-stopped
 volumes:
   huggingface_cache:
   airflow_logs:
