@@ -2,7 +2,7 @@ name: Deploy to AbsoluteHostingVPS
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   # 1. Detect if the backend/Docker files actually changed
@@ -12,7 +12,7 @@ jobs:
       backend_changed: ${{ steps.filter.outputs.backend }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      
+
       - name: Check for file changes
         uses: dorny/paths-filter@f3ceefdc7ef57bc2d8560787d4b6c33e44044cec
         id: filter
@@ -36,17 +36,17 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@22b48a429f10e1de233237b5c534c9c3d2e41597
-        
+
       - name: Log in to GHCR
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Build and Push App
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
@@ -56,7 +56,7 @@ jobs:
           tags: ghcr.io/8ohm-technologies/coeus-app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          
+
       - name: Build and Push Worker
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
@@ -74,7 +74,7 @@ jobs:
           file: ohmshop/Dockerfile
           target: backend
           push: true
-          tags: ghcr.io/8ohm-technologies/coeus-ohmshop-server:latest
+          tags: ghcr.io/8ohm-technologies/ohmshop-server:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -85,7 +85,7 @@ jobs:
           file: ohmshop/Dockerfile
           target: storefront
           push: true
-          tags: ghcr.io/8ohm-technologies/coeus-ohmshop:latest
+          tags: ghcr.io/8ohm-technologies/ohmshop:latest
           build-args: |
             NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://ohmshop-server.8ohm.co.za
             NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=${{ secrets.MEDUSA_PUBLISHABLE_KEY }}
@@ -94,7 +94,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # 3. Always deploy (Updates VPS compose and pulls new images if they were built)
+  # 3. Always deploy (Performs a remote Git Pull and updates Docker)
   deploy:
     needs: [detect-changes, build-and-push]
     if: always() && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
@@ -102,7 +102,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      
+
       - name: Install Cloudflared on Runner
         run: |
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
@@ -121,39 +121,49 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
 
-      - name: Copy files to VPS
+      - name: Deploy via Git Pull on VPS
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 1
+          timeout_minutes: 3
           max_attempts: 3
           retry_wait_seconds: 10
           command: |
-            set -o pipefail
-            tar czf - docker-compose.prod.yml landing_page orchestration/airflow_dags extraction_workers | ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p /home/deploy-user/coeus/ && tar xzf - -C /home/deploy-user/coeus/"
-
-      - name: Deploy via SSH
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 1
-          max_attempts: 3
-          retry_wait_seconds: 10
-          command: |
-            ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -s' <<'EOF'
+            # Notice the "-A" flag added below: This safely forwards your deployment SSH key to the target environment
+            # so the target environment has explicit credentials to run a git pull against your secure repository.
+            ssh -A -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -s' <<'EOF'
               set -euo pipefail
-              cd /home/deploy-user/coeus/
+
+              TARGET_DIR="/home/deploy-user/coeus"
+              REPO_URL="git@github.com:8ohm-tiaanf/coeus.git"
+
+              # 1. Initialize directory configuration if setting up on a clean host
+              if [ ! -d "$TARGET_DIR/.git" ]; then
+                echo "Initializing repository directory structure..."
+                mkdir -p "$TARGET_DIR"
+                cd "$TARGET_DIR"
+                git init
+                git remote add origin "$REPO_URL"
+                git fetch origin
+                git checkout -f main
+              else
+                cd "$TARGET_DIR"
+                # Avoid permission/untracked file locking blocks during clean tracking updates
+                git reset --hard HEAD
+                git pull origin main
+              fi
 
               # Ensure bind-mounted DAG/worker paths are present and populated.
               test -f orchestration/airflow_dags/dynamic_factory.py
               test -n "$(ls -A extraction_workers)"
 
               echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-              
+
               docker compose -f docker-compose.prod.yml pull
               docker compose -f docker-compose.prod.yml up -d
 
               # Fail fast if scheduler container still does not see DAG files.
               docker exec coeus-airflow-scheduler test -f /opt/airflow/dags/dynamic_factory.py
               docker exec coeus-airflow-scheduler sh -lc 'test -n "$(ls -A /opt/airflow/extraction_workers)"'
-              
+
               docker image prune -f
             EOF
