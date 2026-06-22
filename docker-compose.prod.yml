@@ -293,7 +293,7 @@ services:
     image: ghcr.io/8ohm-technologies/ohmshop:latest
     container_name: ohmshop
     depends_on:
-      - ohmshop-server
+      - ohmshop_server
     command: pnpm --filter=@dtc/storefront start
     env_file:
       - .env

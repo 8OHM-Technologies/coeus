@@ -321,7 +321,7 @@ services:
       target: base
     container_name: ohmshop
     depends_on:
-      - ohmshop-server
+      - ohmshop_server
     command: pnpm run storefront:dev
     env_file:
       - .env
