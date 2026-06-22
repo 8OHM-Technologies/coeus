@@ -3,8 +3,8 @@ FROM node:20-alpine AS base
 # 1. Install system utilities first
 RUN apk add --no-cache curl
 
-# 2. Use Corepack properly: enable it and pin the specific pnpm version
-RUN corepack enable && corepack prepare pnpm@10.11.1 --activate
+# 2. Install pnpm globally
+RUN npm install -g pnpm@10.11.1
 
 WORKDIR /app
 
@@ -38,7 +38,7 @@ RUN pnpm --filter=@dtc/storefront build
 # --- BACKEND RUNTIME (PRODUCTION) ---
 FROM node:20-alpine AS backend
 RUN apk add --no-cache curl
-RUN corepack enable && corepack prepare pnpm@10.11.1 --activate
+RUN npm install -g pnpm@10.11.1
 WORKDIR /app
 COPY --from=backend-builder /app /app
 ENV NODE_ENV=production
@@ -48,7 +48,7 @@ CMD ["pnpm", "--filter", "@dtc/backend", "start"]
 # --- STOREFRONT RUNTIME (PRODUCTION) ---
 FROM node:20-alpine AS storefront
 RUN apk add --no-cache curl
-RUN corepack enable && corepack prepare pnpm@10.11.1 --activate
+RUN npm install -g pnpm@10.11.1
 WORKDIR /app
 COPY --from=storefront-builder /app /app
 ENV NODE_ENV=production
