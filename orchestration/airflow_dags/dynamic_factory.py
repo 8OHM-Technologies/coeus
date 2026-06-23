@@ -136,7 +136,7 @@ for blueprint in blueprints:
 
     # -- Shared environment passed to every scraper container --
     scraper_environment = {
-        "PYTHONPATH": "/app/extraction_workers",
+        "PYTHONPATH": "/app:/app/extraction_workers",
         "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
         "PIPELINE_CONFIG": API_URL or "",
         # Pipeline-specific settings resolved by the factory so workers can
@@ -207,7 +207,7 @@ for blueprint in blueprints:
             docker_url="unix://var/run/docker.sock",
             network_mode="8ohm-network",
             environment={
-                "PYTHONPATH": "/app/extraction_workers",
+                "PYTHONPATH": "/app:/app/extraction_workers",
                 "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
                 "PIPELINE_NAME": pipeline_id,
                 "DOCUMENT_TYPE": document_type,
