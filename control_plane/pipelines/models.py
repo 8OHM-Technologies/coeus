@@ -29,7 +29,7 @@ class ScraperType(models.TextChoices):
     SAFLII = "saflii", "SAFLII (Basic)"
 
 
-class Configuration(models.Model):
+class PipelineConfiguration(models.Model):
     """
     Stores the dynamic blueprint for a Coeus extraction pipeline.
     Airflow/Dagster will query this table to generate DAGs at runtime.

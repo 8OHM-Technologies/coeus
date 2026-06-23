@@ -1,4 +1,4 @@
-name: Deploy to AbsoluteHosting VPS
+name: PRODUCTION DEPLOY ABSOLUTEHOSTING VPS
 
 on:
   push:
@@ -43,7 +43,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=🚀 BUILD STAGE STARTED  ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          -d "text=🚀 BUILD STAGE STARTED | ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
