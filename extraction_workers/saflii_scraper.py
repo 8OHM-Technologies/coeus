@@ -322,7 +322,7 @@ async def download_pdf(
                 pdf_status["status"] = res.get("status")
                 pdf_status["content_type"] = res.get("content_type", "")
 
-                if pdf_status["status"] == 404 or (
+                if pdf_status["status"] in (403, 404) or (
                     pdf_status["status"] == 200
                     and "html" in pdf_status["content_type"].lower()
                 ):
@@ -538,6 +538,12 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                 seq += 1
                                 continue
 
+                    if need_json and need_pdf:
+                        # Metadata scrape just ran — a Turnstile was likely solved for
+                        # the HTML case page. Brief cooldown before hitting the PDF URL
+                        # to avoid triggering back-to-back rate limiting on SAFLII.
+                        await asyncio.sleep(5)
+
                     if need_pdf:
                         pdf_bytes, pdf_result_status, pdf_content_type = await download_pdf(
                             page, pdf_url, pdf_data, pdf_status, current_pdf_url
@@ -566,8 +572,13 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                 )
                                 break
                             if pdf_result_status == 403:
-                                logger.error(f"Persistent 403 Forbidden for {pdf_url}. Exiting scraper.")
-                                sys.exit(1)
+                                logger.warning(
+                                    f"  [!] 403 Forbidden for {pdf_url} — possible rate-limit. "
+                                    "Skipping file and applying a 30 s cooldown before next request."
+                                )
+                                await asyncio.sleep(30)
+                                seq += 1
+                                continue
                             if pdf_content_type and "html" in pdf_content_type:
                                 logger.warning(
                                     f"URL {pdf_url} returned HTML content (status: {pdf_result_status}). Retrying."
