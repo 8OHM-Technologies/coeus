@@ -24,7 +24,6 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
     readonly_fields = (
         "created_at",
         "updated_at",
-        "discovery_script",
     )
 
     fieldsets = (
@@ -71,7 +70,7 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
         (
             "System Tracking",
             {
-                "fields": ("created_at", "updated_at", "discovery_script"),
+                "fields": ("created_at", "updated_at"),
                 "classes": ("collapse",),
             },
         ),
