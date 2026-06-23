@@ -11,11 +11,11 @@ jobs:
     outputs:
       backend_changed: ${{ steps.filter.outputs.backend }}
     steps:
-      - name: Notify on Start
+      - name: Notify on Workflow Start
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=🚀 ${{github.job_id}} STARTED 🚀 | ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          -d "text=🚀 ${{github.workflow}} STARTED 🚀 | ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -43,7 +43,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=🚀 ${{github.job_id}} STARTED 🚀 | ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          -d "text=🚀 BUILD STAGE STARTED 🚀 | ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -57,7 +57,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push App
+      - name: Build and Push Coeus App
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
@@ -67,7 +67,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and Push Worker
+      - name: Build and Push Coeus Worker
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
@@ -77,46 +77,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and Push OhmShop Server
-        uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
-        with:
-          context: ohmshop
-          file: ohmshop/Dockerfile
-          target: backend
-          push: true
-          tags: ghcr.io/8ohm-technologies/ohmshop-server:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and Push OhmShop Storefront
-        uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
-        with:
-          context: ohmshop
-          file: ohmshop/Dockerfile
-          target: storefront
-          push: true
-          tags: ghcr.io/8ohm-technologies/ohmshop:latest
-          build-args: |
-            NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://ohmshop-server.8ohm.co.za
-            NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=${{ secrets.MEDUSA_PUBLISHABLE_KEY }}
-            NEXT_PUBLIC_BASE_URL=https://ohmshop.8ohm.co.za
-            NEXT_PUBLIC_DEFAULT_REGION=za
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Notify on Success
         if: success()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=✅ ${{github.job_id}} SUCCEEDED | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
+          -d "text=✅ BUILD STAGE COMPLETED ✅ | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
 
       - name: Notify on Failure
         if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=❌ ${{github.job_id}} FAILED | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
+          -d "text=❌ BUILD STAGE FAILED ❌ | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
 
   # 3. Always deploy (Performs a remote Git Pull and updates Docker)
   deploy:
@@ -128,7 +101,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=🚀 ${{github.job_id}} STARTED | ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          -d "text=🚀 DEPLOY STAGE STARTED 🚀| ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -203,11 +176,17 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=✅ ${{github.job_id}} SUCCEEDED | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
+          -d "text=✅ DEPLOY STAGE SUCCEEDED ✅ | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
 
       - name: Notify on Failure
         if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=❌ ${{github.job_id}} FAILED | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
+          -d "text=❌ DEPLOY STAGE FAILED ❌ | ${{ github.repository }} | ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
+
+      - name: Notify on Workflow End
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
+          -d "text=🚀 ${{github.workflow}} FINISHED 🚀 | ${{ github.repository }} | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
