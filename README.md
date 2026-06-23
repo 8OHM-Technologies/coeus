@@ -2,7 +2,7 @@
 
 **COEUS** (named after the Greek Titan of intellect and the heavenly axis) is a distributed data platform designed to automate the scraping, extraction, and analysis of multi-source documentation.
 
-The project demonstrates a scalable approach to handling varying degrees of web complexity: from **basic HTML parsing** on sites like **ccma.org.za** using Python and BeautifulSoup, to bypassing **advanced anti-bot measures** on high-security regulatory platforms like **sedarplus.ca** (e.g., NI 43-101 mining reports) using Playwright and Selenium.
+The project demonstrates a scalable approach to handling varying degrees of web complexity: from **basic HTML parsing** on sites like **ccma.org.za** using Python and BeautifulSoup, to bypassing **advanced anti-bot measures** on high-security regulatory platforms like **sedarplus.ca** (e.g., NI 43-101 mining reports) using Playwright, Selenium, a custom LLM-based tool to bypass hCaptchas/Cloudflare Turnstiles and more.
 
 ---
 
@@ -16,8 +16,8 @@ The platform uses a decoupled, microservices-oriented architecture designed for 
 | **Extracted Data (Django)** | Read-only ORM layer over PostgreSQL tables (`entities`, `targets`, `extracted_records`) for structured LLM output. |
 | **Orchestrator (Apache Airflow 2.9.1)** | Polls the Control Plane API and materializes one DAG per active `PipelineConfiguration`. Workers run as ephemeral `DockerOperator` containers. |
 | **Extraction Workers** | Playwright/BeautifulSoup scripts plus `llm_extractor.py` for schema-enforced post-processing. |
-| **HCaptcha Solver (`solver/`)** | Standalone package using Grounding DINO + Qwen for vision-based CAPTCHA bypass (used by SEDAR+). |
-| **Storage (Google Cloud SQL)** | Managed PostgreSQL accessed via the Cloud SQL Auth Proxy in both dev and production. |
+| **Miistcha (`miistcha/`)** | Custom package using Grounding DINO + Qwen for vision-based CAPTCHA bypass (used by SEDAR+, Saflii and others). |
+| **Storage (PostgreSQL)** | PostgreSQL DB used by most of the services (currently only OhmBase (Bookstack) uses something else nl. MariaDB). |
 | **Gateway (Traefik)** | Reverse proxy with host-based routing; TLS termination and HTTP→HTTPS redirect in production. |
 | **Landing Page (Nginx)** | Static marketing site served at `8ohm.co.za` in production. |
 
@@ -181,6 +181,5 @@ The production stack already covers managed database access, CI/CD, and TLS. Rem
 
 ## 📄 Related Documentation
 
-- [GEMINI.md](GEMINI.md) — Condensed context for AI-assisted development in this repo.
 - [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) — Comprehensive technical analysis of the Coeus scraping, extraction, and orchestration architecture.
 

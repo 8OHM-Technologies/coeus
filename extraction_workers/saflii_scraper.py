@@ -238,7 +238,17 @@ async def scrape_case_metadata(page, case_url):
     status = None
     resolved_url = case_url
     for url in candidate_urls:
-        response = await page.goto(url, timeout=30000)
+        try:
+            response = await page.goto(url, timeout=30000)
+        except Exception as nav_err:
+            err_str = str(nav_err)
+            if "ERR_ABORTED" in err_str or "net::" in err_str:
+                logger.warning(
+                    f"Navigation aborted for {url} (possible download/redirect): {nav_err}. "
+                    "Trying next candidate URL."
+                )
+                continue
+            raise
         if not response:
             continue
         status = response.status
@@ -572,7 +582,15 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                             continue
 
                 except Exception as e:
-                    logger.error(f"  [!] Request failed for {case_url}: {e}")
+                    err_str = str(e)
+                    if "ERR_ABORTED" in err_str or "net::" in err_str:
+                        logger.warning(
+                            f"  [!] Transient network error for {case_url}: {e}. "
+                            "Skipping sequence and continuing."
+                        )
+                        seq += 1
+                        continue
+                    logger.error(f"  [!] Unrecoverable error for {case_url}: {e}")
                     sys.exit(1)
 
                 seq += 1
