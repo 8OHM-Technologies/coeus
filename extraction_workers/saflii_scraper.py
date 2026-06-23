@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from playwright.async_api import async_playwright
 from utils import fetch_pipeline_config
-from ..misstcha import TurnstileSolver
+from misstcha import TurnstileSolver
 
 try:
     from google.oauth2 import service_account
