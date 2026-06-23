@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from datetime import datetime, timedelta
@@ -9,9 +10,7 @@ from docker.types import Mount
 
 logger = logging.getLogger(__name__)
 
-API_URL = os.getenv(
-    "COEUS_API_URL"
-)
+API_URL = os.getenv("COEUS_API_URL")
 HOST_DATA_PATH = os.getenv("HOST_DATA_PATH")
 
 if not HOST_DATA_PATH:
@@ -21,6 +20,8 @@ if not HOST_DATA_PATH:
         "Falling back to /tmp/coeus_data."
     )
 
+# The host-side path to the extraction_workers source directory (bind-mounted
+# into every container so hot-fixing scripts doesn't require a full image rebuild).
 host_workers_path = os.path.join(os.path.dirname(HOST_DATA_PATH), "extraction_workers")
 
 if not API_URL:
@@ -44,8 +45,11 @@ default_args = {
     "retry_delay": timedelta(minutes=2),
 }
 
-# --- Dynamic Scraper Discovery ---
-# Discovery path (where the Airflow Scheduler finds the files)
+# ---------------------------------------------------------------------------
+# Dynamic Scraper Discovery
+# The scheduler discovers the actual scraper files here; the DockerOperator
+# always references /app/extraction_workers/ inside the container image.
+# ---------------------------------------------------------------------------
 _discovery_candidates = [
     "/app/extraction_workers",
     "/opt/airflow/extraction_workers",
@@ -56,45 +60,97 @@ discovery_path = next(
     None,
 )
 
-scraper_map = {}
+scraper_map: dict[str, str] = {}
 if discovery_path:
     for f in os.listdir(discovery_path):
         if f.endswith("_scraper.py"):
             key = f.replace("_scraper.py", "")
+            # Always use the container-internal path for the command string
             scraper_map[key] = f"/app/extraction_workers/{f}"
 else:
     logger.warning(
-        f"Scrapers directory not found at {discovery_path}. Scraper map will be empty."
+        "Scrapers directory not found in any candidate path. Scraper map will be empty."
     )
 
+# ---------------------------------------------------------------------------
+# DAG Generation Loop
+# ---------------------------------------------------------------------------
 for blueprint in blueprints:
-    dag_id = f"extract_{blueprint['pipeline_id']}"
-    target_url = blueprint["phase_1_ingestion"]["start_url"]
+    pipeline_id: str = blueprint["pipeline_id"]
+    dag_id: str = f"extract_{pipeline_id}"
 
-    # Routing Logic & Worker Arguments
-    pipeline_id = blueprint["pipeline_id"]
-    scraper_type = blueprint.get("scraper_type", "sedarplus")
+    scraper_type: str = blueprint.get("scraper_type", "sedarplus")
+    worker_script: str | None = scraper_map.get(scraper_type)
 
-    extraction_params = blueprint["phase_2_extraction"].get("extraction_params", {})
-    search_keyword = extraction_params.get("search_keyword")
-    category = extraction_params.get("category") or extraction_params.get("categories")
+    if not worker_script:
+        logger.error(
+            "Unknown scraper type '%s' for pipeline '%s'. "
+            "Available scrapers: %s. Skipping DAG creation.",
+            scraper_type,
+            pipeline_id,
+            list(scraper_map.keys()),
+        )
+        continue
 
+    # -- Phase 1: Ingestion config --
+    phase1 = blueprint["phase_1_ingestion"]
+    target_url: str = phase1["start_url"]
+
+    # -- Phase 2: Extraction config --
+    phase2 = blueprint["phase_2_extraction"]
+    extraction_params: dict = phase2.get("extraction_params", {})
+    expected_schema: str = phase2.get("expected_schema", "")
+    llm_engine: str = phase2.get("engine", "ollama/phi4-mini")
+    extraction_instructions: str = phase2.get("extraction_instructions", "")
+    document_type: str = blueprint["metadata"].get("document_type", "pdf")
+
+    # -- Build scraper CLI arguments --
     worker_args = f"--pipeline_name '{pipeline_id}'"
+
     if scraper_type == "mantech":
+        search_keyword = extraction_params.get("search_keyword")
+        category = extraction_params.get("category") or extraction_params.get("categories")
         if search_keyword:
             worker_args += f" --search_keyword '{search_keyword}'"
         if category:
-            if isinstance(category, list):
-                category_str = ",".join(str(c) for c in category)
-            else:
-                category_str = str(category)
+            category_str = (
+                ",".join(str(c) for c in category)
+                if isinstance(category, list)
+                else str(category)
+            )
             worker_args += f" --category '{category_str}'"
 
-    worker_script = scraper_map.get(scraper_type)
-    if not worker_script:
-        logger.warning(
-            f"Unknown scraper type: {scraper_type}. Available: {list(scraper_map.keys())}"
+    elif scraper_type == "saflii":
+        # Playwright runs non-headless inside an Xvfb virtual display
+        worker_args += " --headless false"
+
+    # -- Scraper command (SAFLII needs an Xvfb virtual display) --
+    if scraper_type == "saflii":
+        scraper_command = (
+            f"bash -c 'Xvfb :99 -screen 0 1280x720x24 & "
+            f"export DISPLAY=:99 && sleep 1 && "
+            f"python {worker_script} {worker_args}'"
         )
+    else:
+        scraper_command = f"python {worker_script} {worker_args}"
+
+    # -- Shared environment passed to every scraper container --
+    scraper_environment = {
+        "PYTHONPATH": "/app/extraction_workers",
+        "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
+        "PIPELINE_CONFIG": API_URL or "",
+        # Pipeline-specific settings resolved by the factory so workers can
+        # load them from env rather than making an API call at startup.
+        "START_URL": target_url,
+        "DOCUMENT_TYPE": document_type,
+        "CAT_SELECTOR": phase1.get("target_css_selector_categories", ""),
+        "DOC_SELECTOR": phase1.get("target_css_selector_documents", ""),
+        "ALLOW_INSECURE_HTTPS": str(phase1.get("allow_insecure_https", False)),
+        "ALLOW_INSECURE_REQUESTS": str(phase1.get("allow_insecure_requests", False)),
+        # Always JSON-encoded so utils.fetch_pipeline_config can do a straight
+        # json.loads() without any ast.literal_eval fallback.
+        "EXTRACTION_PARAMS": json.dumps(extraction_params),
+    }
 
     dag = DAG(
         dag_id=dag_id,
@@ -105,40 +161,18 @@ for blueprint in blueprints:
         tags=["dynamic_extraction"],
     )
 
-    # 1. The Ingestion Task
+    # -----------------------------------------------------------------------
+    # Task 1 — Scraper
+    # -----------------------------------------------------------------------
     scrape_task = DockerOperator(
         task_id="run_scraper",
         image="ghcr.io/8ohm-technologies/coeus-worker:latest",
-        docker_conn_id='github_container_registry',
-        container_name=f"ephemeral_scraper_{blueprint['pipeline_id']}",
+        docker_conn_id="github_container_registry",
+        container_name=f"ephemeral_scraper_{pipeline_id}",
         docker_url="unix://var/run/docker.sock",
         network_mode="8ohm-network",
-        environment={
-            "PYTHONPATH": "/app",
-            "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
-            "PIPELINE_CONFIG": os.getenv(
-                "COEUS_API_URL"
-            ),
-            # Storing pipeline specific settings in the dynamic factory's task environment
-            "START_URL": target_url,
-            "DOCUMENT_TYPE": blueprint["metadata"]["document_type"],
-            "CAT_SELECTOR": blueprint["phase_1_ingestion"].get(
-                "target_css_selector_categories", ""
-            ),
-            "DOC_SELECTOR": blueprint["phase_1_ingestion"].get(
-                "target_css_selector_documents", ""
-            ),
-            "ALLOW_INSECURE_HTTPS": str(
-                blueprint["phase_1_ingestion"].get("allow_insecure_https", False)
-            ),
-            "ALLOW_INSECURE_REQUESTS": str(
-                blueprint["phase_1_ingestion"].get("allow_insecure_requests", False)
-            ),
-            "EXTRACTION_PARAMS": str(
-                blueprint["phase_2_extraction"].get("extraction_params", {})
-            ),
-        },
-        command=f"bash -c 'Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && sleep 1 && python {worker_script} {worker_args}'" if scraper_type == "saflii" else f"python {worker_script} {worker_args}",
+        environment=scraper_environment,
+        command=scraper_command,
         auto_remove="force",
         mount_tmp_dir=False,
         mounts=[
@@ -161,39 +195,54 @@ for blueprint in blueprints:
         dag=dag,
     )
 
-    # 2. The Conditional Extraction Task
-    if blueprint["phase_2_extraction"]["requires_extraction"]:
+    # -----------------------------------------------------------------------
+    # Task 2 — LLM Extractor (conditional)
+    # -----------------------------------------------------------------------
+    if phase2.get("requires_extraction"):
         extract_task = DockerOperator(
             task_id="run_llm_extraction",
             image="ghcr.io/8ohm-technologies/coeus-worker:latest",
-            docker_conn_id='github_container_registry',
-            container_name=f"ephemeral_extractor_{blueprint['pipeline_id']}",
+            docker_conn_id="github_container_registry",
+            container_name=f"ephemeral_extractor_{pipeline_id}",
             docker_url="unix://var/run/docker.sock",
             network_mode="8ohm-network",
             environment={
-                "PYTHONPATH": "/app",
+                "PYTHONPATH": "/app/extraction_workers",
                 "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
-                "PIPELINE_NAME": blueprint["pipeline_id"],
-                "EXTRACTION_INSTRUCTIONS": blueprint["phase_2_extraction"].get(
-                    "extraction_instructions", ""
-                ),
+                "PIPELINE_NAME": pipeline_id,
+                "DOCUMENT_TYPE": document_type,
+                "EXTRACTION_INSTRUCTIONS": extraction_instructions,
+                "AI_MODEL": llm_engine,
+                # DB credentials forwarded from the Airflow worker environment
+                "POSTGRES_HOST": os.environ.get("POSTGRES_HOST", ""),
+                "POSTGRES_USER": os.environ.get("POSTGRES_USER", ""),
+                "POSTGRES_PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
+                "POSTGRES_DB": os.environ.get("POSTGRES_DB", ""),
             },
-            command=f"python /app/extraction_workers/llm_extractor.py --pipeline_name '{blueprint['pipeline_id']}' --schema '{blueprint['phase_2_extraction']['expected_schema']}'",
+            command=(
+                f"python /app/extraction_workers/llm_extractor.py "
+                f"--pipeline_name '{pipeline_id}' "
+                f"--schema '{expected_schema}'"
+            ),
             auto_remove="force",
             mount_tmp_dir=False,
             mounts=[
+                # Mount the full data root so the extractor can navigate
+                # /app/data/{pipeline_id}/{document_type}/
                 Mount(
-                    source=HOST_DATA_PATH, target="/app/data/scraped_pdfs", type="bind"
+                    source=HOST_DATA_PATH,
+                    target="/app/data",
+                    type="bind",
                 ),
                 Mount(
-                    source=host_workers_path, target="/app/extraction_workers", type="bind"
+                    source=host_workers_path,
+                    target="/app/extraction_workers",
+                    type="bind",
                 ),
             ],
             dag=dag,
         )
 
-        scrape_task.set_downstream(extract_task)
-    else:
-        pass
+        scrape_task >> extract_task
 
     globals()[dag_id] = dag

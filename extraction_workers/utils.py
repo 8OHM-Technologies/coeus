@@ -61,19 +61,12 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
     raw_params = os.getenv("EXTRACTION_PARAMS")
     if raw_params:
         try:
-            # First try parsing as a Python literal (handles True/False/None/single quotes correctly)
-            import ast
-            env_config["extraction_params"] = ast.literal_eval(raw_params)
-        except Exception:
-            try:
-                # Fallback to JSON parsing
-                processed_params = raw_params.replace("'", '"')
-                env_config["extraction_params"] = json.loads(processed_params)
-            except Exception:
-                logger.warning(
-                    "Failed to parse EXTRACTION_PARAMS env var. Using empty dict."
-                )
-                env_config["extraction_params"] = {}
+            env_config["extraction_params"] = json.loads(raw_params)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Failed to parse EXTRACTION_PARAMS env var as JSON. Using empty dict."
+            )
+            env_config["extraction_params"] = {}
 
     # If we have the essential bits from env, use them
     if env_config["start_url"] and env_config["document_type"]:

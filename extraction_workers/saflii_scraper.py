@@ -369,8 +369,9 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     path_parts = [p for p in parsed.path.split("/") if p]
     court_name = path_parts[-1] if path_parts else "SAFLII"
 
+    document_type = config.get("document_type", "pdf").lower()
     base_data_dir = "/app/data" if os.path.exists("/app/data") else "data"
-    output_dir = os.path.join(base_data_dir, "scraped_pdfs", "saflii")
+    output_dir = os.path.join(base_data_dir, pipeline_name, document_type)
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output directory: {os.path.abspath(output_dir)}")
 

@@ -2,6 +2,8 @@ FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Allow all worker scripts to resolve sibling modules (db.py, utils.py, schemas.py)
+ENV PYTHONPATH=/app/extraction_workers
 
 WORKDIR /app
 
