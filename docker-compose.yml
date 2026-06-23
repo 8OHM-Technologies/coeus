@@ -158,7 +158,7 @@ services:
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - postgres
-      - airflow_scheduler
+      - airflow-scheduler
     ports:
       - "9001:8080"
     env_file:

@@ -148,7 +148,7 @@ services:
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - postgres
-      - airflow_scheduler
+      - airflow-scheduler
     env_file:
       - .env
     environment:
