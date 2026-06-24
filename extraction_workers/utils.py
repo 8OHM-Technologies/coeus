@@ -55,6 +55,7 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
         == "true",
         "allow_insecure_requests": os.getenv("ALLOW_INSECURE_REQUESTS", "False").lower()
         == "true",
+        "use_proxy": os.getenv("USE_PROXY", "False").lower() == "true",
     }
 
     # Extract extraction_params from env if it exists
@@ -109,6 +110,7 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
             **config["phase_2_extraction"],
             "pipeline_id": config["pipeline_id"],
             "name": config.get("name"),
+            "use_proxy": config["phase_1_ingestion"].get("use_proxy", False),
         }
 
         if standard_config.get("allow_insecure_requests"):

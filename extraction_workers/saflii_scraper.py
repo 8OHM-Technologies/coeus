@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+import requests
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -368,6 +369,23 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     end_year = int(extraction_params.get("end_year", current_year))
 
     proxy_url = os.getenv("SCRAPING_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
+
+    use_proxy = config.get("use_proxy", False)
+    WEBSHARE_PROXY = "http://ooumozlx-rotate:aud9ea66yrrq@p.webshare.io:80/"
+
+    if use_proxy:
+        logger.info("Proxy is ENABLED — verifying connectivity via Webshare rotating proxy...")
+        try:
+            ip = requests.get(
+                "https://ipv4.webshare.io/",
+                proxies={"http": WEBSHARE_PROXY, "https": WEBSHARE_PROXY},
+                timeout=15,
+            ).text.strip()
+            logger.info(f"Proxy active. Outbound IP: {ip}")
+        except Exception as proxy_err:
+            logger.error(f"Proxy connectivity check failed: {proxy_err}")
+            sys.exit(1)
+        proxy_url = WEBSHARE_PROXY
 
     logger.info("==================================================")
     logger.info(f"COEUS SAFLII WORKER INITIALIZED (PIPELINE: {pipeline_name})")

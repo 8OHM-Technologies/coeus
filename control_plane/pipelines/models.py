@@ -91,6 +91,10 @@ class PipelineConfiguration(models.Model):
     allow_insecure_requests = models.BooleanField(
         default=True, help_text="Ignore SSL errors in requests (urllib3)."
     )
+    use_proxy = models.BooleanField(
+        default=False,
+        help_text="Route all scraper traffic through the rotating Webshare proxy.",
+    )
     extraction_params = models.JSONField(
         default=dict,
         blank=True,
@@ -176,6 +180,7 @@ class PipelineConfiguration(models.Model):
                 "target_css_selector_documents": self.target_css_selector_documents,
                 "allow_insecure_https": self.allow_insecure_https,
                 "allow_insecure_requests": self.allow_insecure_requests,
+                "use_proxy": self.use_proxy,
                 "pagination_strategy": self.pagination_strategy,
             },
             "phase_2_extraction": {

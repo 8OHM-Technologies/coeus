@@ -147,6 +147,7 @@ for blueprint in blueprints:
         "DOC_SELECTOR": phase1.get("target_css_selector_documents", ""),
         "ALLOW_INSECURE_HTTPS": str(phase1.get("allow_insecure_https", False)),
         "ALLOW_INSECURE_REQUESTS": str(phase1.get("allow_insecure_requests", False)),
+        "USE_PROXY": str(phase1.get("use_proxy", False)),
         # Always JSON-encoded so utils.fetch_pipeline_config can do a straight
         # json.loads() without any ast.literal_eval fallback.
         "EXTRACTION_PARAMS": json.dumps(extraction_params),
