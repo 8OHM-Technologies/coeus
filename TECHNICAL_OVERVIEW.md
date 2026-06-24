@@ -290,4 +290,4 @@ The extractor dynamically resolves the schema class from `schemas.py` by name at
 
 > [!NOTE]
 > **SAFLII GDrive Integration**:
-> When `gdrive_folder_id` is set in `extraction_params`, the SAFLII scraper uploads each downloaded PDF and JSON metadata file to Google Drive after saving it locally. Setting `gdrive_delete_local: true` in `extraction_params` causes local copies to be removed after a successful upload, enabling near-zero local disk usage for long-running crawls. The manifest also merges existing GDrive file names to prevent re-downloading files already on Drive.
+> When `gdrive_folder_id` is set in `extraction_params`, the SAFLII scraper uploads each downloaded PDF and JSON metadata file to Google Drive after saving it locally. Setting `gdrive_delete_local: true` in `extraction_params` causes local copies to be removed after a successful upload, enabling near-zero local disk usage for long-running crawls. It pulls existing file lists directly from Google Drive (or local output folder if GDrive is disabled) to initialize its in-memory deduplication set, preventing re-downloading files already saved.

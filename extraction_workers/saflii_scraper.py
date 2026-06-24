@@ -438,18 +438,13 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output directory: {os.path.abspath(output_dir)}")
 
-    existing_files = set()
-    for fname in os.listdir(output_dir):
-        if fname.endswith((".pdf", ".json")):
-            existing_files.add(fname)
-
     gdrive_folder_id = extraction_params.get("gdrive_folder_id")
     gdrive_delete_local = extraction_params.get("gdrive_delete_local", False)
     gdrive_service = None
-    gdrive_files = set()
+    existing_files = set()
 
     if gdrive_folder_id:
-        logger.info("Google Drive integration is enabled.")
+        logger.info("Google Drive integration is enabled. Initializing deduplication set from Google Drive...")
         try:
             creds = load_gdrive_credentials(extraction_params)
             gdrive_service = build("drive", "v3", credentials=creds)
@@ -460,6 +455,12 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
         except Exception as e:
             logger.error(f"Failed to initialize Google Drive: {e}")
             sys.exit(1)
+    else:
+        logger.info("Google Drive integration is not enabled. Initializing deduplication set from local output directory...")
+        for fname in os.listdir(output_dir):
+            if fname.endswith((".pdf", ".json")):
+                existing_files.add(fname)
+        logger.info(f"Found {len(existing_files)} existing local files.")
 
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser (headless={headless})...")
@@ -507,21 +508,19 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 json_name = f"{court_name}_{year}_{seq}.json"
                 json_path = os.path.join(output_dir, json_name)
 
-                pdf_exists = os.path.exists(file_path) or file_name in existing_files
-                json_exists = os.path.exists(json_path) or json_name in existing_files
+                pdf_exists = file_name in existing_files
+                json_exists = json_name in existing_files
 
                 if pdf_exists and json_exists:
+                    storage_name = "GDrive" if gdrive_service else "local storage"
                     logger.info(
-                        f"  [-] Skipping (PDF and JSON exist in local/manifest/GDrive): {file_name}"
+                        f"  [-] Skipping (PDF and JSON exist in {storage_name}): {file_name}"
                     )
                     seq += 1
                     continue
 
                 need_pdf = not pdf_exists
                 need_json = not json_exists
-
-                case_url = f"{target_url.rstrip('/')}/{year}/{seq}"
-                pdf_url = f"{case_url}.pdf"
 
                 if pdf_exists and need_json:
                     logger.info(f"  [~] PDF exists, backfilling metadata: {json_name}")
@@ -530,40 +529,20 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 else:
                     logger.info(f"  [~] Fetching PDF and metadata for sequence {seq}")
 
-                if need_json:
-                    logger.info(f"Scraping metadata: {case_url}")
-                if need_pdf:
-                    logger.info(f"Checking PDF URL: {pdf_url}")
+                case_url = f"{target_url.rstrip('/')}/{year}/{seq}"
+                pdf_url = f"{case_url}.pdf"
 
                 try:
+                    scraped_metadata = False
+
                     if need_json:
-                        metadata, case_status = await scrape_case_metadata(
-                            page, case_url
-                        )
-                        if case_status == 404:
-                            if pdf_exists:
-                                logger.warning(
-                                    f"Case page 404 for {case_url}, but PDF exists. Skipping metadata for this sequence."
-                                )
-                                seq += 1
-                                continue
-                            logger.info(
-                                f"Received 404 for {case_url}. Moving to next year."
-                            )
-                            break
-
-                        if metadata:
-                            metadata["pdf_url"] = pdf_url
-                            with open(json_path, "w", encoding="utf-8") as f:
-                                json.dump(metadata, f, indent=2, ensure_ascii=False)
-                            logger.info(f"  [+] Saved metadata: {json_name}")
+                        if os.path.exists(json_path):
+                            logger.info(f"  [~] Metadata exists locally. Uploading to GDrive: {json_name}")
                             existing_files.add(json_name)
-
                             if gdrive_service:
                                 if upload_file_to_gdrive(
                                     gdrive_service, json_path, gdrive_folder_id
                                 ):
-                                    gdrive_files.add(json_name)
                                     if gdrive_delete_local:
                                         try:
                                             os.remove(json_path)
@@ -575,39 +554,66 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                                 f"Failed to delete local file {json_name}: {e}"
                                             )
                         else:
-                            logger.warning(
-                                f"  [!] No metadata extracted for {case_url}"
+                            logger.info(f"Scraping metadata: {case_url}")
+                            metadata, case_status = await scrape_case_metadata(
+                                page, case_url
                             )
-                            if not need_pdf:
-                                seq += 1
-                                continue
+                            if case_status == 404:
+                                if pdf_exists or os.path.exists(file_path):
+                                    logger.warning(
+                                        f"Case page 404 for {case_url}, but PDF exists. Skipping metadata for this sequence."
+                                    )
+                                    seq += 1
+                                    continue
+                                logger.info(
+                                    f"Received 404 for {case_url}. Moving to next year."
+                                )
+                                break
 
-                    if need_json and need_pdf:
+                            if metadata:
+                                metadata["pdf_url"] = pdf_url
+                                with open(json_path, "w", encoding="utf-8") as f:
+                                    json.dump(metadata, f, indent=2, ensure_ascii=False)
+                                logger.info(f"  [+] Saved metadata: {json_name}")
+                                existing_files.add(json_name)
+                                scraped_metadata = True
+
+                                if gdrive_service:
+                                    if upload_file_to_gdrive(
+                                        gdrive_service, json_path, gdrive_folder_id
+                                    ):
+                                        if gdrive_delete_local:
+                                            try:
+                                                os.remove(json_path)
+                                                logger.info(
+                                                    f"  [+] Deleted local metadata file: {json_name}"
+                                                )
+                                            except Exception as e:
+                                                logger.warning(
+                                                    f"Failed to delete local file {json_name}: {e}"
+                                                )
+                            else:
+                                logger.warning(
+                                    f"  [!] No metadata extracted for {case_url}"
+                                )
+                                if not need_pdf:
+                                    seq += 1
+                                    continue
+
+                    if scraped_metadata and need_pdf and not os.path.exists(file_path):
                         # Metadata scrape just ran — a Turnstile was likely solved for
                         # the HTML case page. Brief cooldown before hitting the PDF URL
                         # to avoid triggering back-to-back rate limiting on SAFLII.
                         await asyncio.sleep(5)
 
                     if need_pdf:
-                        (
-                            pdf_bytes,
-                            pdf_result_status,
-                            pdf_content_type,
-                        ) = await download_pdf(
-                            page, pdf_url, pdf_data, pdf_status, current_pdf_url
-                        )
-
-                        if pdf_bytes:
-                            with open(file_path, "wb") as f:
-                                f.write(pdf_bytes)
-                            logger.info(f"  [+] Downloaded: {file_name}")
+                        if os.path.exists(file_path):
+                            logger.info(f"  [~] PDF exists locally. Uploading to GDrive: {file_name}")
                             existing_files.add(file_name)
-
                             if gdrive_service:
                                 if upload_file_to_gdrive(
                                     gdrive_service, file_path, gdrive_folder_id
                                 ):
-                                    gdrive_files.add(file_name)
                                     if gdrive_delete_local:
                                         try:
                                             os.remove(file_path)
@@ -619,31 +625,61 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                                 f"Failed to delete local file {file_name}: {e}"
                                             )
                         else:
-                            if pdf_result_status == 404:
-                                logger.warning(
-                                    f"URL {pdf_url} returned 404. Assuming end of sequence for the year."
+                            logger.info(f"Checking PDF URL: {pdf_url}")
+                            (
+                                pdf_bytes,
+                                pdf_result_status,
+                                pdf_content_type,
+                            ) = await download_pdf(
+                                page, pdf_url, pdf_data, pdf_status, current_pdf_url
+                            )
+
+                            if pdf_bytes:
+                                with open(file_path, "wb") as f:
+                                    f.write(pdf_bytes)
+                                logger.info(f"  [+] Downloaded: {file_name}")
+                                existing_files.add(file_name)
+
+                                if gdrive_service:
+                                    if upload_file_to_gdrive(
+                                        gdrive_service, file_path, gdrive_folder_id
+                                    ):
+                                        if gdrive_delete_local:
+                                            try:
+                                                os.remove(file_path)
+                                                logger.info(
+                                                    f"  [+] Deleted local PDF file: {file_name}"
+                                                )
+                                            except Exception as e:
+                                                logger.warning(
+                                                    f"Failed to delete local file {file_name}: {e}"
+                                                )
+                            else:
+                                if pdf_result_status == 404:
+                                    logger.warning(
+                                        f"URL {pdf_url} returned 404. Assuming end of sequence for the year."
+                                    )
+                                    break
+                                if pdf_result_status == 403:
+                                    logger.warning(
+                                        f"  [!] 403 Forbidden for {pdf_url} — possible rate-limit. "
+                                        "Skipping file and applying a 30 s cooldown before next request."
+                                    )
+                                    await asyncio.sleep(30)
+                                    seq += 1
+                                    continue
+                                if pdf_content_type and "html" in pdf_content_type:
+                                    logger.warning(
+                                        f"URL {pdf_url} returned HTML content (status: {pdf_result_status}). Retrying."
+                                    )
+                                    await asyncio.sleep(2)
+                                    continue
+
+                                logger.error(
+                                    f"  [!] Failed to download PDF for {pdf_url} (status: {pdf_result_status})"
                                 )
-                                break
-                            if pdf_result_status == 403:
-                                logger.warning(
-                                    f"  [!] 403 Forbidden for {pdf_url} — possible rate-limit. "
-                                    "Skipping file and applying a 30 s cooldown before next request."
-                                )
-                                await asyncio.sleep(30)
                                 seq += 1
                                 continue
-                            if pdf_content_type and "html" in pdf_content_type:
-                                logger.warning(
-                                    f"URL {pdf_url} returned HTML content (status: {pdf_result_status}). Retrying."
-                                )
-                                await asyncio.sleep(2)
-                                continue
-
-                            logger.error(
-                                f"  [!] Failed to download PDF for {pdf_url} (status: {pdf_result_status})"
-                            )
-                            seq += 1
-                            continue
 
                 except Exception as e:
                     err_str = str(e)

@@ -78,7 +78,7 @@ The `misstcha/` directory is a structured Python package (not a standalone `solv
 `saflii_scraper.py` has received significant updates:
 - **Turnstile handling:** Integrates `misstcha.TurnstileSolver` on both case-metadata pages and PDF download pages with a post-solve polling loop.
 - **Google Drive integration:** Optional upload of downloaded PDFs and JSON metadata to a GDrive folder (`gdrive_folder_id` in `extraction_params`). Supports credential discovery from `extraction_params`, `GOOGLE_APPLICATION_CREDENTIALS` env var, or well-known file paths.
-- **Manifest-based deduplication:** Maintains a `saflii_manifest.json` to track already-downloaded files across runs, merging with the GDrive file list when enabled.
+- **In-memory deduplication:** Tracks downloaded files in-memory using the Google Drive folder list (when enabled) or the local output directory, preventing redundant downloads and backfilling missing PDFs or metadata.
 - **Graceful error handling:** 403 rate-limit responses trigger a 30-second cooldown; `ERR_ABORTED`/transient network errors skip the sequence without crashing.
 - **Partial-completion support:** Can independently backfill a missing PDF or metadata JSON for a sequence without re-fetching the already-present file.
 
