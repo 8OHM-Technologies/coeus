@@ -410,6 +410,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     current_year = datetime.now().year
     end_year = int(extraction_params.get("end_year", current_year))
 
+    proxy_url = None
     use_proxy = (
         config.get("use_proxy", False)
         or config.get("extraction_params", {}).get("use_proxy", False)
@@ -488,8 +489,24 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
         logger.info(f"Launching Playwright browser (headless={headless})...")
         launch_kwargs = {"headless": headless}
         if proxy_url:
-            logger.info(f"Using proxy for browser: {proxy_url}")
-            launch_kwargs["proxy"] = {"server": proxy_url}
+            parsed_proxy = urlparse(proxy_url)
+            server_url = f"{parsed_proxy.scheme}://{parsed_proxy.hostname}"
+            if parsed_proxy.port:
+                server_url += f":{parsed_proxy.port}"
+            
+            proxy_config = {"server": server_url}
+            if parsed_proxy.username:
+                proxy_config["username"] = parsed_proxy.username
+            if parsed_proxy.password:
+                proxy_config["password"] = parsed_proxy.password
+                
+            masked_log = server_url
+            if parsed_proxy.username:
+                masked_log = f"{parsed_proxy.scheme}://{parsed_proxy.username}:****@{parsed_proxy.hostname}"
+                if parsed_proxy.port:
+                    masked_log += f":{parsed_proxy.port}"
+            logger.info(f"Using proxy for browser: {masked_log}")
+            launch_kwargs["proxy"] = proxy_config
 
         browser = await p.chromium.launch(**launch_kwargs)
         context = await browser.new_context(
