@@ -171,14 +171,7 @@ def load_gdrive_credentials(extraction_params):
             env_path, scopes=scopes
         )
 
-    search_paths = [
-        "/app/data/infinity-ohm-cloud-project-880d29f3549c.json",
-        "/app/data/gdrive_credentials.json",
-        "/config/infinity-ohm-cloud-project-880d29f3549c.json",
-        os.path.expanduser(
-            "~/.config/gcloud/infinity-ohm-cloud-project-880d29f3549c.json"
-        ),
-    ]
+    search_paths = ["/app/data/gdrive_credentials.json"]
     for path in search_paths:
         if os.path.exists(path):
             logger.info(f"Loading Google Drive credentials from candidate path: {path}")
@@ -202,6 +195,8 @@ def list_gdrive_files(service, folder_id):
                     spaces="drive",
                     fields="nextPageToken, files(id, name)",
                     pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
                 )
                 .execute()
             )
@@ -233,7 +228,12 @@ def upload_file_to_gdrive(service, file_path, folder_id):
     try:
         file_obj = (
             service.files()
-            .create(body=file_metadata, media_body=media, fields="id")
+            .create(
+                body=file_metadata, 
+                media_body=media, 
+                fields="id",
+                supportsAllDrives=True,
+            )
             .execute()
         )
         logger.info(
@@ -438,29 +438,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output directory: {os.path.abspath(output_dir)}")
 
-    manifest_path = os.path.join(output_dir, "saflii_manifest.json")
-    manifest = set()
-    if os.path.exists(manifest_path):
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest_data = json.load(f)
-                if isinstance(manifest_data, list):
-                    manifest = set(manifest_data)
-                elif (
-                    isinstance(manifest_data, dict)
-                    and "downloaded_files" in manifest_data
-                ):
-                    manifest = set(manifest_data["downloaded_files"])
-            logger.info(
-                f"Loaded {len(manifest)} files from local manifest: {manifest_path}"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to load manifest file {manifest_path}: {e}")
-
-    # Scan output directory for any existing files to populate manifest
+    existing_files = set()
     for fname in os.listdir(output_dir):
         if fname.endswith((".pdf", ".json")):
-            manifest.add(fname)
+            existing_files.add(fname)
 
     gdrive_folder_id = extraction_params.get("gdrive_folder_id")
     gdrive_delete_local = extraction_params.get("gdrive_delete_local", False)
@@ -475,20 +456,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             logger.info("Fetching existing files from Google Drive folder...")
             gdrive_files = list_gdrive_files(gdrive_service, gdrive_folder_id)
             logger.info(f"Found {len(gdrive_files)} existing files on Google Drive.")
-            manifest.update(gdrive_files)
+            existing_files.update(gdrive_files)
         except Exception as e:
             logger.error(f"Failed to initialize Google Drive: {e}")
             sys.exit(1)
-
-    def save_manifest():
-        try:
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump({"downloaded_files": sorted(list(manifest))}, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to save manifest file {manifest_path}: {e}")
-
-    # Save manifest initially to persist any newly scanned files
-    save_manifest()
 
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser (headless={headless})...")
@@ -536,8 +507,8 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 json_name = f"{court_name}_{year}_{seq}.json"
                 json_path = os.path.join(output_dir, json_name)
 
-                pdf_exists = os.path.exists(file_path) or file_name in manifest
-                json_exists = os.path.exists(json_path) or json_name in manifest
+                pdf_exists = os.path.exists(file_path) or file_name in existing_files
+                json_exists = os.path.exists(json_path) or json_name in existing_files
 
                 if pdf_exists and json_exists:
                     logger.info(
@@ -586,8 +557,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                             with open(json_path, "w", encoding="utf-8") as f:
                                 json.dump(metadata, f, indent=2, ensure_ascii=False)
                             logger.info(f"  [+] Saved metadata: {json_name}")
-                            manifest.add(json_name)
-                            save_manifest()
+                            existing_files.add(json_name)
 
                             if gdrive_service:
                                 if upload_file_to_gdrive(
@@ -631,8 +601,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                             with open(file_path, "wb") as f:
                                 f.write(pdf_bytes)
                             logger.info(f"  [+] Downloaded: {file_name}")
-                            manifest.add(file_name)
-                            save_manifest()
+                            existing_files.add(file_name)
 
                             if gdrive_service:
                                 if upload_file_to_gdrive(
