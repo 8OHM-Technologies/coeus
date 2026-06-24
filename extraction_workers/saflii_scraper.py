@@ -741,6 +741,23 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 success = False
                 max_attempts = 3
 
+                def handle_sequence_failure():
+                    nonlocal terminated_year, success
+                    if os.path.exists(json_path):
+                        try:
+                            os.remove(json_path)
+                            logger.info(f"Removed local orphan metadata file: {json_name}")
+                        except Exception:
+                            pass
+                    if gdrive_service and json_name in existing_files:
+                        try:
+                            delete_file_from_gdrive(gdrive_service, json_name, gdrive_folder_id)
+                        except Exception:
+                            pass
+                    existing_files.discard(json_name)
+                    terminated_year = True
+                    success = True
+
                 for attempt in range(1, max_attempts + 1):
                     logger.info(f"Processing sequence {seq} (Attempt {attempt}/{max_attempts}) for {case_url}...")
                     try:
@@ -805,16 +822,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                         logger.info(
                                             f"Received 404 for {case_url}. Moving to next year."
                                         )
-                                        if os.path.exists(json_path):
-                                            try:
-                                                os.remove(json_path)
-                                            except Exception:
-                                                pass
-                                        if gdrive_service and json_name in existing_files:
-                                            delete_file_from_gdrive(gdrive_service, json_name, gdrive_folder_id)
-                                        existing_files.discard(json_name)
-                                        terminated_year = True
-                                        success = True
+                                        handle_sequence_failure()
                                         break
 
                                 if case_status == 403:
@@ -921,17 +929,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                             logger.warning(
                                                 f"URL {pdf_url} returned 404 and case page is confirmed 404/Not Found. Assuming end of sequence for the year."
                                             )
-                                            if os.path.exists(json_path):
-                                                try:
-                                                    os.remove(json_path)
-                                                    logger.info(f"Removed local orphan metadata file: {json_name}")
-                                                except Exception:
-                                                    pass
-                                            if gdrive_service and json_name in existing_files:
-                                                delete_file_from_gdrive(gdrive_service, json_name, gdrive_folder_id)
-                                            existing_files.discard(json_name)
-                                            terminated_year = True
-                                            success = True
+                                            handle_sequence_failure()
                                             break
                                         else:
                                             logger.warning(
@@ -964,8 +962,9 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                             logger.info(f"Sleeping for {backoff_seconds} seconds before attempt {attempt + 1}...")
                             await asyncio.sleep(backoff_seconds)
                         else:
-                            logger.error(f"Failed all {max_attempts} attempts for sequence {seq}. Exiting with error to trigger container restart/proxy rotation.")
-                            sys.exit(1)
+                            logger.warning(f"Failed all {max_attempts} attempts for sequence {seq}. Assuming end of sequence for the year.")
+                            handle_sequence_failure()
+                            break
                     except Exception as e:
                         err_str = str(e)
                         if "ERR_ABORTED" in err_str or "net::" in err_str:
@@ -975,8 +974,9 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                 logger.info(f"Sleeping for {backoff_seconds} seconds before attempt {attempt + 1}...")
                                 await asyncio.sleep(backoff_seconds)
                             else:
-                                logger.error(f"Unrecoverable network error after {max_attempts} attempts: {e}")
-                                sys.exit(1)
+                                logger.warning(f"Failed all {max_attempts} attempts (network error) for sequence {seq}. Assuming end of sequence for the year.")
+                                handle_sequence_failure()
+                                break
                         else:
                             logger.error(f"Unrecoverable error for {case_url}: {e}")
                             sys.exit(1)
