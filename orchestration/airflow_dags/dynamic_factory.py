@@ -120,12 +120,12 @@ for blueprint in blueprints:
             )
             worker_args += f" --category '{category_str}'"
 
-    elif scraper_type == "saflii":
+    elif scraper_type in ("saflii", "new_saflii"):
         # Playwright runs non-headless inside an Xvfb virtual display
         worker_args += " --headless false"
 
     # -- Scraper command (SAFLII needs an Xvfb virtual display) --
-    if scraper_type == "saflii":
+    if scraper_type in ("saflii", "new_saflii"):
         scraper_command = (
             f"bash -c 'Xvfb :99 -screen 0 1280x720x24 & "
             f"export DISPLAY=:99 && sleep 1 && "

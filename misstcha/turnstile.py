@@ -44,6 +44,11 @@ class TurnstileSolver(BaseSolver):
         if not frame_el:
             return {"success": False, "error": "Could not retrieve frame element."}
 
+        try:
+            await frame_el.scroll_into_view_if_needed()
+        except Exception as e:
+            logger.warning(f"Could not scroll turnstile frame into view: {e}")
+
         box = await frame_el.bounding_box()
         if not box:
             return {
@@ -51,14 +56,24 @@ class TurnstileSolver(BaseSolver):
                 "error": "Could not retrieve bounding box of turnstile frame.",
             }
 
-        click_x = box["x"] + 30
-        click_y = box["y"] + 32
-        logger.info(f"Clicking verification checkbox at ({click_x}, {click_y})")
+        import random
+        click_x = box["x"] + 30 + random.randint(-4, 4)
+        click_y = box["y"] + 32 + random.randint(-4, 4)
+        logger.info(f"Moving to and clicking Turnstile checkbox at ({click_x}, {click_y}) with human-like steps")
 
         try:
-            await page.mouse.move(click_x, click_y)
-            await asyncio.sleep(0.3)
-            await page.mouse.click(click_x, click_y)
+            start_x = random.randint(0, 100)
+            start_y = random.randint(0, 100)
+            await page.mouse.move(start_x, start_y)
+            await asyncio.sleep(0.1)
+
+            steps = random.randint(10, 15)
+            await page.mouse.move(click_x, click_y, steps=steps)
+            await asyncio.sleep(random.uniform(0.2, 0.4))
+            
+            await page.mouse.down()
+            await asyncio.sleep(random.uniform(0.05, 0.15))
+            await page.mouse.up()
 
             # If a selector is provided, wait for it to confirm success/navigation
             if wait_selector:
