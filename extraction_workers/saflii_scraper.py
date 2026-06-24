@@ -248,6 +248,19 @@ def upload_file_to_gdrive(service, file_path, folder_id):
 turnstile_solver = TurnstileSolver()
 
 
+async def log_browser_proxy_ip(page, step_label: str, use_proxy: bool):
+    if not use_proxy:
+        return
+    try:
+        test_page = await page.context.new_page()
+        await test_page.goto("https://ipv4.webshare.io/", timeout=10000)
+        ip = (await test_page.locator("body").inner_text()).strip()
+        logger.info(f"[{step_label}] Browser Outbound IP (via proxy): {ip}")
+        await test_page.close()
+    except Exception as e:
+        logger.warning(f"[{step_label}] Could not fetch browser proxy IP: {e}")
+
+
 async def wait_for_metadata_after_turnstile(page):
     for _ in range(40):
         await asyncio.sleep(1)
@@ -407,6 +420,17 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     WEBSHARE_PROXY = "http://ooumozlx-rotate:aud9ea66yrrq@p.webshare.io:80/"
 
     if use_proxy:
+        # Mask credentials in proxy URL for logs
+        masked_proxy = WEBSHARE_PROXY
+        if "@" in WEBSHARE_PROXY:
+            parts = WEBSHARE_PROXY.split("@")
+            creds_part = parts[0].split("://")
+            scheme = creds_part[0]
+            user = creds_part[1].split(":")[0]
+            host_part = parts[1]
+            masked_proxy = f"{scheme}://{user}:****@{host_part}"
+        logger.info(f"Using rotating proxy configuration: {masked_proxy}")
+
         logger.info(
             "Proxy is ENABLED — verifying connectivity via Webshare rotating proxy..."
         )
@@ -477,6 +501,8 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
         )
         page = await context.new_page()
 
+        await log_browser_proxy_ip(page, "Startup", use_proxy)
+
         current_pdf_url = {"url": ""}
         pdf_data = {"bytes": None}
         pdf_status = {"status": None, "content_type": None}
@@ -501,6 +527,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
 
         for year in range(start_year, end_year + 1):
             logger.info(f"Processing Year: {year}")
+            await log_browser_proxy_ip(page, f"Year {year}", use_proxy)
             seq = 1
             while True:
                 file_name = f"{court_name}_{year}_{seq}.pdf"
