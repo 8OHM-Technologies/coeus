@@ -291,8 +291,29 @@ async def log_browser_proxy_ip(page, step_label: str, use_proxy: bool):
 
 
 async def wait_for_metadata_after_turnstile(page):
-    for _ in range(40):
+    for poll_sec in range(40):
         await asyncio.sleep(1)
+        
+        try:
+            title = await page.title()
+        except Exception:
+            # Context destroyed or page navigation in progress, retry next poll
+            continue
+            
+        try:
+            h1 = await page.locator("h1").inner_text()
+        except Exception:
+            h1 = ""
+        try:
+            body = await page.locator("body").inner_text()
+        except Exception:
+            body = ""
+            
+        state = check_page_state(title, h1, body)
+        if state == "NOT_FOUND":
+            logger.info("Early exit from metadata wait: resolved to NOT_FOUND state.")
+            return False
+
         if await page.locator(".metaDataLabel").count() > 0:
             return True
         if not await turnstile_solver.find_turnstile_frame(page):
@@ -456,71 +477,46 @@ async def download_pdf(
     pdf_status["status"] = None
     pdf_status["content_type"] = None
 
-    if solve_res["success"]:
-        logger.info("  [!] Challenge solved. Starting polling loop...")
-        # Poll up to 30 seconds for the download or response listener to capture the PDF
-        for _ in range(30):
-            await asyncio.sleep(1)
-            if pdf_data["bytes"]:
-                break
+    logger.info("  [!] Starting PDF download/polling loop...")
+    # Poll up to 30 seconds for the download or response listener to capture the PDF
+    for poll_sec in range(30):
+        await asyncio.sleep(1)
+        if pdf_data["bytes"]:
+            break
 
-            # Check if browser received a response indicating a terminal state
-            if pdf_status["status"] == 404:
-                logger.info(f"Browser response resolved to 404 for {pdf_url}")
-                break
+        # Check if browser received a response indicating a terminal state
+        if pdf_status["status"] == 404:
+            logger.info(f"Browser response resolved to 404 for {pdf_url}")
+            break
 
-            # If the response returned HTML, check the page state (could be cf block or 404)
-            if pdf_status["content_type"] and "html" in pdf_status["content_type"]:
-                try:
-                    title = await page.title()
-                except Exception:
-                    title = ""
-                try:
-                    h1 = await page.locator("h1").inner_text()
-                except Exception:
-                    h1 = ""
-                try:
-                    body = await page.locator("body").inner_text()
-                except Exception:
-                    body = ""
-                
-                state = check_page_state(title, h1, body)
-                if state == "NOT_FOUND":
-                    logger.info(f"Browser response resolved to HTML 'Not Found' / Apache Forbidden for {pdf_url}")
-                    pdf_status["status"] = 404
-                elif state == "BLOCKED":
-                    logger.warning(f"Browser response resolved to Cloudflare challenge/block page for {pdf_url}")
-                    pdf_status["status"] = 403
-                break
+        # Check the current page content state
+        try:
+            title = await page.title()
+        except Exception as e:
+            # Context destroyed, navigation in progress, etc. Let's try again in the next second.
+            logger.debug(f"Failed to get page title at second {poll_sec+1}: {e}. Continuing...")
+            continue
 
-            if pdf_status["status"] == 403:
-                try:
-                    title = await page.title()
-                except Exception:
-                    title = ""
-                try:
-                    h1 = await page.locator("h1").inner_text()
-                except Exception:
-                    h1 = ""
-                try:
-                    body = await page.locator("body").inner_text()
-                except Exception:
-                    body = ""
+        try:
+            h1 = await page.locator("h1").inner_text()
+        except Exception:
+            h1 = ""
+        try:
+            body = await page.locator("body").inner_text()
+        except Exception:
+            body = ""
 
-                state = check_page_state(title, h1, body)
-                if state == "NOT_FOUND":
-                    logger.info(f"Browser 403 response resolved to SAFLII Apache Forbidden (Not Found) for {pdf_url}")
-                    pdf_status["status"] = 404
-                else:
-                    logger.warning(f"Browser 403 response resolved to block/error page (state: {state}) for {pdf_url}")
-                    pdf_status["status"] = 403
-                break
-    else:
-        logger.info("  [!] Solver bypass/no-op. Checking for PDF...")
-        for _ in range(5):
-            if pdf_data["bytes"]:
-                break
-            await asyncio.sleep(1)
+        state = check_page_state(title, h1, body)
+        if state == "BLOCKED":
+            # Still blocked / challenge page is active. Keep waiting.
+            if poll_sec % 5 == 0:
+                logger.debug(f"Waiting for challenge page to transition (current state: BLOCKED)...")
+            continue
+
+        if state == "NOT_FOUND":
+            logger.info(f"Browser response resolved to HTML 'Not Found' / Apache Forbidden (404/403) for {pdf_url}")
+            pdf_status["status"] = 404
+            break
 
     # Last resort fallback: if we still don't have the PDF bytes, try in-page JS fetch
     if not pdf_data["bytes"] and pdf_status["status"] != 404:
