@@ -50,7 +50,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "${HOST_POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     networks:
@@ -158,7 +158,7 @@ services:
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - postgres
-      - airflow-scheduler
+      - airflow_scheduler
     ports:
       - "9001:8080"
     env_file:
