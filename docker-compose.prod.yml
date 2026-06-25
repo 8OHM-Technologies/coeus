@@ -168,7 +168,7 @@ services:
       - "traefik.http.services.airflow.loadbalancer.server.port=8080"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "airflow db check && airflow webserver"
+      bash -c "airflow db upgrade && airflow webserver"
 
   # ---------------------------------------------------------
   # 5. Marketing / Main Landing Page (Nginx)
