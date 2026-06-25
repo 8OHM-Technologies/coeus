@@ -157,10 +157,14 @@ for blueprint in blueprints:
         "EXTRACTION_PARAMS": json.dumps(extraction_params),
     }
 
+    schedule_val = blueprint.get("schedule")
+    if not schedule_val:
+        schedule_val = None
+
     dag = DAG(
         dag_id=dag_id,
         default_args=default_args,
-        schedule=blueprint["schedule"],
+        schedule=schedule_val,
         start_date=datetime(2024, 1, 1),
         catchup=False,
         tags=["dynamic_extraction"],
