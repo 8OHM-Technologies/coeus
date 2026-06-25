@@ -186,9 +186,7 @@ services:
       - "traefik.http.services.airflow.loadbalancer.server.port=8080"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "airflow db upgrade &&
-                airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@coeus.local || true &&
-                airflow webserver"
+      bash -c "airflow db check-migrations && airflow webserver"
 
   # ---------------------------------------------------------
   # 5. Marketing / Main Landing Page (Nginx)

@@ -116,14 +116,13 @@ services:
       - "988"
     depends_on:
       - postgres
-    env_file:
-      - .env
     environment:
       AIRFLOW__CORE__DEFAULT_TIMEZONE: "Africa/Johannesburg"
       AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: "Africa/Johannesburg"
       TZ: "Africa/Johannesburg"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW__WEBSERVER__SECRET_KEY}"
       COEUS_API_URL: "http://coeus-control-plane:8001/api/pipelines/active/"
       HOST_DATA_PATH: "/home/deploy-user/coeus/data"
       PYTHONPATH: /opt/airflow/extraction_workers
@@ -149,11 +148,10 @@ services:
     depends_on:
       - postgres
       - airflow-scheduler
-    env_file:
-      - .env
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+
       COEUS_API_URL: "http://coeus-control-plane:8001/api/pipelines/active/"
       HOST_DATA_PATH: "/home/deploy-user/coeus/data"
       PYTHONPATH: /opt/airflow/extraction_workers
@@ -172,7 +170,7 @@ services:
       - "traefik.http.services.airflow.loadbalancer.server.port=8080"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "airflow db upgrade && airflow webserver"
+      bash -c "airflow db check-migrations && airflow webserver"
 
   # ---------------------------------------------------------
   # 5. Marketing / Main Landing Page (Nginx)
