@@ -1,3 +1,15 @@
+import os
+import json
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
 try:
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
