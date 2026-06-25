@@ -173,6 +173,7 @@ services:
       COEUS_API_URL: ${COEUS_API_URL}
       PYTHONPATH: /opt/airflow/extraction_workers
 
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
       AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
