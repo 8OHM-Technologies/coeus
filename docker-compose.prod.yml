@@ -111,7 +111,6 @@ services:
     hostname: coeus-airflow-scheduler
     restart: unless-stopped
     user: "50000:0"
-    # Host docker group GID (verify with: getent group docker | cut -d: -f3)
     group_add:
       - "988"
     depends_on:
@@ -119,15 +118,14 @@ services:
     environment:
       AIRFLOW__CORE__DEFAULT_TIMEZONE: "Africa/Johannesburg"
       AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: "Africa/Johannesburg"
-      TZ: "Africa/Johannesburg"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW__WEBSERVER__SECRET_KEY}"
-      COEUS_API_URL: "http://coeus-control-plane:8001/api/pipelines/active/"
-      HOST_DATA_PATH: "/home/deploy-user/coeus/data"
+      HOST_DATA_PATH: ${PWD}/data
+      COEUS_API_URL: ${COEUS_API_URL}
       PYTHONPATH: /opt/airflow/extraction_workers
-      # Stable hostname for log serving when webserver falls back to HTTP fetch
-      AIRFLOW__LOGGING__WORKER_LOG_SERVER_HOST: coeus-airflow-scheduler
+
+      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
+
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - airflow_logs:/opt/airflow/logs
@@ -149,13 +147,13 @@ services:
       - postgres
       - airflow-scheduler
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-
-      COEUS_API_URL: "http://coeus-control-plane:8001/api/pipelines/active/"
-      HOST_DATA_PATH: "/home/deploy-user/coeus/data"
+      HOST_DATA_PATH: ${PWD}/data
+      COEUS_API_URL: ${COEUS_API_URL}
       PYTHONPATH: /opt/airflow/extraction_workers
-      AIRFLOW__LOGGING__WORKER_LOG_SERVER_HOST: coeus-airflow-scheduler
+
+      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
     volumes:
       - airflow_logs:/opt/airflow/logs
       - ./orchestration/airflow_dags:/opt/airflow/dags:ro
@@ -170,7 +168,7 @@ services:
       - "traefik.http.services.airflow.loadbalancer.server.port=8080"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "airflow db check-migrations && airflow webserver"
+      bash -c "airflow db check && airflow webserver"
 
   # ---------------------------------------------------------
   # 5. Marketing / Main Landing Page (Nginx)

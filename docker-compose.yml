@@ -133,12 +133,14 @@ services:
     env_file:
       - .env
     environment:
-      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       HOST_DATA_PATH: ${PWD}/data
       COEUS_API_URL: ${COEUS_API_URL}
       PYTHONPATH: /opt/airflow/extraction_workers
+
+      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
+
     volumes:
       - ${PWD}/orchestration/airflow_dags:/opt/airflow/dags
       - ${PWD}/extraction_workers:/opt/airflow/extraction_workers
@@ -167,12 +169,22 @@ services:
     env_file:
       - .env
     environment:
-      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
       HOST_DATA_PATH: ${PWD}/data
       COEUS_API_URL: ${COEUS_API_URL}
       PYTHONPATH: /opt/airflow/extraction_workers
+
+      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_SQL_ALCHEMY_CONN}
+      #AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      #AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      #AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@postgres/airflow
+      #AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+      #AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      #AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+      #AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret}
+      #AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER:-airflow}
+      #AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     volumes:
       - ${PWD}/orchestration/airflow_dags:/opt/airflow/dags
       - ${PWD}/extraction_workers:/opt/airflow/extraction_workers
