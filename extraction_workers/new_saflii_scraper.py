@@ -8,6 +8,10 @@ import re
 import sys
 import urllib.parse
 from datetime import datetime
+import subprocess
+import socket
+import tempfile
+import time
 
 import requests
 from playwright.async_api import async_playwright
@@ -266,11 +270,41 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
         logger.info(f"Found {len(existing_files)} existing local HTML files.")
 
     async with async_playwright() as p:
-        logger.info(f"Launching Playwright browser (headless={headless})...")
-        launch_kwargs = {
-            "headless": headless,
-            "args": ["--window-size=1280,720"]
-        }
+        logger.info(f"Launching Playwright browser via CDP (headless={headless})...")
+        
+        def find_free_port():
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', 0))
+                return s.getsockname()[1]
+                
+        cdp_port = find_free_port()
+        user_data_dir = tempfile.mkdtemp()
+        
+        chrome_args = [
+            p.chromium.executable_path,
+            f"--remote-debugging-port={cdp_port}",
+            f"--user-data-dir={user_data_dir}",
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--window-size=1280,720"
+        ]
+        
+        if headless:
+            chrome_args.append("--headless=new")
+            
+        logger.info(f"Starting Chrome with CDP on port {cdp_port}...")
+        chrome_proc = subprocess.Popen(
+            chrome_args
+        )
+        
+        # Wait a bit for Chrome to start
+        await asyncio.sleep(3)
+        
+        browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+        
+        proxy_config = None
         if proxy_url:
             parsed_proxy = urllib.parse.urlparse(proxy_url)
             server_url = f"{parsed_proxy.scheme}://{parsed_proxy.hostname}"
@@ -291,16 +325,19 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 )
                 if parsed_proxy.port:
                     masked_log += f":{parsed_proxy.port}"
-            logger.info(f"Using proxy for browser: {masked_log}")
-            launch_kwargs["proxy"] = proxy_config
+            logger.info(f"Using proxy for browser context: {masked_log}")
 
-        browser = await p.chromium.launch(**launch_kwargs)
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        context = await browser.new_context(
-            viewport={"width": 1280, "height": 720},
-            user_agent=user_agent,
-            ignore_https_errors=allow_insecure_requests,
-        )
+        
+        context_kwargs = {
+            "viewport": {"width": 1280, "height": 720},
+            "user_agent": user_agent,
+            "ignore_https_errors": allow_insecure_requests,
+        }
+        if proxy_config:
+            context_kwargs["proxy"] = proxy_config
+            
+        context = await browser.new_context(**context_kwargs)
         await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         page = await context.new_page()
 
@@ -635,7 +672,12 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 await asyncio.sleep(cooldown_seconds)
 
         await browser.close()
-
+        
+        try:
+            chrome_proc.terminate()
+            chrome_proc.wait(timeout=5)
+        except Exception as e:
+            logger.warning(f"Error terminating chrome_proc: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coeus New SAFLII Scraper")

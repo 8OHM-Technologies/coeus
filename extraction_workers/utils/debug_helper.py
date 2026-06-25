@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 async def log_browser_proxy_ip(page, step_label: str, use_proxy: bool):
     if not use_proxy:
         return
