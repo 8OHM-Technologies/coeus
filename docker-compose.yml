@@ -59,7 +59,7 @@ services:
   # ---------------------------------------------------------
   # 2. Django Application Backend (Control Plane)
   # ---------------------------------------------------------
-  control_plane:
+  control-plane:
     build:
       context: .
       dockerfile: Dockerfile.app
@@ -78,7 +78,7 @@ services:
       - "8001:8001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./control_plane:/app/control_plane
+      - ./control-plane:/app/control-plane
     networks:
       - 8ohm-network
     labels:
@@ -87,20 +87,20 @@ services:
       - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "python control_plane/manage.py makemigrations &&
-                python control_plane/manage.py migrate &&
-                python control_plane/manage.py createsuperuser --noinput || true &&
-                python control_plane/manage.py runserver 0.0.0.0:8001"
+      bash -c "python control-plane/manage.py makemigrations &&
+                python control-plane/manage.py migrate &&
+                python control-plane/manage.py createsuperuser --noinput || true &&
+                python control-plane/manage.py runserver 0.0.0.0:8001"
     restart: unless-stopped
 
   # ---------------------------------------------------------
   # 3. Extraction Worker Unit (Playwright)
   # ---------------------------------------------------------
-  pipeline_worker:
+  pipeline-worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: coeus-worker
+    container_name: coeus-pipelineworker
     depends_on:
       - postgres
     env_file:
@@ -121,8 +121,11 @@ services:
   # ---------------------------------------------------------
   # 4a. Airflow Scheduler Daemon
   # ---------------------------------------------------------
-  airflow_scheduler:
-    image: apache/airflow:2.9.1-python3.11
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: coeus-airflow:local
     container_name: coeus-airflow-scheduler
     restart: unless-stopped
     user: "${AIRFLOW_UID:-50000}"
@@ -151,14 +154,17 @@ services:
   # ---------------------------------------------------------
   # 4b. Airflow Web Management UI
   # ---------------------------------------------------------
-  airflow_webserver:
-    image: apache/airflow:2.9.1-python3.11
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: coeus-airflow:local
     container_name: coeus-airflow-webserver
     restart: unless-stopped
     user: "${AIRFLOW_UID:-50000}"
     depends_on:
       - postgres
-      - airflow_scheduler
+      - airflow-scheduler
     ports:
       - "9001:8080"
     env_file:
@@ -190,7 +196,7 @@ services:
   # ---------------------------------------------------------
   # 5. Marketing / Main Landing Page (Nginx)
   # ---------------------------------------------------------
-  landing_page:
+  landing-page:
     image: nginx:alpine
     container_name: landing-page
     restart: unless-stopped

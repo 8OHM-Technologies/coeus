@@ -293,6 +293,8 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             "--disable-gcm",
             "--disable-default-apps",
             "--disable-component-update",
+            "--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC",
+            "--disable-peer-connection-encryption",
             "--window-size=1280,720"
         ]
         

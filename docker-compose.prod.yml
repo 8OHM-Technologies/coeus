@@ -60,7 +60,7 @@ services:
   # ---------------------------------------------------------
   # 2. Django Application Backend (Control Plane)
   # ---------------------------------------------------------
-  control_plane:
+  control-plane:
     image: ghcr.io/8ohm-technologies/coeus-app:latest
     container_name: coeus-control-plane
     depends_on:
@@ -79,13 +79,13 @@ services:
       - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "python control_plane/manage.py migrate && python control_plane/manage.py collectstatic --noinput && gunicorn core.wsgi:application --chdir control_plane --bind 0.0.0.0:8001 --workers 3"
+      bash -c "python control-plane/manage.py migrate && python control-plane/manage.py collectstatic --noinput && gunicorn core.wsgi:application --chdir control-plane --bind 0.0.0.0:8001 --workers 3"
     restart: unless-stopped
 
   # ---------------------------------------------------------
   # 3. Extraction Worker Unit (Playwright)
   # ---------------------------------------------------------
-  pipeline_worker:
+  pipeline-worker:
     image: ghcr.io/8ohm-technologies/coeus-worker:latest
     container_name: coeus-pipeline-worker
     restart: unless-stopped
@@ -106,7 +106,7 @@ services:
   # 4a. Airflow Scheduler Daemon
   # ---------------------------------------------------------
   airflow-scheduler:
-    image: apache/airflow:2.9.1-python3.11
+    image: ghcr.io/8ohm-technologies/coeus-airflow:latest
     container_name: coeus-airflow-scheduler
     hostname: coeus-airflow-scheduler
     restart: unless-stopped
@@ -142,7 +142,7 @@ services:
   # 4b. Airflow Web Management UI
   # ---------------------------------------------------------
   airflow-webserver:
-    image: apache/airflow:2.9.1-python3.11
+    image: ghcr.io/8ohm-technologies/coeus-airflow:latest
     container_name: coeus-airflow-webserver
     restart: unless-stopped
     user: "${AIRFLOW_UID:-50000}"
@@ -177,7 +177,7 @@ services:
   # ---------------------------------------------------------
   # 5. Marketing / Main Landing Page (Nginx)
   # ---------------------------------------------------------
-  landing_page:
+  landing-page:
     image: nginx:alpine
     container_name: landing-page
     restart: unless-stopped
