@@ -58,6 +58,16 @@ class TurnstileSolver(BaseSolver):
             return {"success": False, "error": "Cloudflare Turnstile frame not found."}
 
         logger.info("Cloudflare Turnstile challenge detected. Attempting to solve...")
+        
+        try:
+            logger.info("Waiting for Turnstile widget to fully load inside the frame...")
+            await turnstile_frame.wait_for_load_state("load", timeout=15000)
+            checkbox_locator = turnstile_frame.locator('input[type="checkbox"]')
+            await checkbox_locator.wait_for(state="attached", timeout=15000)
+            logger.info("Turnstile widget is fully loaded.")
+        except Exception as e:
+            logger.warning(f"Wait for Turnstile widget loading timed out or failed: {e}")
+
         await asyncio.sleep(self.solve_delay)
 
         await self._take_screenshot(page, screenshot_dir, "02_after_delay")
