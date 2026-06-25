@@ -289,6 +289,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
+            "--disable-background-networking",
+            "--disable-gcm",
+            "--disable-default-apps",
+            "--disable-component-update",
             "--window-size=1280,720"
         ]
         
