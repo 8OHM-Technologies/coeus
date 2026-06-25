@@ -616,72 +616,13 @@
                             </div>
                         </button>
                     </div>
-
-                    <div class="editorial-right" id="data-engineering">
-                        <div class="coeus-diagram-container">
-                            <svg class="coeus-svg" viewBox="0 0 500 300" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M 100 150 Q 175 240 250 240" class="flow-base" />
-                                <path d="M 100 150 Q 175 240 250 240" class="flow-path path-trigger" />
-                                <path d="M 240 240 L 240 60" class="flow-base" />
-                                <path d="M 240 240 L 240 60" class="flow-path path-solve-req" />
-                                <path d="M 260 60 L 260 240" class="flow-base" />
-                                <path d="M 260 60 L 260 240" class="flow-path path-solve-res" />
-                                <path d="M 250 240 Q 325 240 400 150" class="flow-base" />
-                                <path d="M 250 240 Q 325 240 400 150" class="flow-path path-store" />
-                            </svg>
-
-                            <div class="diagram-node" style="left: 20%; top: 50%">
-                                <div class="node-icon">
-                                    <i class="ph-light ph-cloud-arrow-down"></i>
-                                </div>
-                                <div class="node-content">
-                                    <span class="node-title">Ingestion</span>
-                                    <span class="node-subtitle">Automated Scrapers</span>
-                                </div>
-                                <span class="pulse-dot"></span>
-                            </div>
-
-                            <div class="diagram-node node-solver" style="left: 50%; top: 20%">
-                                <div class="node-icon">
-                                    <i class="ph-light ph-brain"></i>
-                                </div>
-                                <div class="node-content">
-                                    <span class="node-title">AI Refinery</span>
-                                    <span class="node-subtitle">Local Extraction</span>
-                                </div>
-                                <span class="pulse-dot-secondary"></span>
-                            </div>
-
-                            <div class="diagram-node" style="left: 50%; top: 80%">
-                                <div class="node-icon">
-                                    <i class="ph-light ph-terminal-window"></i>
-                                </div>
-                                <div class="node-content">
-                                    <span class="node-title">Processing</span>
-                                    <span class="node-subtitle">Unstructured Workers</span>
-                                </div>
-                                <span class="pulse-dot"></span>
-                            </div>
-
-                            <div class="diagram-node" style="left: 80%; top: 50%">
-                                <div class="node-icon">
-                                    <i class="ph-light ph-database"></i>
-                                </div>
-                                <div class="node-content">
-                                    <span class="node-title">Clean Feeds</span>
-                                    <span class="node-subtitle">Structured API</span>
-                                </div>
-                                <span class="pulse-dot"></span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </section>
 
         <section class="features-section container" style="padding-top: 0">
             <div class="bento-grid" style="margin-top: 0">
-                <div class="bezel-card-outer col-span-6 reveal-item">
+                <div class="bezel-card-outer col-span-12 reveal-item">
                     <div class="bezel-card-inner">
                         <div class="card-icon">
                             <i class="ph-light ph-cpu"></i>
@@ -750,6 +691,75 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="bezel-card-outer col-span-6 reveal-item accent-glow">
+                    <div class="bezel-card-inner" style="
+                                padding: 0;
+                                overflow: hidden;
+                                display: flex;
+                                flex-direction: column;
+                            ">
+                        <div class="editorial-right" id="data-engineering">
+                            <div class="coeus-diagram-container">
+                                <svg class="coeus-svg" viewBox="0 0 500 300" fill="none"
+                                    xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 100 150 Q 175 240 250 240" class="flow-base" />
+                                    <path d="M 100 150 Q 175 240 250 240" class="flow-path path-trigger" />
+                                    <path d="M 240 240 L 240 60" class="flow-base" />
+                                    <path d="M 240 240 L 240 60" class="flow-path path-solve-req" />
+                                    <path d="M 260 60 L 260 240" class="flow-base" />
+                                    <path d="M 260 60 L 260 240" class="flow-path path-solve-res" />
+                                    <path d="M 250 240 Q 325 240 400 150" class="flow-base" />
+                                    <path d="M 250 240 Q 325 240 400 150" class="flow-path path-store" />
+                                </svg>
+
+                                <div class="diagram-node" style="left: 20%; top: 50%">
+                                    <div class="node-icon">
+                                        <i class="ph-light ph-cloud-arrow-down"></i>
+                                    </div>
+                                    <div class="node-content">
+                                        <span class="node-title">Ingestion</span>
+                                        <span class="node-subtitle">Automated Scrapers</span>
+                                    </div>
+                                    <span class="pulse-dot"></span>
+                                </div>
+
+                                <div class="diagram-node node-solver" style="left: 50%; top: 20%">
+                                    <div class="node-icon">
+                                        <i class="ph-light ph-brain"></i>
+                                    </div>
+                                    <div class="node-content">
+                                        <span class="node-title">Intelligence</span>
+                                        <span class="node-subtitle">AI/LLM</span>
+                                    </div>
+                                    <span class="pulse-dot-secondary"></span>
+                                </div>
+
+                                <div class="diagram-node" style="left: 50%; top: 80%">
+                                    <div class="node-icon">
+                                        <i class="ph-light ph-terminal-window"></i>
+                                    </div>
+                                    <div class="node-content">
+                                        <span class="node-title">Processing</span>
+                                        <span class="node-subtitle">Python Workers</span>
+                                    </div>
+                                    <span class="pulse-dot"></span>
+                                </div>
+
+                                <div class="diagram-node" style="left: 80%; top: 50%">
+                                    <div class="node-icon">
+                                        <i class="ph-light ph-database"></i>
+                                    </div>
+                                    <div class="node-content">
+                                        <span class="node-title">Provision</span>
+                                        <span class="node-subtitle">Structured APIs</span>
+                                    </div>
+                                    <span class="pulse-dot"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -814,11 +824,10 @@
                         <p class="card-desc" style="margin-bottom: 0">
                             Our in-house data acquisition pipeline currently
                             ingests and structures complex South African
-                            legal and labor records for enterprise
-                            compliance.
+                            legal and labor records and court rolls.
                             <strong>Soon, this engine will power our first
                                 consumer SaaS.</strong>
-                            We are developing a dedicated AI legal assistant
+                            A dedicated AI legal assistant designed
                             to empower the average South African—simplifying
                             labor laws, navigating CCMA procedures, and
                             democratizing access to justice.
@@ -878,7 +887,7 @@
                             host their own secure ecosystems at home, while
                             the B2B division delivers enterprise-grade
                             on-premises IT/AI consultancy and custom data
-                            engineering for businesses.
+                            engineering.
                         </p>
                     </div>
                 </div>
