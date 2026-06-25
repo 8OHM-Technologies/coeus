@@ -70,15 +70,12 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
-      DJANGO_SUPERUSER_USERNAME: admin
-      DJANGO_SUPERUSER_EMAIL: admin@coeus.local
-      DJANGO_SUPERUSER_PASSWORD: admin
       DEBUG: "True"
     ports:
       - "8001:8001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./control-plane:/app/control-plane
+      - ./control_plane:/app/control_plane
     networks:
       - 8ohm-network
     labels:
