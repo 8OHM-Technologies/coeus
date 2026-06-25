@@ -158,3 +158,17 @@ def download_pdf(
         logger.info(f"  [+] Downloaded: {safe_name}")
     except Exception as e:
         logger.error(f"  [!] Failed to download {file_name}: {e}")
+
+
+async def take_screenshot(page, screenshot_dir: str, name: str):
+    if not screenshot_dir:
+        return
+    try:
+        os.makedirs(screenshot_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        filename = f"{timestamp}_{name}.png"
+        path = os.path.join(screenshot_dir, filename)
+        await page.screenshot(path=path)
+        logger.info(f"Saved screenshot: {path}")
+    except Exception as e:
+        logger.warning(f"Failed to take screenshot {name}: {e}")
