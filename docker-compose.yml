@@ -84,10 +84,10 @@ services:
       - "traefik.http.services.control-plane.loadbalancer.server.port=8001"
       - "traefik.docker.network=8ohm-network"
     command: >
-      bash -c "python control-plane/manage.py makemigrations &&
-                python control-plane/manage.py migrate &&
-                python control-plane/manage.py createsuperuser --noinput || true &&
-                python control-plane/manage.py runserver 0.0.0.0:8001"
+      bash -c "python control_plane/manage.py makemigrations &&
+                python control_plane/manage.py migrate &&
+                python control_plane/manage.py createsuperuser --noinput || true &&
+                python control_plane/manage.py runserver 0.0.0.0:8001"
     restart: unless-stopped
 
   # ---------------------------------------------------------
