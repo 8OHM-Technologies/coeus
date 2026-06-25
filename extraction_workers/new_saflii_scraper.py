@@ -223,6 +223,20 @@ def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
     return "OK"
 
 
+async def take_screenshot(page, screenshot_dir: str, name: str):
+    if not screenshot_dir:
+        return
+    try:
+        os.makedirs(screenshot_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        filename = f"{timestamp}_{name}.png"
+        path = os.path.join(screenshot_dir, filename)
+        await page.screenshot(path=path)
+        logger.info(f"Saved screenshot: {path}")
+    except Exception as e:
+        logger.warning(f"Failed to take screenshot {name}: {e}")
+
+
 async def wait_for_page_load(page, url_type="page"):
     """
     Wait for the page to settle after a Turnstile challenge or navigation.
@@ -374,6 +388,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output directory: {os.path.abspath(output_dir)}")
 
+    screenshots_dir = os.path.join(base_data_dir, pipeline_name, "screenshots")
+    os.makedirs(screenshots_dir, exist_ok=True)
+    logger.info(f"Screenshots directory: {os.path.abspath(screenshots_dir)}")
+
     gdrive_folder_id = extraction_params.get("gdrive_folder_id")
     gdrive_delete_local = extraction_params.get("gdrive_delete_local", False)
     gdrive_service = None
@@ -453,6 +471,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
         for attempt in range(1, max_start_attempts + 1):
             try:
                 await page.goto(start_url, timeout=30000)
+                await take_screenshot(page, screenshots_dir, f"start_url_attempt_{attempt}_navigated")
 
                 title = await page.title()
                 h1 = (
@@ -468,9 +487,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 state = check_page_state(title, h1, body)
 
                 if state == "BLOCKED":
-                    solve_res = await turnstile_solver.solve(page)
+                    solve_res = await turnstile_solver.solve(page, screenshot_dir=screenshots_dir)
                     if solve_res["success"]:
                         await wait_for_page_load(page, "start")
+                        await take_screenshot(page, screenshots_dir, f"start_url_attempt_{attempt}_post_solve")
                     else:
                         await asyncio.sleep(2)
 
@@ -515,6 +535,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                 logger.warning(
                     f"Attempt {attempt}/{max_start_attempts} failed on start URL: {e}"
                 )
+                await take_screenshot(page, screenshots_dir, f"start_url_attempt_{attempt}_error")
                 if attempt < max_start_attempts:
                     await asyncio.sleep(attempt * 5)
 
@@ -538,6 +559,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             for attempt in range(1, max_attempts + 1):
                 try:
                     await page.goto(year_url, timeout=30000)
+                    await take_screenshot(page, screenshots_dir, f"year_{year}_attempt_{attempt}_navigated")
 
                     t_title = await page.title()
                     t_h1 = (
@@ -553,9 +575,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                     t_state = check_page_state(t_title, t_h1, t_body)
 
                     if t_state == "BLOCKED":
-                        solve_res = await turnstile_solver.solve(page)
+                        solve_res = await turnstile_solver.solve(page, screenshot_dir=screenshots_dir)
                         if solve_res["success"]:
                             await wait_for_page_load(page, "year")
+                            await take_screenshot(page, screenshots_dir, f"year_{year}_attempt_{attempt}_post_solve")
                         else:
                             await asyncio.sleep(2)
 
@@ -618,12 +641,14 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                     logger.warning(
                         f"Blocked on year page {year_url} (attempt {attempt}/{max_attempts}): {be}"
                     )
+                    await take_screenshot(page, screenshots_dir, f"year_{year}_attempt_{attempt}_blocked_error")
                     if attempt < max_attempts:
                         await asyncio.sleep(attempt * 10)
                 except Exception as e:
                     logger.warning(
                         f"Error loading year page {year_url} (attempt {attempt}/{max_attempts}): {e}"
                     )
+                    await take_screenshot(page, screenshots_dir, f"year_{year}_attempt_{attempt}_error")
                     if attempt < max_attempts:
                         await asyncio.sleep(attempt * 10)
                     else:
@@ -655,6 +680,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             for attempt in range(1, max_attempts + 1):
                 try:
                     await page.goto(case_url, timeout=30000)
+                    await take_screenshot(page, screenshots_dir, f"case_{c_id}_attempt_{attempt}_navigated")
 
                     c_title = await page.title()
                     c_h1 = (
@@ -670,9 +696,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                     c_state = check_page_state(c_title, c_h1, c_body)
 
                     if c_state == "BLOCKED":
-                        solve_res = await turnstile_solver.solve(page)
+                        solve_res = await turnstile_solver.solve(page, screenshot_dir=screenshots_dir)
                         if solve_res["success"]:
                             await wait_for_page_load(page, "case")
+                            await take_screenshot(page, screenshots_dir, f"case_{c_id}_attempt_{attempt}_post_solve")
                         else:
                             await asyncio.sleep(2)
 
@@ -734,12 +761,14 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                     logger.warning(
                         f"Blocked on case page {case_url} (attempt {attempt}/{max_attempts}): {be}"
                     )
+                    await take_screenshot(page, screenshots_dir, f"case_{c_id}_attempt_{attempt}_blocked_error")
                     if attempt < max_attempts:
                         await asyncio.sleep(attempt * 10)
                 except Exception as e:
                     logger.warning(
                         f"Error scraping case page {case_url} (attempt {attempt}/{max_attempts}): {e}"
                     )
+                    await take_screenshot(page, screenshots_dir, f"case_{c_id}_attempt_{attempt}_error")
                     if attempt < max_attempts:
                         await asyncio.sleep(attempt * 10)
                     else:
