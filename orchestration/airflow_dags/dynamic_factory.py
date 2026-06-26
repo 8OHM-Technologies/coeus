@@ -43,6 +43,7 @@ default_args = {
     "owner": "data_engineering",
     "retries": 1,
     "retry_delay": timedelta(minutes=2),
+    "depends_on_past": False,
 }
 
 # ---------------------------------------------------------------------------
