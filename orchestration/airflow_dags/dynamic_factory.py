@@ -159,7 +159,7 @@ for blueprint in blueprints:
 
     schedule_val = blueprint.get("schedule")
     if not schedule_val:
-        schedule_val = None
+        schedule_val = "@once"
 
     dag = DAG(
         dag_id=dag_id,
