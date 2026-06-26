@@ -50,7 +50,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "100.71.253.103:${HOST_POSTGRES_PORT:-5432}:5432"
+      - "${HOST_POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -76,8 +76,6 @@ services:
     environment:
       POSTGRES_HOST: postgres
       DEBUG: "True"
-    ports:
-      - "100.71.253.103:8001:8001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./control_plane:/app/control_plane
@@ -229,8 +227,6 @@ services:
       - ./ohmbase/bookstack_app_data:/config
     networks:
       - 8ohm-network
-    ports:
-      - "100.71.253.103:6875:80"
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
