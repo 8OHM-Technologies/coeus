@@ -19,8 +19,8 @@ services:
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
     ports:
-      - "100.71.253.103:80:80"
-      - "100.71.253.103:443:443"
+      - "80:80"
+      - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
@@ -57,7 +57,7 @@ services:
     networks:
       - 8ohm-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
