@@ -56,7 +56,7 @@ services:
     networks:
       - 8ohm-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -101,7 +101,7 @@ services:
   dagster-worker-playwright:
     build:
       context: .
-      dockerfile: Dockerfile_worker_playwright
+      dockerfile: Dockerfile.playwright_worker
     container_name: dagster-worker-playwright
     depends_on:
       - postgres
@@ -126,7 +126,7 @@ services:
   dagster-webserver:
     build:
       context: .
-      dockerfile: Dockerfile_dagster
+      dockerfile: Dockerfile.dagster
     container_name: dagster-webserver
     depends_on:
       postgres:
@@ -164,7 +164,7 @@ services:
   dagster-daemon:
     build:
       context: .
-      dockerfile: Dockerfile_dagster
+      dockerfile: Dockerfile.dagster
     container_name: dagster-daemon
     depends_on:
       postgres:

@@ -11,15 +11,13 @@ RUN pip install \
     dagster-postgres \
     dagster-docker
 
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
-
 COPY requirements-worker.txt .
 RUN pip install --no-cache-dir -r requirements-worker.txt
 RUN playwright install --with-deps chromium
 
 RUN mkdir -p /app/data/scraped_pdfs
 
-COPY definitions.py .
+COPY dagster/definitions.py .
 
 EXPOSE 4000
 
