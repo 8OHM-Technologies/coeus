@@ -25,10 +25,11 @@ jobs:
         with:
           filters: |
             backend:
-              - 'Dockerfile.*'
+              - 'Dockerfile*'
               - 'requirements*.txt'
               - 'control_plane/**'
               - 'ohmshop/**'
+              - 'dagster/**'
 
   # 2. Build and Push (Only runs if 'detect-changes' found backend updates)
   build-and-push:
@@ -67,23 +68,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and Push Coeus Worker
+      - name: Build and Push Dagster Worker Playwright
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
-          file: Dockerfile.worker
+          file: Dockerfile_worker_playwright
           push: true
-          tags: ghcr.io/8ohm-technologies/coeus-worker:latest
+          tags: ghcr.io/8ohm-technologies/coeus-dagster-worker-playwright:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and Push Coeus Airflow
+      - name: Build and Push Dagster Webserver and Daemon
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
-          file: Dockerfile.airflow
+          file: Dockerfile_dagster
           push: true
-          tags: ghcr.io/8ohm-technologies/coeus-airflow:latest
+          tags: |
+            ghcr.io/8ohm-technologies/coeus-dagster-webserver:latest
+            ghcr.io/8ohm-technologies/coeus-dagster-daemon:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -165,18 +168,14 @@ jobs:
                 git pull origin main
               fi
 
-              # Ensure bind-mounted DAG/worker paths are present and populated.
-              test -f orchestration/airflow_dags/dynamic_factory.py
-              test -n "$(ls -A extraction_workers)"
-
               echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
               docker compose -f docker-compose.prod.yml pull
               docker compose -f docker-compose.prod.yml up -d
 
-              # Fail fast if scheduler container still does not see DAG files.
-              docker exec coeus-airflow-scheduler test -f /opt/airflow/dags/dynamic_factory.py
-              docker exec coeus-airflow-scheduler sh -lc 'test -n "$(ls -A /opt/airflow/extraction_workers)"'
+              # Fail fast if dagster files are missing in containers.
+              docker exec dagster-daemon test -f /opt/dagster/dagster_home/workspace.yaml
+              docker exec dagster-worker-playwright test -f /opt/dagster/app/definitions.py
 
               docker image prune -f
             EOF
