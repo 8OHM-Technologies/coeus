@@ -2,12 +2,10 @@ playwright==1.58.0
 pydantic>=2.6
 psycopg2-binary>=2.9
 asyncpg>=0.29
-apache-airflow-providers-docker==4.5.4
 torch>=2.0.0
 transformers>=4.35.0
 Pillow>=9.0.0
 beautifulsoup4>=4.14.3
-cloud-sql-python-connector[asyncpg]>=0.9.2
 # LLM extraction dependencies
 pdfplumber>=0.11
 openai>=1.0
