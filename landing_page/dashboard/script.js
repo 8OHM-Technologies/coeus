@@ -27,8 +27,8 @@ const gradientColors = Object.values(colors);
 // Main Execution
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        const response = await fetch('../data/synthetic/sabinet_fake.json');
-        const data = await response.json();
+        // Load data from the locally included syntheticData variable (from sabinet_fake.js)
+        const data = syntheticData;
 
         const metrics = processLegalMetrics(data);
         renderKPIs(metrics.kpis);
