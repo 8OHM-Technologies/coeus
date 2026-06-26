@@ -1,5 +1,15 @@
 // Dashboard Script
 
+// Open demo dashboard
+document
+    .querySelectorAll(".back-trigger-btn")
+    .forEach((btn) => {
+        btn.addEventListener("click", () => {
+            window.location.href = "../index.html";
+        });
+    });
+
+
 // Chart defaults for dark mode
 Chart.defaults.color = '#9CA3AF';
 Chart.defaults.font.family = "'Outfit', sans-serif";
