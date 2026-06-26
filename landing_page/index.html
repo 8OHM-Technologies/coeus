@@ -640,9 +640,9 @@
                             local environments or preferred cloud
                             warehouses.
                         </p>
-                        <button type="button" class="btn btn-primary contact-trigger-btn" data-division="architecture"
+                        <button type="button" class="btn btn-primary dashboard-trigger-btn" data-division="architecture"
                             style="align-self: flex-start; margin-top: 16px">
-                            <span>Enquire About Data Pipelines</span>
+                            <span>View Demo Dashboard</span>
                             <div class="btn-icon">
                                 <i class="ph-light ph-arrow-up-right"></i>
                             </div>
@@ -1014,6 +1014,15 @@
                 : null;
             const successCloseBtn =
                 document.getElementById("successCloseBtn");
+
+            // Open demo dashboard
+            document
+                .querySelectorAll(".dashboard-trigger-btn")
+                .forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        window.location.href = "../dashboard/index.html";
+                    });
+                });
 
             // Check for GET parameters to open contact modal or show success message modal (For Google Ads)
             const params = new URLSearchParams(window.location.search);
