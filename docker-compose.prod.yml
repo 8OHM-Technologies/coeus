@@ -129,7 +129,7 @@ services:
       DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
-      DAGSTER_CURRENT_IMAGE: "coeus-dagster-worker-playwright"
+      DAGSTER_CURRENT_IMAGE: "ghcr.io/8ohm-technologies/coeus-dagster-worker-playwright:latest"
       COEUS_API_URL: ${COEUS_API_URL}
 
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
