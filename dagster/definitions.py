@@ -173,9 +173,13 @@ def make_extract_asset(pipeline_id, clean_pipeline_id, scraper_asset, document_t
         return dg.MaterializeResult(metadata={"pipeline_id": pipeline_id, "schema": expected_schema})
 
     return extract_asset
+@dg.asset(group_name="system")
+def coeus_system_health():
+    """A placeholder health-check asset to ensure the Dagster definitions load correctly."""
+    return dg.MaterializeResult(metadata={"status": "healthy"})
 
 
-all_assets = []
+all_assets = [coeus_system_health]
 all_jobs = []
 all_schedules = []
 
