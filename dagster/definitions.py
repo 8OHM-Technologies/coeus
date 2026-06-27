@@ -25,28 +25,55 @@ def fetch_blueprints():
             mtime = os.path.getmtime(CACHE_FILE)
             if time.time() - mtime < CACHE_TTL:
                 with open(CACHE_FILE, "r") as f:
-                    return json.load(f)
+                    cached_data = json.load(f)
+                    logger.info(f"Loaded {len(cached_data)} active pipeline blueprints from fresh cache.")
+                    return cached_data
         except Exception as e:
             logger.warning(f"Failed to read cache file: {e}")
 
-    # Fetch from API
-    try:
-        response = requests.get(API_URL, timeout=10)
-        response.raise_for_status()
-        blueprints = response.json().get("pipelines", [])
-        
-        # Write to cache
+    # Fetch from API with retry and exponential backoff
+    max_retries = 6
+    backoff_factor = 2
+    initial_delay = 1
+    
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
         try:
-            with open(CACHE_FILE, "w") as f:
-                json.dump(blueprints, f)
-        except Exception as e:
-            logger.warning(f"Failed to write cache file: {e}")
+            logger.info(f"Attempt {attempt}/{max_retries} to fetch dynamic pipeline blueprints from {API_URL}...")
+            response = requests.get(API_URL, timeout=10)
+            response.raise_for_status()
+            blueprints = response.json().get("pipelines", [])
             
-        logger.info(f"Loaded {len(blueprints)} active pipeline blueprints from API.")
-        return blueprints
-    except Exception as exc:
-        logger.exception("Failed to fetch dynamic pipeline blueprints: %s", exc)
-        return []
+            # Write to cache
+            try:
+                with open(CACHE_FILE, "w") as f:
+                    json.dump(blueprints, f)
+            except Exception as e:
+                logger.warning(f"Failed to write cache file: {e}")
+                
+            logger.info(f"Loaded {len(blueprints)} active pipeline blueprints from API.")
+            return blueprints
+        except Exception as exc:
+            last_exception = exc
+            logger.warning(f"Attempt {attempt} failed: {exc}")
+            if attempt < max_retries:
+                sleep_time = initial_delay * (backoff_factor ** (attempt - 1))
+                logger.info(f"Waiting {sleep_time} seconds before retrying...")
+                time.sleep(sleep_time)
+
+    logger.error(f"Failed to fetch dynamic pipeline blueprints from API after {max_retries} attempts: {last_exception}")
+    
+    # Fallback to cache even if expired
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r") as f:
+                cached_data = json.load(f)
+                logger.warning(f"API failed. Falling back to EXPIRED cache. Loaded {len(cached_data)} blueprints.")
+                return cached_data
+        except Exception as e:
+            logger.error(f"Failed to read fallback cache file: {e}")
+
+    return []
 
 blueprints = fetch_blueprints()
 
