@@ -10,12 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend_changed: ${{ steps.filter.outputs.backend }}
+      msg_id: ${{ steps.telegram-start.outputs.msg_id }}  # <-- Map the message ID to a job output
     steps:
       - name: Notify on Workflow Start
+        id: telegram-start
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=🚀 ${{github.workflow}} STARTED %0A%0A Repo: ${{ github.repository }} %0A Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # Send message and save raw JSON response
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
+            -d "text=🚀 ${{github.workflow}} STARTED %0A%0A Repo: ${{ github.repository }} %0A Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          
+          # Extract message_id and save it to the step outputs
+          MSG_ID=$(echo "$RESPONSE" | jq '.result.message_id')
+          echo "msg_id=$MSG_ID" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -46,6 +53,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
+          -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
           -d "text=🚀 BUILD STAGE STARTED %0A%0A Repo: ${{ github.repository }} %0A Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -97,6 +105,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
+          -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
           -d "text=✅ BUILD STAGE COMPLETED %0A%0A Repo: ${{ github.repository }}"
 
       - name: Notify on Failure
@@ -104,6 +113,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
+          -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
           -d "text=❌ BUILD STAGE FAILED %0A%0A Repo: ${{ github.repository }} %0A Run: ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
 
   # 3. Always deploy (Performs a remote Git Pull and updates Docker)
@@ -116,6 +126,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
+          -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
           -d "text=🚀 DEPLOY STAGE STARTED %0A%0A Repo: ${{ github.repository }} %0A Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Checkout code
@@ -146,15 +157,12 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 10
           command: |
-            # Notice the "-A" flag added below: This safely forwards your deployment SSH key to the target environment
-            # so the target environment has explicit credentials to run a git pull against your secure repository.
             ssh -A -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -s' <<'EOF'
               set -euo pipefail
 
               TARGET_DIR="/home/deploy-user/coeus"
               REPO_URL="git@github.com:8ohm-tiaanf/coeus.git"
 
-              # 1. Initialize directory configuration if setting up on a clean host
               if [ ! -d "$TARGET_DIR/.git" ]; then
                 echo "Initializing repository directory structure..."
                 mkdir -p "$TARGET_DIR"
@@ -165,7 +173,6 @@ jobs:
                 git checkout -f main
               else
                 cd "$TARGET_DIR"
-                # Avoid permission/untracked file locking blocks during clean tracking updates
                 git reset --hard HEAD
                 git pull origin main
               fi
@@ -175,7 +182,6 @@ jobs:
               docker compose -f docker-compose.prod.yml pull
               docker compose -f docker-compose.prod.yml up -d
 
-              # Fail fast if dagster files are missing in containers.
               docker exec dagster-daemon test -f /opt/dagster/dagster_home/workspace.yaml
               docker exec dagster-worker-playwright test -f /opt/dagster/app/definitions.py
 
@@ -187,6 +193,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
+          -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
           -d "text=✅ DEPLOY STAGE COMPLETED %0A%0A Repo: ${{ github.repository }}"
 
       - name: Notify on Failure
@@ -194,10 +201,5 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=❌ DEPLOY STAGE FAILED %0A%0A Repo: ${{ github.repository }} %0A Run: ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}"
-
-      - name: Notify on Workflow End
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
-          -d "text=✅ ${{github.workflow}} COMPLETED %0A%0A Repo: ${{ github.repository }}"
+          -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
+          -d "text=❌ DEPLOY STAGE FAILED %0A%0A Repo: ${{ github.repository }}"
