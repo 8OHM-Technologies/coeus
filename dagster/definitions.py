@@ -50,6 +50,104 @@ def fetch_blueprints():
 
 blueprints = fetch_blueprints()
 
+def make_scraper_asset(pipeline_id, clean_pipeline_id, scraper_type, worker_script, extraction_params, env):
+    @dg.asset(
+        name=f"scrape_{clean_pipeline_id}",
+        group_name=clean_pipeline_id,
+        op_tags={"scraper_type": scraper_type}
+    )
+    def scraper_asset(context: dg.AssetExecutionContext):
+        context.log.info(f"Starting extraction for pipeline {pipeline_id} using {scraper_type}")
+        
+        worker_args = ["--pipeline_name", pipeline_id]
+        if scraper_type == "mantech":
+            search_keyword = extraction_params.get("search_keyword")
+            category = extraction_params.get("category") or extraction_params.get("categories")
+            if search_keyword:
+                worker_args.extend(["--search_keyword", str(search_keyword)])
+            if category:
+                category_str = ",".join(str(c) for c in category) if isinstance(category, list) else str(category)
+                worker_args.extend(["--category", category_str])
+        elif scraper_type in ("saflii", "new_saflii"):
+            worker_args.extend(["--headless", "false"])
+            
+        if scraper_type in ("saflii", "new_saflii"):
+            # Requires Xvfb virtual display
+            cmd_str = " ".join(["python", worker_script] + worker_args)
+            full_cmd = ["bash", "-c", f"Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && sleep 1 && {cmd_str}"]
+        else:
+            full_cmd = ["python", worker_script] + worker_args
+            
+        context.log.info(f"Running command: {' '.join(full_cmd)}")
+        
+        process = subprocess.Popen(
+            full_cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        
+        for line in process.stdout:
+            context.log.info(line.rstrip())
+            
+        process.wait()
+        
+        if process.returncode != 0:
+            raise Exception(f"Scraper failed with return code {process.returncode}")
+            
+        return dg.MaterializeResult(metadata={"pipeline_id": pipeline_id})
+
+    return scraper_asset
+
+
+def make_extract_asset(pipeline_id, clean_pipeline_id, scraper_asset, document_type, extraction_instructions, llm_engine, expected_schema, env):
+    @dg.asset(
+        name=f"extract_{clean_pipeline_id}",
+        deps=[scraper_asset],
+        group_name=clean_pipeline_id,
+        op_tags={"engine": llm_engine}
+    )
+    def extract_asset(context: dg.AssetExecutionContext):
+        context.log.info(f"Starting LLM extraction for pipeline {pipeline_id}")
+        
+        # Additional environment for extractor
+        local_env = env.copy()
+        local_env["PIPELINE_NAME"] = pipeline_id
+        local_env["DOCUMENT_TYPE"] = document_type
+        local_env["EXTRACTION_INSTRUCTIONS"] = extraction_instructions
+        local_env["AI_MODEL"] = llm_engine
+        
+        cmd = [
+            "python",
+            "/app/extraction_workers/llm_extractor.py",
+            "--pipeline_name", pipeline_id,
+            "--schema", expected_schema
+        ]
+        
+        context.log.info(f"Running command: {' '.join(cmd)}")
+        
+        process = subprocess.Popen(
+            cmd,
+            env=local_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        
+        for line in process.stdout:
+            context.log.info(line.rstrip())
+            
+        process.wait()
+        
+        if process.returncode != 0:
+            raise Exception(f"Extractor failed with return code {process.returncode}")
+            
+        return dg.MaterializeResult(metadata={"pipeline_id": pipeline_id, "schema": expected_schema})
+
+    return extract_asset
+
+
 all_assets = []
 all_jobs = []
 all_schedules = []
@@ -92,56 +190,16 @@ for blueprint in blueprints:
     # -----------------------------------------------------------------------
     # Scraper Asset
     # -----------------------------------------------------------------------
-    # Dagster group names and asset names must be valid identifiers
     clean_pipeline_id = pipeline_id.replace("-", "_")
-    scrape_asset_name = f"scrape_{clean_pipeline_id}"
     
-    @dg.asset(
-        name=scrape_asset_name,
-        group_name=clean_pipeline_id,
-        op_tags={"scraper_type": scraper_type}
+    scraper_asset = make_scraper_asset(
+        pipeline_id=pipeline_id,
+        clean_pipeline_id=clean_pipeline_id,
+        scraper_type=scraper_type,
+        worker_script=worker_script,
+        extraction_params=extraction_params,
+        env=base_env.copy(),
     )
-    def scraper_asset(context: dg.AssetExecutionContext, p_id=pipeline_id, s_type=scraper_type, w_script=worker_script, e_params=extraction_params, env=base_env.copy()):
-        context.log.info(f"Starting extraction for pipeline {p_id} using {s_type}")
-        
-        worker_args = ["--pipeline_name", p_id]
-        if s_type == "mantech":
-            search_keyword = e_params.get("search_keyword")
-            category = e_params.get("category") or e_params.get("categories")
-            if search_keyword:
-                worker_args.extend(["--search_keyword", str(search_keyword)])
-            if category:
-                category_str = ",".join(str(c) for c in category) if isinstance(category, list) else str(category)
-                worker_args.extend(["--category", category_str])
-        elif s_type in ("saflii", "new_saflii"):
-            worker_args.extend(["--headless", "false"])
-            
-        if s_type in ("saflii", "new_saflii"):
-            # Requires Xvfb virtual display
-            cmd_str = " ".join(["python", w_script] + worker_args)
-            full_cmd = ["bash", "-c", f"Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && sleep 1 && {cmd_str}"]
-        else:
-            full_cmd = ["python", w_script] + worker_args
-            
-        context.log.info(f"Running command: {' '.join(full_cmd)}")
-        
-        process = subprocess.Popen(
-            full_cmd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
-        
-        for line in process.stdout:
-            context.log.info(line.rstrip())
-            
-        process.wait()
-        
-        if process.returncode != 0:
-            raise Exception(f"Scraper failed with return code {process.returncode}")
-            
-        return dg.MaterializeResult(metadata={"pipeline_id": p_id})
 
     all_assets.append(scraper_asset)
     pipeline_assets = [scraper_asset]
@@ -150,50 +208,16 @@ for blueprint in blueprints:
     # Extractor Asset
     # -----------------------------------------------------------------------
     if phase2.get("requires_extraction"):
-        extract_asset_name = f"extract_{clean_pipeline_id}"
-        
-        @dg.asset(
-            name=extract_asset_name,
-            deps=[scraper_asset],
-            group_name=clean_pipeline_id,
-            op_tags={"engine": llm_engine}
+        extract_asset = make_extract_asset(
+            pipeline_id=pipeline_id,
+            clean_pipeline_id=clean_pipeline_id,
+            scraper_asset=scraper_asset,
+            document_type=document_type,
+            extraction_instructions=extraction_instructions,
+            llm_engine=llm_engine,
+            expected_schema=expected_schema,
+            env=base_env.copy(),
         )
-        def extract_asset(context: dg.AssetExecutionContext, p_id=pipeline_id, d_type=document_type, ext_inst=extraction_instructions, l_eng=llm_engine, e_schema=expected_schema, env=base_env.copy()):
-            context.log.info(f"Starting LLM extraction for pipeline {p_id}")
-            
-            # Additional environment for extractor
-            env["PIPELINE_NAME"] = p_id
-            env["DOCUMENT_TYPE"] = d_type
-            env["EXTRACTION_INSTRUCTIONS"] = ext_inst
-            env["AI_MODEL"] = l_eng
-            
-            cmd = [
-                "python",
-                "/app/extraction_workers/llm_extractor.py",
-                "--pipeline_name", p_id,
-                "--schema", e_schema
-            ]
-            
-            context.log.info(f"Running command: {' '.join(cmd)}")
-            
-            process = subprocess.Popen(
-                cmd,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True
-            )
-            
-            for line in process.stdout:
-                context.log.info(line.rstrip())
-                
-            process.wait()
-            
-            if process.returncode != 0:
-                raise Exception(f"Extractor failed with return code {process.returncode}")
-                
-            return dg.MaterializeResult(metadata={"pipeline_id": p_id, "schema": e_schema})
-            
         all_assets.append(extract_asset)
         pipeline_assets.append(extract_asset)
 
@@ -206,12 +230,16 @@ for blueprint in blueprints:
     
     schedule_val = blueprint.get("schedule")
     if schedule_val and schedule_val != "@once":
-        # Create a schedule definition
-        pipeline_schedule = dg.ScheduleDefinition(
-            job=pipeline_job,
-            cron_schedule=schedule_val,
-        )
-        all_schedules.append(pipeline_schedule)
+        try:
+            # Create a schedule definition
+            pipeline_schedule = dg.ScheduleDefinition(
+                name=f"{job_name}_schedule",
+                job=pipeline_job,
+                cron_schedule=schedule_val,
+            )
+            all_schedules.append(pipeline_schedule)
+        except Exception as e:
+            logger.error(f"Failed to create schedule for pipeline {pipeline_id} with cron '{schedule_val}': {e}")
 
 defs = dg.Definitions(
     assets=all_assets,
