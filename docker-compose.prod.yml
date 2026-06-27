@@ -136,6 +136,12 @@ services:
     volumes:
       - /home/deploy-user/coeus/data:/app/data
       - huggingface_cache:/app/huggingface_cache
+    healthcheck:
+      test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - 8ohm-network
 

@@ -11,7 +11,7 @@ import dagster as dg
 logger = logging.getLogger(__name__)
 
 API_URL = os.getenv("COEUS_API_URL")
-CACHE_FILE = "/tmp/coeus_blueprints_cache.json"
+CACHE_FILE = "/app/data/coeus_blueprints_cache.json"
 CACHE_TTL = 300  # 5 minutes
 
 def fetch_blueprints():
@@ -46,6 +46,7 @@ def fetch_blueprints():
             
             # Write to cache
             try:
+                os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
                 with open(CACHE_FILE, "w") as f:
                     json.dump(blueprints, f)
             except Exception as e:
@@ -259,8 +260,9 @@ for blueprint in blueprints:
     pipeline_job = dg.define_asset_job(name=job_name, selection=pipeline_assets)
     all_jobs.append(pipeline_job)
     
+    is_active = blueprint.get("is_active", True)
     schedule_val = blueprint.get("schedule")
-    if schedule_val and schedule_val != "@once":
+    if is_active and schedule_val and schedule_val != "@once":
         try:
             # Create a schedule definition
             pipeline_schedule = dg.ScheduleDefinition(

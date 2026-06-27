@@ -21,6 +21,6 @@ COPY dagster/definitions.py .
 
 EXPOSE 4000
 
-HEALTHCHECK --timeout=1s --start-period=3s --interval=3s --retries=20 CMD ["dagster", "api", "grpc-health-check", "-p", "4000"]
+HEALTHCHECK --timeout=10s --start-period=30s --interval=10s --retries=3 CMD ["dagster", "api", "grpc-health-check", "-p", "4000"]
 
 CMD ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-f", "definitions.py"]

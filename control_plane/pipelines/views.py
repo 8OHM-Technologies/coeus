@@ -9,8 +9,8 @@ from .models import PipelineConfiguration
 
 
 def active_pipelines_api(request):
-    active_configs = PipelineConfiguration.objects.filter(is_active=True)
-    blueprints = [config.to_blueprint() for config in active_configs]
+    configs = PipelineConfiguration.objects.all()
+    blueprints = [config.to_blueprint() for config in configs]
     return JsonResponse({"pipelines": blueprints})
 
 

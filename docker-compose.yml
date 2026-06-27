@@ -120,6 +120,12 @@ services:
       - ./extraction_workers:/app/extraction_workers
       - ./misstcha:/app/misstcha
       - ./dagster/definitions.py:/opt/dagster/app/definitions.py:ro
+    healthcheck:
+      test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - 8ohm-network
 
