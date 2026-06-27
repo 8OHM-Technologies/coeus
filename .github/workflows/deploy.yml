@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend_changed: ${{ steps.filter.outputs.backend }}
-      msg_id: ${{ steps.telegram-start.outputs.msg_id }}  # <-- Map the message ID to a job output
+      msg_id: ${{ steps.telegram-start.outputs.msg_id }}
     steps:
       - name: Notify on Workflow Start
         id: telegram-start
@@ -109,7 +109,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
-          -d "text=✅ BUILD STAGE COMPLETED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a>"
+          -d "text=✅ BUILD STAGE COMPLETED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - name: Notify on Failure
         if: failure()
@@ -118,7 +118,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
-          -d "text=❌ BUILD STAGE FAILED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Link</a>"
+          -d "text=❌ BUILD STAGE FAILED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
   # 3. Always deploy (Performs a remote Git Pull and updates Docker)
   deploy:
@@ -132,7 +132,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
-          -d "text=🚀 DEPLOY STAGE STARTED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Link</a>"
+          -d "text=🚀 DEPLOY STAGE STARTED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -158,7 +158,7 @@ jobs:
       - name: Deploy via Git Pull on VPS
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 3
+          timeout_minutes: 5
           max_attempts: 3
           retry_wait_seconds: 10
           command: |
@@ -200,7 +200,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
-          -d "text=✅ DEPLOY STAGE COMPLETED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a>"
+          -d "text=✅ DEPLOY STAGE COMPLETED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - name: Notify on Failure
         if: failure()
@@ -209,4 +209,4 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters[message_id]=${{ needs.detect-changes.outputs.msg_id }}" \
-          -d "text=❌ DEPLOY STAGE FAILED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a>"
+          -d "text=❌ DEPLOY STAGE FAILED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
