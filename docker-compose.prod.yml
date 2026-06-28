@@ -144,7 +144,7 @@ services:
       # Shared intermediate scraping data volume
       - shared_scraping_data:/var/shared_scraping_data
     healthcheck:
-      test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
+      test: [ "CMD", "dagster", "api", "grpc-health-check", "-p", "4000" ]
       interval: 10s
       timeout: 10s
       retries: 3
@@ -210,6 +210,11 @@ services:
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
       COEUS_API_URL: ${COEUS_API_URL}
+      # Images spawned via PipesDockerClient
+      COEUS_SCRAPER_IMAGE: "ghcr.io/8ohm-technologies/coeus-scraper:latest"
+      COEUS_EXTRACTOR_IMAGE: "ghcr.io/8ohm-technologies/coeus-extractor:latest"
+      COEUS_HOST_DATA_DIR: "/var/shared_scraping_data"
+      COEUS_DOCKER_NETWORK: "8ohm-network"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/io_manager_storage:/tmp/io_manager_storage
@@ -273,8 +278,8 @@ services:
 volumes:
   traefik_certificates:
   static_assets:
-  postgres_data:
-  # Intermediate scraping data shared between scraper and extractor containers.
+  postgres_data: # Intermediate scraping data shared between scraper and extractor containers.
+
   # Bind-mounted to /var/shared_scraping_data on the host (must exist: mkdir -p /var/shared_scraping_data && chmod 777 /var/shared_scraping_data)
   shared_scraping_data:
     driver: local
