@@ -364,10 +364,21 @@ def coeus_system_health():
 # Job
 # ---------------------------------------------------------------------------
 
+@dg.partitioned_config(partitions_def=pipeline_partitions)
+def pipeline_partitioned_config(partition_key: str) -> dict:
+    """Map a partition key (pipeline_id) to the correct run config from cache/API."""
+    blueprints = fetch_blueprints()
+    blueprint = next((bp for bp in blueprints if bp["pipeline_id"] == partition_key), None)
+    if not blueprint:
+        blueprint = {"pipeline_id": partition_key}
+    return _blueprint_to_run_config(blueprint)
+
+
 coeus_pipeline_job = dg.define_asset_job(
     name="coeus_pipeline_job",
     selection=[scrape_asset, extract_asset],
     partitions_def=pipeline_partitions,
+    config=pipeline_partitioned_config,
 )
 
 
