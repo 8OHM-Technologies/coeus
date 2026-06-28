@@ -75,7 +75,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=🏗️ BUILD STAGE STARTED 🏗️ %0A----------------------------------------------%0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=🏗️ BUILD STAGE STARTED 🏗️ %0A-------------------------------------------%0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -153,7 +153,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=✅ BUILD STAGE COMPLETED ✅ %0A----------------------------------------------%0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=✅ BUILD STAGE COMPLETED ✅ %0A-------------------------------------------------%0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - name: Notify on Failure
         if: failure()
