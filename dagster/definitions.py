@@ -179,7 +179,7 @@ def get_blueprint_for_partition(partition_key: str) -> Optional[dict]:
     """Helper to pull the specific configuration dictionary for this partition."""
     blueprints = fetch_blueprints()
     for bp in blueprints:
-        if str(bp.get("id")) == partition_key:
+        if str(bp.get("pipeline_id")) == partition_key:
             return bp
     return None
 
@@ -312,7 +312,7 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
     if not blueprints:
         return
 
-    active_partition_keys = [str(bp["id"]) for bp in blueprints if "id" in bp]
+    active_partition_keys = [str(bp["pipeline_id"]) for bp in blueprints if "pipeline_id" in bp]
     dynamic_partitions_requests = [pipeline_partitions.build_add_request(active_partition_keys)]
     
     run_requests = []
