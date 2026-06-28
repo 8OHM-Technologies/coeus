@@ -304,7 +304,7 @@ defs = dg.Definitions(
     sensors=[
         coeus_blueprint_sensor
     ],
-    resources=[
-        PipesDockerClient(),
-    ],
+    resources={
+        "pipes_docker": PipesDockerClient(),
+    },
 )
