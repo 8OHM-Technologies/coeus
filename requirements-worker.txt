@@ -6,7 +6,7 @@ torch>=2.0.0
 transformers>=4.35.0
 Pillow>=9.0.0
 beautifulsoup4>=4.14.3
-# LLM extraction dependencies
+
 pdfplumber>=0.11
 openai>=1.0
 google-api-python-client>=2.197.0
