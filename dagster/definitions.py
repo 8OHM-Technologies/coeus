@@ -185,7 +185,7 @@ class ScrapeConfig(dg.Config):
     allow_insecure_https: bool
     allow_insecure_requests: bool
     use_proxy: bool
-    extraction_params: Dict[str, Any]
+    extraction_params: str
 
 
 class ExtractConfig(dg.Config):
