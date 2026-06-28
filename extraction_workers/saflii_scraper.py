@@ -558,11 +558,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     end_year = int(extraction_params.get("end_year", current_year))
 
     proxy_url = None
-    use_proxy = (
-        config.get("use_proxy", False)
-        or config.get("extraction_params", {}).get("use_proxy", False)
-        or os.getenv("USE_PROXY", "False").lower() == "true"
-    )
+    use_proxy = False
     WEBSHARE_PROXY = "http://ooumozlx-rotate:aud9ea66yrrq@p.webshare.io:80/"
 
     if use_proxy:

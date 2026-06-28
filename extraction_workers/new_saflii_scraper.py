@@ -185,11 +185,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     cooldown_seconds = float(extraction_params.get("cooldown_seconds", 1.5))
 
     proxy_url = None
-    use_proxy = (
-        config.get("use_proxy", False)
-        or config.get("extraction_params", {}).get("use_proxy", False)
-        or os.getenv("USE_PROXY", "False").lower() == "true"
-    )
+    use_proxy = False
     WEBSHARE_PROXY = "http://ooumozlx-rotate:aud9ea66yrrq@p.webshare.io:80/"
 
 #    if use_proxy:

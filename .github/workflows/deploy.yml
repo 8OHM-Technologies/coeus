@@ -56,9 +56,23 @@ jobs:
             scraper:
               - 'Dockerfile.scraper'
               - 'requirements-scraper.txt'
+              - 'extraction_workers/**'
+              - 'misstcha/**'
+              - 'dagster/pipes/scraper_entrypoint.py'
+              - 'docker-compose*.yml'
+              - '.github/workflows/deploy.yml'
             extractor:
               - 'Dockerfile.extractor'
               - 'requirements-extractor.txt'
+              - 'extraction_workers/llm_extractor.py'
+              - 'extraction_workers/schemas.py'
+              - 'extraction_workers/utils.py'
+              - 'extraction_workers/db.py'
+              - 'extraction_workers/utils/**'
+              - 'dagster/pipes/extractor_entrypoint.py'
+              - 'docker-compose*.yml'
+              - '.github/workflows/deploy.yml'
+
 
   # 2. Build and Push only images with detected changes
   build-and-push:
