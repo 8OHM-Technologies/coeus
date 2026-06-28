@@ -169,39 +169,19 @@ def _build_container_env() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Hybrid approach: DynamicPartitions (who) + Config (how)
+# PartitionConfigs
 # ---------------------------------------------------------------------------
 
 pipeline_partitions = dg.DynamicPartitionsDefinition(name="pipelines")
 
 
-class ScrapeConfig(dg.Config):
-    """Runtime config for the scrape asset."""
-    scraper_type: str
-    document_type: str
-    start_url: str
-    cat_selector: str
-    doc_selector: str
-    allow_insecure_https: bool
-    allow_insecure_requests: bool
-    use_proxy: bool
-    extraction_params: str
-
-
-class ExtractConfig(dg.Config):
-    """Runtime config for the extraction asset."""
-    requires_extraction: bool
-    document_type: str
-    start_url: str
-    cat_selector: str
-    doc_selector: str
-    allow_insecure_https: bool
-    allow_insecure_requests: bool
-    use_proxy: bool
-    extraction_params: str
-    expected_schema: str
-    llm_engine: str
-    extraction_instructions: str
+def get_blueprint_for_partition(partition_key: str) -> Optional[dict]:
+    """Helper to pull the specific configuration dictionary for this partition."""
+    blueprints = fetch_blueprints()
+    for bp in blueprints:
+        if str(bp.get("id")) == partition_key:
+            return bp
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -214,18 +194,41 @@ class ExtractConfig(dg.Config):
 )
 def raw_scraped_pages(
     context: dg.AssetExecutionContext,
-    config: ScrapeConfig,
     pipes_docker: PipesDockerClient,
 ) -> dg.MaterializeResult:
     """Spawns an external container to handle data ingestion via Dagster Pipes."""
-    # Build payload payload for container
-    extras = config.dict()
-    extras["partition_key"] = context.partition_key
+    blueprint = get_blueprint_for_partition(context.partition_key)
+    if not blueprint:
+        raise ValueError(f"No active pipeline blueprint found for partition key: {context.partition_key}")
 
-    # Run the container
+    phase1 = blueprint.get("phase_1_ingestion", {})
+    phase2 = blueprint.get("phase_2_extraction", {})
+    metadata = blueprint.get("metadata", {})
+    extraction_params = phase2.get("extraction_params", {})
+
+    use_proxy: bool = (
+        to_bool(phase1.get("use_proxy"))
+        or to_bool(extraction_params.get("use_proxy"))
+        or to_bool(os.environ.get("USE_PROXY"))
+    )
+
+    # Consolidate your configuration directly into the container extras payload
+    extras = {
+        "scraper_type": blueprint.get("scraper_type", "sedarplus"),
+        "document_type": metadata.get("document_type", "pdf"),
+        "start_url": phase1.get("start_url", ""),
+        "cat_selector": phase1.get("target_css_selector_categories", ""),
+        "doc_selector": phase1.get("target_css_selector_documents", ""),
+        "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
+        "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
+        "use_proxy": use_proxy,
+        "extraction_params": extraction_params,  # Passed cleanly as a Dictionary!
+        "partition_key": context.partition_key,
+    }
+
     result = pipes_docker.run(
         context=context,
-        image=EXTRACTOR_IMAGE,
+        image=SCRAPER_IMAGE, # Fixed: Changed from EXTRACTOR_IMAGE to match scraper asset intent
         env=_build_container_env(),
         extras=extras,
         container_kwargs={
@@ -243,16 +246,43 @@ def raw_scraped_pages(
 )
 def extracted_structured_data(
     context: dg.AssetExecutionContext,
-    config: ExtractConfig,
     pipes_docker: PipesDockerClient,
 ) -> dg.MaterializeResult:
     """Spawns an external container to extract structured data via Dagster Pipes."""
-    if not config.requires_extraction:
+    blueprint = get_blueprint_for_partition(context.partition_key)
+    if not blueprint:
+        raise ValueError(f"No active pipeline blueprint found for partition key: {context.partition_key}")
+
+    phase1 = blueprint.get("phase_1_ingestion", {})
+    phase2 = blueprint.get("phase_2_extraction", {})
+    metadata = blueprint.get("metadata", {})
+    extraction_params = phase2.get("extraction_params", {})
+
+    if not to_bool(phase2.get("requires_extraction")):
         context.log.info("Extraction disabled by config blueprint. Skipping processing.")
         return dg.MaterializeResult(metadata={"skipped": True})
 
-    extras = config.dict()
-    extras["partition_key"] = context.partition_key
+    use_proxy: bool = (
+        to_bool(phase1.get("use_proxy"))
+        or to_bool(extraction_params.get("use_proxy"))
+        or to_bool(os.environ.get("USE_PROXY"))
+    )
+
+    extras = {
+        "requires_extraction": True,
+        "document_type": metadata.get("document_type", "pdf"),
+        "start_url": phase1.get("start_url", ""),
+        "cat_selector": phase1.get("target_css_selector_categories", ""),
+        "doc_selector": phase1.get("target_css_selector_documents", ""),
+        "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
+        "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
+        "use_proxy": use_proxy,
+        "extraction_params": extraction_params,
+        "expected_schema": phase2.get("expected_schema", ""),
+        "llm_engine": phase2.get("engine", "ollama/phi4-mini"),
+        "extraction_instructions": phase2.get("extraction_instructions", ""),
+        "partition_key": context.partition_key,
+    }
 
     result = pipes_docker.run(
         context=context,
@@ -267,9 +297,8 @@ def extracted_structured_data(
     return result.get_materialize_result()
 
 
-
 # ---------------------------------------------------------------------------
-# Automation: Dynamic Sensor
+# Automation: Dynamic Sensor (Now drastically simplified)
 # ---------------------------------------------------------------------------
 
 @dg.sensor(
@@ -283,33 +312,17 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
     if not blueprints:
         return
 
-    # Extract pipeline IDs/names to use as partition keys
     active_partition_keys = [str(bp["id"]) for bp in blueprints if "id" in bp]
-    
-    # Dynamically register any new keys with the partition definition
     dynamic_partitions_requests = [pipeline_partitions.build_add_request(active_partition_keys)]
+    
     run_requests = []
-    for blueprint in blueprints:
-        partition_key = str(blueprint.get("id"))
-        if not partition_key:
-            continue
-        run_config = _blueprint_to_run_config(blueprint)
+    for partition_key in active_partition_keys:
         run_requests.append(dg.RunRequest(
             run_key=f"{partition_key}_{int(time.time() // 60)}",
             partition_key=partition_key,
-            run_config=run_config,
         ))
-    return dg.SensorResult(run_requests=run_requests, dynamic_partitions_requests=dynamic_partitions_requests)
-
-defs = dg.Definitions(
-    assets=[
-        raw_scraped_pages,
-        extracted_structured_data
-    ],
-    sensors=[
-        coeus_blueprint_sensor
-    ],
-    resources={
-        "pipes_docker": PipesDockerClient(),
-    },
-)
+        
+    return dg.SensorResult(
+        run_requests=run_requests, 
+        dynamic_partitions_requests=dynamic_partitions_requests
+    )
