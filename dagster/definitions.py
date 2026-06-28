@@ -3,16 +3,40 @@ import json
 import time
 import logging
 import requests
-import subprocess
 from typing import Optional
 
 import dagster as dg
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
 API_URL = os.getenv("COEUS_API_URL")
 CACHE_FILE = "/app/data/coeus_blueprints_cache.json"
 CACHE_TTL = 300  # 5 minutes
+
+# Container images spawned by PipesDockerClient
+SCRAPER_IMAGE = os.getenv(
+    "COEUS_SCRAPER_IMAGE",
+    "ghcr.io/8ohm-technologies/coeus-scraper:latest",
+)
+EXTRACTOR_IMAGE = os.getenv(
+    "COEUS_EXTRACTOR_IMAGE",
+    "ghcr.io/8ohm-technologies/coeus-extractor:latest",
+)
+
+# Shared volume: host path → container path
+# /var/shared_scraping_data is bind-mounted into every spawned container
+# so scrapers can write intermediate files that extractors can read.
+HOST_DATA_DIR = os.getenv("COEUS_HOST_DATA_DIR", "/var/shared_scraping_data")
+CONTAINER_DATA_DIR = "/app/scraping_data"
+
+# Docker network that all spawned containers must join so they can reach
+# postgres, ollama-server, and other services on 8ohm-network.
+DOCKER_NETWORK = os.getenv("COEUS_DOCKER_NETWORK", "8ohm-network")
+
 
 # ---------------------------------------------------------------------------
 # Blueprint fetching (used only at sensor/schedule evaluation time, not in assets)
@@ -84,16 +108,16 @@ def fetch_blueprints() -> list[dict]:
 def _blueprint_to_run_config(blueprint: dict) -> dict:
     """Convert a pipeline blueprint dict into a Dagster run config dict.
 
-    This is the bridge between the external API shape and the Config classes below.
-    All extraction params are baked in here at sensor/schedule evaluation time so
-    that assets never need to call fetch_blueprints() at run time.
+    Called at sensor/schedule evaluation time. Bakes all extraction params into
+    the run so that assets receive typed config without re-fetching the API.
+    Asset names must match the @dg.asset name= parameters below.
     """
     phase1 = blueprint.get("phase_1_ingestion", {})
     phase2 = blueprint.get("phase_2_extraction", {})
     metadata = blueprint.get("metadata", {})
     extraction_params = phase2.get("extraction_params", {})
 
-    use_proxy = (
+    use_proxy: bool = (
         phase1.get("use_proxy", False)
         or extraction_params.get("use_proxy", False)
         or os.environ.get("USE_PROXY", "False").lower() == "true"
@@ -101,7 +125,8 @@ def _blueprint_to_run_config(blueprint: dict) -> dict:
 
     return {
         "ops": {
-            "scrape": {
+            # Must match name="raw_scraped_pages" in @dg.asset
+            "raw_scraped_pages": {
                 "config": {
                     "scraper_type": blueprint.get("scraper_type", "sedarplus"),
                     "document_type": metadata.get("document_type", "pdf"),
@@ -114,7 +139,8 @@ def _blueprint_to_run_config(blueprint: dict) -> dict:
                     "extraction_params": json.dumps(extraction_params),
                 }
             },
-            "extract": {
+            # Must match name="extracted_structured_data" in @dg.asset
+            "extracted_structured_data": {
                 "config": {
                     "requires_extraction": phase2.get("requires_extraction", False),
                     "document_type": metadata.get("document_type", "pdf"),
@@ -134,6 +160,24 @@ def _blueprint_to_run_config(blueprint: dict) -> dict:
     }
 
 
+def _build_container_env() -> dict[str, str]:
+    """Forward critical host env vars into spawned containers.
+
+    Scrapers and extractors need DB credentials and API URLs to function.
+    These are passed as environment variables — not baked into the image.
+    """
+    forwarded = [
+        "DAGSTER_POSTGRES_USER",
+        "DAGSTER_POSTGRES_PASSWORD",
+        "DAGSTER_POSTGRES_DB",
+        "COEUS_API_URL",
+        "USE_PROXY",
+        "OPENAI_API_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ]
+    return {k: os.environ[k] for k in forwarded if k in os.environ}
+
+
 # ---------------------------------------------------------------------------
 # Hybrid approach: DynamicPartitions (who) + Config (how)
 # ---------------------------------------------------------------------------
@@ -142,7 +186,11 @@ pipeline_partitions = dg.DynamicPartitionsDefinition(name="pipelines")
 
 
 class ScrapeConfig(dg.Config):
-    """Runtime config for the scrape asset — baked in by the sensor/schedule."""
+    """Runtime config for the scrape asset — baked in by the sensor/schedule.
+
+    These fields are forwarded as Dagster Pipes 'extras' into the scraper container,
+    so the container entrypoint knows which scraper to run and how to configure it.
+    """
     scraper_type: str = "sedarplus"
     document_type: str = "pdf"
     start_url: str = ""
@@ -155,7 +203,10 @@ class ScrapeConfig(dg.Config):
 
 
 class ExtractConfig(dg.Config):
-    """Runtime config for the extract asset — baked in by the sensor/schedule."""
+    """Runtime config for the extract asset — baked in by the sensor/schedule.
+
+    These fields are forwarded as Dagster Pipes 'extras' into the extractor container.
+    """
     requires_extraction: bool = False
     document_type: str = "pdf"
     start_url: str = ""
@@ -171,142 +222,122 @@ class ExtractConfig(dg.Config):
 
 
 # ---------------------------------------------------------------------------
+# Shared volume mount config for all spawned containers
+# ---------------------------------------------------------------------------
+
+_SHARED_VOLUME = {HOST_DATA_DIR: {"bind": CONTAINER_DATA_DIR, "mode": "rw"}}
+
+
+# ---------------------------------------------------------------------------
 # Assets
 # ---------------------------------------------------------------------------
 
 @dg.asset(
-    name="scrape",
+    name="raw_scraped_pages",
     partitions_def=pipeline_partitions,
     group_name="pipelines",
 )
-def scrape_asset(context: dg.AssetExecutionContext, config: ScrapeConfig):
+def scrape_asset(
+    context: dg.AssetExecutionContext,
+    config: ScrapeConfig,
+    pipes_docker: dg.PipesDockerClient,
+):
     """Scrape documents for a pipeline partition.
 
-    The partition key identifies *which* pipeline to run.
-    All extraction parameters are supplied via config (baked in by the sensor/schedule),
-    so this asset never needs to call the external API at run time.
+    Spawns a coeus-scraper container via Dagster Pipes. The container receives
+    all scraping parameters as Pipes 'extras' and writes output to the shared
+    volume at {HOST_DATA_DIR}/{partition_key}/. Metadata (pages, status) is
+    reported back through the Pipes channel and surfaces in the Dagster UI.
+
+    Architecture:
+      Partition key = *which* pipeline to run.
+      Config fields = *how* to run it (baked in by sensor/schedule).
+      Container = isolated execution environment with correct Playwright version.
     """
     pipeline_id = context.partition_key
-    scraper_type = config.scraper_type
 
-    worker_script = f"/app/extraction_workers/{scraper_type}_scraper.py"
-
-    base_env = os.environ.copy()
-    base_env["PYTHONPATH"] = "/app:/app/extraction_workers"
-    base_env["START_URL"] = config.start_url
-    base_env["DOCUMENT_TYPE"] = config.document_type
-    base_env["CAT_SELECTOR"] = config.cat_selector
-    base_env["DOC_SELECTOR"] = config.doc_selector
-    base_env["ALLOW_INSECURE_HTTPS"] = str(config.allow_insecure_https)
-    base_env["ALLOW_INSECURE_REQUESTS"] = str(config.allow_insecure_requests)
-    base_env["USE_PROXY"] = str(config.use_proxy)
-    base_env["EXTRACTION_PARAMS"] = config.extraction_params
-
-    worker_args = ["--pipeline_name", pipeline_id]
-    if scraper_type == "mantech":
-        extraction_params = json.loads(config.extraction_params)
-        search_keyword = extraction_params.get("search_keyword")
-        category = extraction_params.get("category") or extraction_params.get("categories")
-        if search_keyword:
-            worker_args.extend(["--search_keyword", str(search_keyword)])
-        if category:
-            category_str = ",".join(str(c) for c in category) if isinstance(category, list) else str(category)
-            worker_args.extend(["--category", category_str])
-    elif scraper_type in ("saflii", "new_saflii"):
-        worker_args.extend(["--headless", "false"])
-
-    if scraper_type in ("saflii", "new_saflii"):
-        cmd_str = " ".join(["python", worker_script] + worker_args)
-        full_cmd = ["bash", "-c", f"Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && sleep 1 && {cmd_str}"]
-    else:
-        full_cmd = ["python", worker_script] + worker_args
-
-    context.log.info(f"Starting scrape for pipeline '{pipeline_id}' using '{scraper_type}'")
-    context.log.info(f"Command: {' '.join(full_cmd)}")
-
-    process = subprocess.Popen(
-        full_cmd,
-        env=base_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+    context.log.info(
+        f"Launching scraper container for partition='{pipeline_id}' "
+        f"scraper='{config.scraper_type}' image='{SCRAPER_IMAGE}'"
     )
 
-    for line in process.stdout:
-        context.log.info(line.rstrip())
-
-    process.wait()
-
-    if process.returncode != 0:
-        raise Exception(f"Scraper failed with return code {process.returncode}")
-
-    return dg.MaterializeResult(
-        metadata={"pipeline_id": pipeline_id, "scraper_type": scraper_type}
-    )
+    return pipes_docker.run(
+        image=SCRAPER_IMAGE,
+        context=context,
+        extras={
+            "partition_key": pipeline_id,
+            "scraper_type": config.scraper_type,
+            "document_type": config.document_type,
+            "start_url": config.start_url,
+            "cat_selector": config.cat_selector,
+            "doc_selector": config.doc_selector,
+            "allow_insecure_https": config.allow_insecure_https,
+            "allow_insecure_requests": config.allow_insecure_requests,
+            "use_proxy": config.use_proxy,
+            "extraction_params": config.extraction_params,
+            "output_dir": CONTAINER_DATA_DIR,
+        },
+        container_kwargs={
+            "network": DOCKER_NETWORK,
+            "volumes": _SHARED_VOLUME,
+            "environment": _build_container_env(),
+        },
+    ).get_results()
 
 
 @dg.asset(
-    name="extract",
+    name="extracted_structured_data",
     partitions_def=pipeline_partitions,
     deps=[scrape_asset],
     group_name="pipelines",
 )
-def extract_asset(context: dg.AssetExecutionContext, config: ExtractConfig):
+def extract_asset(
+    context: dg.AssetExecutionContext,
+    config: ExtractConfig,
+    pipes_docker: dg.PipesDockerClient,
+):
     """Extract structured data for a pipeline partition.
 
-    The partition key identifies *which* pipeline to run.
-    All extraction parameters are supplied via config (baked in by the sensor/schedule),
-    so this asset never needs to call the external API at run time.
+    Spawns a coeus-extractor container via Dagster Pipes. The container reads
+    the output from the upstream scrape step (via the shared volume or DB),
+    calls the configured LLM engine, and reports extraction metrics back through
+    the Pipes channel.
+
+    Short-circuits cleanly when requires_extraction=False — the container itself
+    handles the skip logic and reports a no-op materialization.
     """
     pipeline_id = context.partition_key
 
-    if not config.requires_extraction:
-        context.log.info(f"Pipeline '{pipeline_id}' does not require extraction. Skipping.")
-        return dg.MaterializeResult(metadata={"pipeline_id": pipeline_id, "skipped": True})
-
-    base_env = os.environ.copy()
-    base_env["PYTHONPATH"] = "/app:/app/extraction_workers"
-    base_env["PIPELINE_NAME"] = pipeline_id
-    base_env["START_URL"] = config.start_url
-    base_env["DOCUMENT_TYPE"] = config.document_type
-    base_env["CAT_SELECTOR"] = config.cat_selector
-    base_env["DOC_SELECTOR"] = config.doc_selector
-    base_env["ALLOW_INSECURE_HTTPS"] = str(config.allow_insecure_https)
-    base_env["ALLOW_INSECURE_REQUESTS"] = str(config.allow_insecure_requests)
-    base_env["USE_PROXY"] = str(config.use_proxy)
-    base_env["EXTRACTION_PARAMS"] = config.extraction_params
-    base_env["EXTRACTION_INSTRUCTIONS"] = config.extraction_instructions
-    base_env["AI_MODEL"] = config.llm_engine
-
-    cmd = [
-        "python",
-        "/app/extraction_workers/llm_extractor.py",
-        "--pipeline_name", pipeline_id,
-        "--schema", config.expected_schema,
-    ]
-
-    context.log.info(f"Starting extraction for pipeline '{pipeline_id}'")
-    context.log.info(f"Command: {' '.join(cmd)}")
-
-    process = subprocess.Popen(
-        cmd,
-        env=base_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+    context.log.info(
+        f"Launching extractor container for partition='{pipeline_id}' "
+        f"engine='{config.llm_engine}' image='{EXTRACTOR_IMAGE}'"
     )
 
-    for line in process.stdout:
-        context.log.info(line.rstrip())
-
-    process.wait()
-
-    if process.returncode != 0:
-        raise Exception(f"Extractor failed with return code {process.returncode}")
-
-    return dg.MaterializeResult(
-        metadata={"pipeline_id": pipeline_id, "schema": config.expected_schema}
-    )
+    return pipes_docker.run(
+        image=EXTRACTOR_IMAGE,
+        context=context,
+        extras={
+            "partition_key": pipeline_id,
+            "requires_extraction": config.requires_extraction,
+            "document_type": config.document_type,
+            "start_url": config.start_url,
+            "cat_selector": config.cat_selector,
+            "doc_selector": config.doc_selector,
+            "allow_insecure_https": config.allow_insecure_https,
+            "allow_insecure_requests": config.allow_insecure_requests,
+            "use_proxy": config.use_proxy,
+            "extraction_params": config.extraction_params,
+            "expected_schema": config.expected_schema,
+            "llm_engine": config.llm_engine,
+            "extraction_instructions": config.extraction_instructions,
+            "input_dir": CONTAINER_DATA_DIR,
+        },
+        container_kwargs={
+            "network": DOCKER_NETWORK,
+            "volumes": _SHARED_VOLUME,
+            "environment": _build_container_env(),
+        },
+    ).get_results()
 
 
 @dg.asset(group_name="system")
@@ -382,8 +413,14 @@ def sync_pipelines_partitions_sensor(context: dg.SensorEvaluationContext):
 
     For each blueprint:
       - The partition_key (pipeline_id) is the primary segmentation dimension.
-      - The full extraction config is baked into the RunRequest so assets never
-        need to call the external API at run time (hybrid approach).
+      - Full extraction config is baked into RunRequests for newly discovered
+        partitions (initial trigger on discovery).
+      - Recurring runs for existing partitions are driven by their schedules.
+
+    Hybrid approach:
+      partition_key = who (tracked by Dagster for history/backfills)
+      run_config    = how (extraction params, baked in at sensor/schedule time)
+      extras        = runtime params passed into spawned containers via Pipes
     """
     blueprints = fetch_blueprints()
 
@@ -410,11 +447,12 @@ def sync_pipelines_partitions_sensor(context: dg.SensorEvaluationContext):
                 context.log.warning(f"Could not remove partition '{k}': {e}")
 
     # --- Emit run requests only for newly registered partitions ---
-    # (Existing partitions are handled by their schedules.)
+    # Existing partitions are handled by their per-blueprint schedules.
+    blueprints_by_id = {bp["pipeline_id"]: bp for bp in blueprints}
     run_requests = []
-    for blueprint in blueprints:
-        pid = blueprint["pipeline_id"]
-        if pid in new_keys:
+    for pid in new_keys:
+        blueprint = blueprints_by_id.get(pid)
+        if blueprint:
             run_config = _blueprint_to_run_config(blueprint)
             run_requests.append(
                 dg.RunRequest(partition_key=pid, run_config=run_config)
@@ -435,4 +473,9 @@ defs = dg.Definitions(
     jobs=[coeus_pipeline_job],
     schedules=all_schedules,
     sensors=[sync_pipelines_partitions_sensor],
+    resources={
+        # PipesDockerClient uses the host Docker socket (mounted via docker-compose)
+        # to spawn coeus-scraper and coeus-extractor sibling containers.
+        "pipes_docker": dg.PipesDockerClient(),
+    },
 )

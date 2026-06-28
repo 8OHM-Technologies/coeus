@@ -1,26 +1,34 @@
-FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
+# ─────────────────────────────────────────────────────────────────────────────
+# coeus-dagster-worker — Thin Dagster gRPC code-server
+#
+# This image ONLY serves as the Dagster code location (gRPC server).
+# It no longer runs scrapers or LLM extraction directly — those workloads
+# are now isolated in the coeus-scraper and coeus-extractor images,
+# spawned dynamically via PipesDockerClient.
+#
+# Required: access to /var/run/docker.sock (mounted in docker-compose) so that
+# PipesDockerClient can spawn sibling scraper/extractor containers.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /opt/dagster/app
 
-RUN pip install \
-    --upgrade pip\
-    dagster \
-    dagster-postgres \
-    dagster-docker
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        dagster \
+        dagster-postgres \
+        dagster-docker \
+        requests
 
-COPY requirements-worker.txt .
-RUN pip install --no-cache-dir -r requirements-worker.txt
-RUN playwright install --with-deps chromium
-
-RUN mkdir -p /app/data/scraped_pdfs
-
+# Copy only what the gRPC code-server needs
 COPY dagster/definitions.py .
 
 EXPOSE 4000
 
-HEALTHCHECK --timeout=10s --start-period=30s --interval=10s --retries=3 CMD ["dagster", "api", "grpc-health-check", "-p", "4000"]
+HEALTHCHECK --timeout=10s --start-period=30s --interval=10s --retries=3 \
+    CMD ["dagster", "api", "grpc-health-check", "-p", "4000"]
 
 CMD ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-f", "definitions.py"]

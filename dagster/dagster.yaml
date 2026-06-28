@@ -21,11 +21,20 @@ run_launcher:
       - DAGSTER_POSTGRES_USER
       - DAGSTER_POSTGRES_PASSWORD
       - DAGSTER_POSTGRES_DB
+      # PipesDockerClient image configuration
+      - COEUS_SCRAPER_IMAGE
+      - COEUS_EXTRACTOR_IMAGE
+      - COEUS_HOST_DATA_DIR
+      - COEUS_DOCKER_NETWORK
+      - COEUS_API_URL
     network: 8ohm-network
     container_kwargs:
-      volumes: # Make docker client accessible to any launched containers as well
+      volumes:
+        # Docker socket allows run-launcher-spawned containers to use PipesDockerClient
         - /var/run/docker.sock:/var/run/docker.sock
         - /tmp/io_manager_storage:/tmp/io_manager_storage
+        # Shared scraping data volume — scrapers write here, extractors read here
+        - /var/shared_scraping_data:/var/shared_scraping_data
 
 run_storage:
   module: dagster_postgres.run_storage

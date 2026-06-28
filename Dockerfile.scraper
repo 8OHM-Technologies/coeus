@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# coeus-scraper — Scraper worker image
+#
+# Contains: Playwright/Chromium, extraction_workers/, dagster-pipes
+# Spawned dynamically by Dagster via PipesDockerClient for each scrape run.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install dagster-pipes + scraper Python deps
+COPY requirements-scraper.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements-scraper.txt
+
+# Ensure Playwright browsers are available (base image provides chromium,
+# but run install to pick up any deps not already baked in)
+RUN playwright install --with-deps chromium
+
+# Copy all extraction worker scripts so the entrypoint can dispatch to them
+COPY extraction_workers/ /app/extraction_workers/
+
+# Copy the Dagster Pipes entrypoint
+COPY dagster/pipes/scraper_entrypoint.py /app/main.py
+
+# Ensure the shared data directory mount point exists
+RUN mkdir -p /app/scraping_data
+
+CMD ["python", "/app/main.py"]

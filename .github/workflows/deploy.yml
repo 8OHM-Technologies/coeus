@@ -56,7 +56,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=🚀 BUILD STAGE STARTED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=🏗️ BUILD STAGE STARTED 🏗️%0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -102,6 +102,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and Push Scraper Worker Image
+        uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
+        with:
+          context: .
+          file: Dockerfile.scraper
+          push: true
+          tags: ghcr.io/8ohm-technologies/coeus-scraper:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and Push LLM Extractor Image
+        uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
+        with:
+          context: .
+          file: Dockerfile.extractor
+          push: true
+          tags: ghcr.io/8ohm-technologies/coeus-extractor:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Notify on Success
         if: success()
         run: |
@@ -109,7 +129,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=✅ BUILD STAGE COMPLETED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=✅ BUILD STAGE COMPLETED ✅ %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - name: Notify on Failure
         if: failure()
@@ -118,7 +138,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=❌ BUILD STAGE FAILED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=❌ BUILD STAGE FAILED ❌ %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
   # 3. Always deploy (Performs a remote Git Pull and updates Docker)
   deploy:
@@ -132,7 +152,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=🚀 DEPLOY STAGE STARTED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=🚀 DEPLOY STAGE STARTED 🚀 %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -182,6 +202,11 @@ jobs:
                 git pull origin main
               fi
 
+              # Ensure shared scraping data directory exists and is world-writable
+              # so isolated scraper/extractor containers can read and write freely.
+              mkdir -p /var/shared_scraping_data
+              chmod 777 /var/shared_scraping_data
+
               echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
               docker compose -f docker-compose.prod.yml pull
@@ -200,7 +225,7 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=✅ DEPLOY STAGE COMPLETED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=✅ DEPLOY STAGE COMPLETED ✅ %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
 
       - name: Notify on Failure
         if: failure()
@@ -209,4 +234,4 @@ jobs:
           -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
           -d "parse_mode=HTML" \
           -d "reply_parameters={\"message_id\":${{ needs.detect-changes.outputs.msg_id }}}" \
-          -d "text=❌ DEPLOY STAGE FAILED %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"
+          -d "text=❌ DEPLOY STAGE FAILED ❌ %0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a> %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>"

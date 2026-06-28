@@ -131,11 +131,18 @@ services:
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
       DAGSTER_CURRENT_IMAGE: "ghcr.io/8ohm-technologies/coeus-dagster-worker-playwright:latest"
       COEUS_API_URL: ${COEUS_API_URL}
-
-      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      # Images spawned via PipesDockerClient
+      COEUS_SCRAPER_IMAGE: "ghcr.io/8ohm-technologies/coeus-scraper:latest"
+      COEUS_EXTRACTOR_IMAGE: "ghcr.io/8ohm-technologies/coeus-extractor:latest"
+      COEUS_HOST_DATA_DIR: "/var/shared_scraping_data"
+      COEUS_DOCKER_NETWORK: "8ohm-network"
     volumes:
+      # Cache dir for blueprint API responses
       - /home/deploy-user/coeus/data:/app/data
-      - huggingface_cache:/app/huggingface_cache
+      # Docker socket so PipesDockerClient can spawn sibling scraper/extractor containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared intermediate scraping data volume
+      - shared_scraping_data:/var/shared_scraping_data
     healthcheck:
       test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
       interval: 10s
@@ -206,6 +213,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/io_manager_storage:/tmp/io_manager_storage
+      # Shared scraping data so run-launcher-spawned containers can access it
+      - shared_scraping_data:/var/shared_scraping_data
     networks:
       - 8ohm-network
 
@@ -264,8 +273,15 @@ services:
 volumes:
   traefik_certificates:
   static_assets:
-  huggingface_cache:
   postgres_data:
+  # Intermediate scraping data shared between scraper and extractor containers.
+  # Bind-mounted to /var/shared_scraping_data on the host (must exist: mkdir -p /var/shared_scraping_data && chmod 777 /var/shared_scraping_data)
+  shared_scraping_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/shared_scraping_data
+      o: bind
 
 networks:
   8ohm-network:

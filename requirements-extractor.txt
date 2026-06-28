@@ -1,0 +1,10 @@
+# Extractor image dependencies
+dagster-pipes
+requests
+pydantic>=2.6
+psycopg2-binary>=2.9
+asyncpg>=0.29
+pdfplumber>=0.11
+openai>=1.0
+google-api-python-client>=2.197.0
+google-auth>=2.55.0

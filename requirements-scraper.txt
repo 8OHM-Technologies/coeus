@@ -1,0 +1,10 @@
+# Scraper image dependencies
+# Base image (mcr.microsoft.com/playwright/python) already provides playwright + chromium
+dagster-pipes
+requests
+pydantic>=2.6
+psycopg2-binary>=2.9
+asyncpg>=0.29
+Pillow>=9.0.0
+beautifulsoup4>=4.14.3
+pdfplumber>=0.11
