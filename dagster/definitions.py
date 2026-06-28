@@ -28,7 +28,7 @@ EXTRACTOR_IMAGE = os.getenv(
 )
 
 HOST_DATA_DIR = os.getenv("COEUS_HOST_DATA_DIR", "/var/shared_scraping_data")
-CONTAINER_DATA_DIR = "/app/scraping_data"
+CONTAINER_DATA_DIR = "/app/data"
 DOCKER_NETWORK = os.getenv("COEUS_DOCKER_NETWORK", "8ohm-network")
 
 
@@ -222,7 +222,8 @@ def raw_scraped_pages(
         "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
         "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
         "use_proxy": use_proxy,
-        "extraction_params": extraction_params,  # Passed cleanly as a Dictionary!
+        "extraction_params": json.dumps(extraction_params),  # Serialize to JSON string for the entrypoint
+        "output_dir": CONTAINER_DATA_DIR,
         "partition_key": context.partition_key,
     }
 
@@ -277,10 +278,11 @@ def extracted_structured_data(
         "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
         "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
         "use_proxy": use_proxy,
-        "extraction_params": extraction_params,
+        "extraction_params": json.dumps(extraction_params),  # Serialize to JSON string for the entrypoint
         "expected_schema": phase2.get("expected_schema", ""),
         "llm_engine": phase2.get("engine", "ollama/phi4-mini"),
         "extraction_instructions": phase2.get("extraction_instructions", ""),
+        "input_dir": os.path.join(CONTAINER_DATA_DIR, context.partition_key),
         "partition_key": context.partition_key,
     }
 
