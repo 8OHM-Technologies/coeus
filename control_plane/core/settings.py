@@ -43,7 +43,7 @@ CSRF_TRUSTED_ORIGINS = [
 # Application definition
 
 INSTALLED_APPS = [
-    "daisyui_dashboard",
+    "django_daisy",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
