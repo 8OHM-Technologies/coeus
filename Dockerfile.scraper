@@ -11,18 +11,16 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install dagster-pipes + scraper Python deps
 COPY requirements-scraper.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-scraper.txt
 
-# Copy all extraction worker scripts so the entrypoint can dispatch to them
 COPY extraction_workers/ /app/extraction_workers/
 
-# Copy the Dagster Pipes entrypoint
 COPY dagster/pipes/scraper_entrypoint.py /app/main.py
 
-# Ensure the shared data directory mount point exists
+COPY misstcha/ /app/misstcha/
+
 RUN mkdir -p /app/scraping_data
 
 CMD ["python", "/app/main.py"]
