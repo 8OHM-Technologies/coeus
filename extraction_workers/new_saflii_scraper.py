@@ -192,31 +192,31 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     )
     WEBSHARE_PROXY = "http://ooumozlx-rotate:aud9ea66yrrq@p.webshare.io:80/"
 
-    if use_proxy:
-        masked_proxy = WEBSHARE_PROXY
-        if "@" in WEBSHARE_PROXY:
-            parts = WEBSHARE_PROXY.split("@")
-            creds_part = parts[0].split("://")
-            scheme = creds_part[0]
-            user = creds_part[1].split(":")[0]
-            host_part = parts[1]
-            masked_proxy = f"{scheme}://{user}:****@{host_part}"
-        logger.info(f"Using rotating proxy configuration: {masked_proxy}")
+#    if use_proxy:
+#        masked_proxy = WEBSHARE_PROXY
+#        if "@" in WEBSHARE_PROXY:
+#            parts = WEBSHARE_PROXY.split("@")
+#            creds_part = parts[0].split("://")
+#            scheme = creds_part[0]
+#            user = creds_part[1].split(":")[0]
+#            host_part = parts[1]
+#            masked_proxy = f"{scheme}://{user}:****@{host_part}"
+#        logger.info(f"Using rotating proxy configuration: {masked_proxy}")
 
-        logger.info(
-            "Proxy is ENABLED — verifying connectivity via Webshare rotating proxy..."
-        )
-        try:
-            ip = requests.get(
-                "https://ipv4.webshare.io/",
-                proxies={"http": WEBSHARE_PROXY, "https": WEBSHARE_PROXY},
-                timeout=15,
-            ).text.strip()
-            logger.info(f"Proxy active. Outbound IP: {ip}")
-        except Exception as proxy_err:
-            logger.error(f"Proxy connectivity check failed: {proxy_err}")
-            sys.exit(1)
-        proxy_url = WEBSHARE_PROXY
+#        logger.info(
+#            "Proxy is ENABLED — verifying connectivity via Webshare rotating proxy..."
+#        )
+#        try:
+#            ip = requests.get(
+#                "https://ipv4.webshare.io/",
+#                proxies={"http": WEBSHARE_PROXY, "https": WEBSHARE_PROXY},
+#                timeout=15,
+#            ).text.strip()
+#            logger.info(f"Proxy active. Outbound IP: {ip}")
+#        except Exception as proxy_err:
+#            logger.error(f"Proxy connectivity check failed: {proxy_err}")
+#            sys.exit(1)
+#        proxy_url = WEBSHARE_PROXY
 
     logger.info("==================================================")
     logger.info(
