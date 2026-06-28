@@ -326,3 +326,16 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
         run_requests=run_requests, 
         dynamic_partitions_requests=dynamic_partitions_requests
     )
+
+defs = dg.Definitions(
+    assets=[
+        raw_scraped_pages,
+        extracted_structured_data
+    ],
+    sensors=[
+        coeus_blueprint_sensor
+    ],
+    resources={
+        "pipes_docker": PipesDockerClient(),
+    },
+)
