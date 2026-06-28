@@ -5,11 +5,16 @@ on:
     branches: [main]
 
 jobs:
-  # 1. Detect if the backend/Docker files actually changed
+  # 1. Detect which Docker images actually need rebuilding
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      backend_changed: ${{ steps.filter.outputs.backend }}
+      any_image_changed: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.playwright_worker == 'true' || steps.filter.outputs.dagster == 'true' || steps.filter.outputs.scraper == 'true' || steps.filter.outputs.extractor == 'true' }}
+      app_changed: ${{ steps.filter.outputs.app }}
+      playwright_worker_changed: ${{ steps.filter.outputs.playwright_worker }}
+      dagster_changed: ${{ steps.filter.outputs.dagster }}
+      scraper_changed: ${{ steps.filter.outputs.scraper }}
+      extractor_changed: ${{ steps.filter.outputs.extractor }}
       msg_id: ${{ steps.telegram-start.outputs.msg_id }}
     steps:
       - name: Notify on Workflow Start
@@ -25,24 +30,40 @@ jobs:
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Check for file changes
+      - name: Check for per-image file changes
         uses: dorny/paths-filter@f3ceefdc7ef57bc2d8560787d4b6c33e44044cec
         id: filter
         with:
           filters: |
-            backend:
-              - 'Dockerfile*'
-              - 'requirements*.txt'
+            app:
+              - 'Dockerfile.app'
+              - 'requirements-app.txt'
               - 'control_plane/**'
               - 'ohmshop/**'
+              - 'docker-compose*.yml'
+              - '.github/workflows/deploy.yml'
+            playwright_worker:
+              - 'Dockerfile.playwright_worker'
+              - 'requirements-worker.txt'
               - 'dagster/**'
               - 'docker-compose*.yml'
               - '.github/workflows/deploy.yml'
+            dagster:
+              - 'Dockerfile.dagster'
+              - 'dagster/**'
+              - 'docker-compose*.yml'
+              - '.github/workflows/deploy.yml'
+            scraper:
+              - 'Dockerfile.scraper'
+              - 'requirements-scraper.txt'
+            extractor:
+              - 'Dockerfile.extractor'
+              - 'requirements-extractor.txt'
 
-  # 2. Build and Push (Only runs if 'detect-changes' found backend updates)
+  # 2. Build and Push only images with detected changes
   build-and-push:
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.backend_changed == 'true' }}
+    if: ${{ needs.detect-changes.outputs.any_image_changed == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,6 +90,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Push Coeus App
+        if: ${{ needs.detect-changes.outputs.app_changed == 'true' }}
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
@@ -79,6 +101,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and Push Dagster Worker Playwright
+        if: ${{ needs.detect-changes.outputs.playwright_worker_changed == 'true' }}
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
@@ -89,6 +112,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and Push Dagster Webserver and Daemon
+        if: ${{ needs.detect-changes.outputs.dagster_changed == 'true' }}
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
@@ -101,6 +125,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and Push Scraper Worker Image
+        if: ${{ needs.detect-changes.outputs.scraper_changed == 'true' }}
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
@@ -111,6 +136,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and Push LLM Extractor Image
+        if: ${{ needs.detect-changes.outputs.extractor_changed == 'true' }}
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
