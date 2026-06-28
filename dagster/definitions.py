@@ -6,6 +6,7 @@ import requests
 from typing import Optional
 
 import dagster as dg
+from dagster_docker import PipesDockerClient
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +241,7 @@ _SHARED_VOLUME = {HOST_DATA_DIR: {"bind": CONTAINER_DATA_DIR, "mode": "rw"}}
 def scrape_asset(
     context: dg.AssetExecutionContext,
     config: ScrapeConfig,
-    pipes_docker: dg.PipesDockerClient,
+    pipes_docker: PipesDockerClient,
 ):
     """Scrape documents for a pipeline partition.
 
@@ -294,7 +295,7 @@ def scrape_asset(
 def extract_asset(
     context: dg.AssetExecutionContext,
     config: ExtractConfig,
-    pipes_docker: dg.PipesDockerClient,
+    pipes_docker: PipesDockerClient,
 ):
     """Extract structured data for a pipeline partition.
 
@@ -476,6 +477,6 @@ defs = dg.Definitions(
     resources={
         # PipesDockerClient uses the host Docker socket (mounted via docker-compose)
         # to spawn coeus-scraper and coeus-extractor sibling containers.
-        "pipes_docker": dg.PipesDockerClient(),
+        "pipes_docker": PipesDockerClient(),
     },
 )
