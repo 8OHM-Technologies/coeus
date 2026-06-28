@@ -10,6 +10,7 @@ dependencies = [
     "dagster",
     "dagster-webserver",
     "dagster-docker",
+    "dagster-github"
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -29,3 +30,4 @@ dagster-webserver = { path = "../../python_modules/dagster-webserver", editable 
 dagster-docker = { path = "../../python_modules/libraries/dagster-docker", editable = true }
 dagster-pipes = { path = "../../python_modules/dagster-pipes", editable = true }
 dagster-shared = { path = "../../python_modules/libraries/dagster-shared", editable = true }
+dagster-github = { path = "../../python_modules/libraries/dagster-github", editable = true }
