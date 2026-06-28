@@ -228,8 +228,8 @@ jobs:
 
               # Ensure shared scraping data directory exists and is world-writable
               # so isolated scraper/extractor containers can read and write freely.
-              mkdir -p /var/shared_scraping_data
-              chmod 777 /var/shared_scraping_data
+              sudo mkdir -p /var/shared_scraping_data
+              sudo chmod 777 /var/shared_scraping_data
 
               echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
