@@ -16,10 +16,6 @@ COPY requirements-scraper.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-scraper.txt
 
-# Ensure Playwright browsers are available (base image provides chromium,
-# but run install to pick up any deps not already baked in)
-RUN playwright install --with-deps chromium
-
 # Copy all extraction worker scripts so the entrypoint can dispatch to them
 COPY extraction_workers/ /app/extraction_workers/
 
