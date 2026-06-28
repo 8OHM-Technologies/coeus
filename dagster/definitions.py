@@ -106,6 +106,19 @@ def fetch_blueprints() -> list[dict]:
     return []
 
 
+def to_bool(val) -> bool:
+    """Helper to convert various types/strings to boolean safely."""
+    if val is None:
+        return False
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on")
+    if isinstance(val, (int, float)):
+        return bool(val)
+    return False
+
+
 def _blueprint_to_run_config(blueprint: dict) -> dict:
     """Convert a pipeline blueprint dict into a Dagster run config dict.
 
@@ -119,9 +132,9 @@ def _blueprint_to_run_config(blueprint: dict) -> dict:
     extraction_params = phase2.get("extraction_params", {})
 
     use_proxy: bool = (
-        phase1.get("use_proxy", False)
-        or extraction_params.get("use_proxy", False)
-        or os.environ.get("USE_PROXY", "False").lower() == "true"
+        to_bool(phase1.get("use_proxy"))
+        or to_bool(extraction_params.get("use_proxy"))
+        or to_bool(os.environ.get("USE_PROXY"))
     )
 
     return {
@@ -134,8 +147,8 @@ def _blueprint_to_run_config(blueprint: dict) -> dict:
                     "start_url": phase1.get("start_url", ""),
                     "cat_selector": phase1.get("target_css_selector_categories", ""),
                     "doc_selector": phase1.get("target_css_selector_documents", ""),
-                    "allow_insecure_https": phase1.get("allow_insecure_https", False),
-                    "allow_insecure_requests": phase1.get("allow_insecure_requests", False),
+                    "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
+                    "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
                     "use_proxy": use_proxy,
                     "extraction_params": json.dumps(extraction_params),
                 }
@@ -143,13 +156,13 @@ def _blueprint_to_run_config(blueprint: dict) -> dict:
             # Must match name="extracted_structured_data" in @dg.asset
             "extracted_structured_data": {
                 "config": {
-                    "requires_extraction": phase2.get("requires_extraction", False),
+                    "requires_extraction": to_bool(phase2.get("requires_extraction")),
                     "document_type": metadata.get("document_type", "pdf"),
                     "start_url": phase1.get("start_url", ""),
                     "cat_selector": phase1.get("target_css_selector_categories", ""),
                     "doc_selector": phase1.get("target_css_selector_documents", ""),
-                    "allow_insecure_https": phase1.get("allow_insecure_https", False),
-                    "allow_insecure_requests": phase1.get("allow_insecure_requests", False),
+                    "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
+                    "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
                     "use_proxy": use_proxy,
                     "extraction_params": json.dumps(extraction_params),
                     "expected_schema": phase2.get("expected_schema", ""),
