@@ -202,7 +202,7 @@ jobs:
       - name: Deploy via Git Pull on VPS
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 5
+          timeout_minutes: 10
           max_attempts: 3
           retry_wait_seconds: 10
           command: |
