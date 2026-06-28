@@ -100,6 +100,7 @@ services:
   # 3. Dagster Worker (Playwright)
   # ---------------------------------------------------------
   dagster-worker-playwright:
+    image: coeus-dagster-worker-playwright
     build:
       context: .
       dockerfile: Dockerfile.playwright_worker
@@ -111,7 +112,7 @@ services:
       DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
-      DAGSTER_CURRENT_IMAGE: "dagster-worker-playwright"
+      DAGSTER_CURRENT_IMAGE: "coeus-dagster-worker-playwright"
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       COEUS_API_URL: ${COEUS_API_URL}
     volumes:
