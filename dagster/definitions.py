@@ -185,7 +185,7 @@ class ScrapeConfig(dg.Config):
     allow_insecure_https: bool
     allow_insecure_requests: bool
     use_proxy: bool
-    extraction_params: str
+    extraction_params: Dict[str, Any]
 
 
 class ExtractConfig(dg.Config):
@@ -225,11 +225,13 @@ def raw_scraped_pages(
     # Run the container
     result = pipes_docker.run(
         context=context,
-        image=SCRAPER_IMAGE,
+        image=EXTRACTOR_IMAGE,
         env=_build_container_env(),
         extras=extras,
-        networks=[DOCKER_NETWORK],
-        volumes=[f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+        container_kwargs={
+            "network": DOCKER_NETWORK,
+            "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+        }
     )
     return result.get_materialize_result()
 
@@ -257,10 +259,13 @@ def extracted_structured_data(
         image=EXTRACTOR_IMAGE,
         env=_build_container_env(),
         extras=extras,
-        networks=[DOCKER_NETWORK],
-        volumes=[f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+        container_kwargs={
+            "network": DOCKER_NETWORK,
+            "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+        }
     )
     return result.get_materialize_result()
+
 
 
 # ---------------------------------------------------------------------------
