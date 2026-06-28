@@ -115,12 +115,21 @@ services:
       DAGSTER_CURRENT_IMAGE: "coeus-dagster-worker-playwright"
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       COEUS_API_URL: ${COEUS_API_URL}
+      # Images spawned via PipesDockerClient
+      COEUS_SCRAPER_IMAGE: "ghcr.io/8ohm-technologies/coeus-scraper:latest"
+      COEUS_EXTRACTOR_IMAGE: "ghcr.io/8ohm-technologies/coeus-extractor:latest"
+      COEUS_HOST_DATA_DIR: "${PWD}/scraping_data"
+      COEUS_DOCKER_NETWORK: "8ohm-network"
     volumes:
       - ./data:/app/data
       - huggingface_cache:/app/huggingface_cache
       - ./extraction_workers:/app/extraction_workers
       - ./misstcha:/app/misstcha
       - ./dagster/definitions.py:/opt/dagster/app/definitions.py:ro
+      # Docker socket so PipesDockerClient can spawn sibling containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared intermediate scraping data volume
+      - shared_scraping_data:${PWD}/scraping_data
     healthcheck:
       test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
       interval: 10s
@@ -278,6 +287,7 @@ services:
 volumes:
   huggingface_cache:
   postgres_data:
+  shared_scraping_data:
 
 networks:
   8ohm-network:

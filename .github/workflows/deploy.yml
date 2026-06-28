@@ -234,6 +234,9 @@ jobs:
               echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
               docker compose -f docker-compose.prod.yml pull
+              # Pull Pipes worker images (not compose services, spawned dynamically)
+              docker pull ghcr.io/8ohm-technologies/coeus-scraper:latest || true
+              docker pull ghcr.io/8ohm-technologies/coeus-extractor:latest || true
               docker compose -f docker-compose.prod.yml up -d
 
               docker exec dagster-daemon test -f /opt/dagster/dagster_home/workspace.yaml
