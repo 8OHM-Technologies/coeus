@@ -18,8 +18,12 @@ WORKDIR /opt/dagster/app
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir \
-    dagster
+    dagster \
+    dagster-postgres \
+    dagster-docker \
+    requests
 
+# Copy only what the gRPC code-server needs
 COPY dagster/definitions.py .
 
 EXPOSE 4000
