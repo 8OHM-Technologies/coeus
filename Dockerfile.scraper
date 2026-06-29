@@ -15,6 +15,8 @@ COPY requirements-scraper.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-scraper.txt
 
+RUN pip install PyGithub
+
 COPY extraction_workers/ /app/extraction_workers/
 
 COPY dagster/pipes/scraper_entrypoint.py /app/main.py
