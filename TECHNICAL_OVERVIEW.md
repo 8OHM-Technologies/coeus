@@ -185,7 +185,7 @@ If `requires_extraction` is enabled, a downstream extraction task is appended. T
 
 ## 4. 🚀 Execution & Configuration Fallbacks
 
-When an ephemeral worker starts, it loads its configuration dynamically using `fetch_pipeline_config()` in `extraction_workers/utils.py`.
+When an ephemeral worker starts, it loads its configuration dynamically using `fetch_pipeline_config()` in `extraction_workers/utils/utils.py`.
 
 ```
                   ┌─────────────────────────────┐

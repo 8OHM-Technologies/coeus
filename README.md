@@ -53,7 +53,7 @@ COEUS does not use a one-size-fits-all approach. Based on the target's complexit
 ### **3. Dynamic DAG Factory**
 `orchestration/airflow_dags/dynamic_factory.py` discovers `*_scraper.py` files at parse time, maps them to `scraper_type` keys, and builds a two-task DAG when `requires_extraction` is enabled: scrape → LLM extract. The factory now:
 - JSON-encodes `EXTRACTION_PARAMS` before injecting it into containers (no more `ast.literal_eval` needed in workers).
-- Sets `PYTHONPATH=/app:/app/extraction_workers` on every container so sibling modules (`utils.py`, `db.py`, `schemas.py`) and the `misstcha` package are always importable.
+- Sets `PYTHONPATH=/app:/app/extraction_workers` on every container so sibling modules (`utils/utils.py`, `db.py`, `schemas.py`) and the `misstcha` package are always importable.
 - Passes Postgres credentials (`POSTGRES_HOST/USER/PASSWORD/DB`) into LLM extractor containers.
 - Uses `docker_conn_id="github_container_registry"` for authenticated image pulls from GHCR.
 

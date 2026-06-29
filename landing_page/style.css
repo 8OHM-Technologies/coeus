@@ -30,7 +30,8 @@ html {
     scroll-behavior: smooth;
 }
 
-html, body {
+html,
+body {
     font-family: var(--font-body);
     background-color: var(--color-bg);
     color: var(--color-text-primary);
@@ -316,7 +317,8 @@ html, body {
     letter-spacing: -1.5px;
     color: var(--color-text-primary);
     max-width: 950px;
-    margin-bottom: 24px;
+    margin-top: 3rem;
+    margin-bottom: 3rem;
 }
 
 .hero-title .gradient-text {
@@ -327,12 +329,13 @@ html, body {
 }
 
 .hero-tagline {
-    font-size: 1.25rem;
     color: var(--color-text-secondary);
     max-width: 800px;
     margin-bottom: 48px;
     font-weight: 400;
     line-height: 1.7;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
 }
 
 /* --- Buttons --- */
@@ -833,7 +836,7 @@ html, body {
 
 /* --- Shop Section --- */
 .store-section {
-    padding: 60px 0 100px;
+    padding: 40px 0 80px;
     position: relative;
     z-index: 10;
 }
@@ -856,10 +859,11 @@ html, body {
 }
 
 .store-subtitle {
-    font-size: 1.1rem;
     color: var(--color-text-secondary);
     max-width: 650px;
     line-height: 1.6;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
 }
 
 .product-grid {
@@ -1179,7 +1183,7 @@ footer {
         padding: 6px 6px 6px 12px;
         gap: 6px;
     }
-    
+
     .nav-cta span {
         font-size: 0.8rem;
     }
@@ -1366,6 +1370,7 @@ footer {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);

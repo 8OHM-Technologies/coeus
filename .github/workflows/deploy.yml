@@ -66,7 +66,6 @@ jobs:
               - 'requirements-extractor.txt'
               - 'extraction_workers/llm_extractor.py'
               - 'extraction_workers/schemas.py'
-              - 'extraction_workers/utils.py'
               - 'extraction_workers/db.py'
               - 'extraction_workers/utils/**'
               - 'dagster/pipes/extractor_entrypoint.py'
