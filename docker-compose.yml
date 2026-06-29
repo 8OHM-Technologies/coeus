@@ -97,14 +97,14 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------
-  # 3. Dagster Worker (Playwright)
+  # 3. Dagster Worker
   # ---------------------------------------------------------
-  dagster-worker-playwright:
-    image: coeus-dagster-worker-playwright
+  dagster-worker:
+    image: coeus-dagster-worker
     build:
       context: .
-      dockerfile: Dockerfile.playwright_worker
-    container_name: dagster-worker-playwright
+      dockerfile: Dockerfile.worker
+    container_name: dagster-worker
     depends_on:
       - postgres
     restart: unless-stopped
@@ -112,7 +112,7 @@ services:
       DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
-      DAGSTER_CURRENT_IMAGE: "coeus-dagster-worker-playwright"
+      DAGSTER_CURRENT_IMAGE: "coeus-dagster-worker"
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       COEUS_API_URL: ${COEUS_API_URL}
       # Images spawned via PipesDockerClient
@@ -131,7 +131,7 @@ services:
       # Shared intermediate scraping data volume
       - shared_scraping_data:${PWD}/scraping_data
     healthcheck:
-      test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
+      test: [ "CMD", "dagster", "api", "grpc-health-check", "-p", "4000" ]
       interval: 10s
       timeout: 10s
       retries: 3
@@ -150,7 +150,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      dagster-worker-playwright:
+      dagster-worker:
         condition: service_started
     restart: unless-stopped
     entrypoint:
@@ -189,7 +189,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      dagster-worker-playwright:
+      dagster-worker:
         condition: service_started
     restart: on-failure
     entrypoint:

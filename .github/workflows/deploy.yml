@@ -9,9 +9,9 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      any_image_changed: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.playwright_worker == 'true' || steps.filter.outputs.dagster == 'true' || steps.filter.outputs.scraper == 'true' || steps.filter.outputs.extractor == 'true' }}
+      any_image_changed: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.worker == 'true' || steps.filter.outputs.dagster == 'true' || steps.filter.outputs.scraper == 'true' || steps.filter.outputs.extractor == 'true' }}
       app_changed: ${{ steps.filter.outputs.app }}
-      playwright_worker_changed: ${{ steps.filter.outputs.playwright_worker }}
+      worker_changed: ${{ steps.filter.outputs.worker }}
       dagster_changed: ${{ steps.filter.outputs.dagster }}
       scraper_changed: ${{ steps.filter.outputs.scraper }}
       extractor_changed: ${{ steps.filter.outputs.extractor }}
@@ -42,14 +42,14 @@ jobs:
               - 'ohmshop/**'
               - 'docker-compose*.yml'
               - '.github/workflows/deploy.yml'
-            playwright_worker:
-              - 'Dockerfile.playwright_worker'
-              - 'requirements-worker.txt'
+            dagster:
+              - 'Dockerfile.dagster'
               - 'dagster/**'
               - 'docker-compose*.yml'
               - '.github/workflows/deploy.yml'
-            dagster:
-              - 'Dockerfile.dagster'
+            worker:
+              - 'Dockerfile.worker'
+              - 'requirements-worker.txt'
               - 'dagster/**'
               - 'docker-compose*.yml'
               - '.github/workflows/deploy.yml'
@@ -113,14 +113,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and Push Dagster Worker Playwright
-        if: ${{ needs.detect-changes.outputs.playwright_worker_changed == 'true' }}
+      - name: Build and Push Dagster Worker
+        if: ${{ needs.detect-changes.outputs.worker_changed == 'true' }}
         uses: docker/build-push-action@1d0c110a5d679453d30b396aa86f6bb6ae377b76
         with:
           context: .
-          file: Dockerfile.playwright_worker
+          file: Dockerfile.worker
           push: true
-          tags: ghcr.io/8ohm-technologies/coeus-dagster-worker-playwright:latest
+          tags: ghcr.io/8ohm-technologies/coeus-dagster-worker:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

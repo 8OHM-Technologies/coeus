@@ -117,11 +117,11 @@ services:
       bash -c "python control_plane/manage.py migrate && python control_plane/manage.py collectstatic --noinput && gunicorn core.wsgi:application --chdir control_plane --bind 0.0.0.0:8001 --workers 3"
 
   # ---------------------------------------------------------
-  # 5.1 Dagster Worker (Playwright)
+  # 5.1 Dagster Worker
   # ---------------------------------------------------------
-  dagster-worker-playwright:
-    image: ghcr.io/8ohm-technologies/coeus-dagster-worker-playwright:latest
-    container_name: dagster-worker-playwright
+  dagster-worker:
+    image: ghcr.io/8ohm-technologies/coeus-dagster-worker:latest
+    container_name: dagster-worker
     depends_on:
       - postgres
     restart: unless-stopped
@@ -129,7 +129,7 @@ services:
       DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
-      DAGSTER_CURRENT_IMAGE: "ghcr.io/8ohm-technologies/coeus-dagster-worker-playwright:latest"
+      DAGSTER_CURRENT_IMAGE: "ghcr.io/8ohm-technologies/coeus-dagster-worker:latest"
       COEUS_API_URL: ${COEUS_API_URL}
       # Images spawned via PipesDockerClient
       COEUS_SCRAPER_IMAGE: "ghcr.io/8ohm-technologies/coeus-scraper:latest"
@@ -161,7 +161,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      dagster-worker-playwright:
+      dagster-worker:
         condition: service_started
     restart: unless-stopped
     entrypoint:
@@ -199,7 +199,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      dagster-worker-playwright:
+      dagster-worker:
         condition: service_started
     restart: on-failure
     entrypoint:
