@@ -124,7 +124,7 @@ services:
     container_name: dagster-worker
     depends_on:
       - postgres
-    restart: unless-
+    restart: unless-stopped
     env_file:
       - .env
     environment:
