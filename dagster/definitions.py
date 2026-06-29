@@ -7,6 +7,7 @@ from typing import Optional
 
 import dagster as dg
 from dagster_docker import PipesDockerClient
+from github import Github
 
 logger = logging.getLogger(__name__)
 
@@ -162,11 +163,9 @@ def _build_container_env() -> dict[str, str]:
         "DAGSTER_POSTGRES_DB",
         "COEUS_API_URL",
         "USE_PROXY",
-        "OPENAI_API_KEY",
         "GOOGLE_APPLICATION_CREDENTIALS",
     ]
     return {k: os.environ[k] for k in forwarded if k in os.environ}
-
 
 # ---------------------------------------------------------------------------
 # PartitionConfigs
@@ -183,10 +182,26 @@ def get_blueprint_for_partition(partition_key: str) -> Optional[dict]:
             return bp
     return None
 
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+
+@ResourceDefinition
+def github_pat_resource(_):
+    token = EnvVar("GITHUB_ACCESS_TOKEN").get_value()
+    return Github(token)
 
 # ---------------------------------------------------------------------------
 # Assets (Pipes Docker Execution)
 # ---------------------------------------------------------------------------
+
+@dg.asset(required_resource_keys={"github_api"})
+def fetch_github_repo_info(context):
+    github_client = context.resources.github_api
+    
+    repo = github_client.get_repo(os.environ["GITHUB_REPO"])
+    context.log.info(f"Successfully connected! Repository name: {repo.name}")
+    return repo.stargazers_count
 
 @dg.asset(
     name="raw_scraped_pages",
@@ -331,6 +346,7 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
 
 defs = dg.Definitions(
     assets=[
+        github_pat_resource,
         raw_scraped_pages,
         extracted_structured_data
     ],
@@ -339,5 +355,6 @@ defs = dg.Definitions(
     ],
     resources={
         "pipes_docker": PipesDockerClient(),
+        "github_api": github_pat_resource,
     },
 )

@@ -280,9 +280,57 @@ body {
 }
 
 @media (max-width: 768px) {
-    .glass-header {
-        flex-direction: column;
+    .dashboard-container {
+        padding: 1rem;
         gap: 1rem;
+    }
+
+    .glass-header {
+        padding: 1.2rem 1.5rem;
+        flex-direction: column;
+        gap: 0.75rem;
         text-align: center;
+    }
+
+    .logo {
+        gap: 0.5rem;
+    }
+
+    .logo h1 {
+        font-size: 1.4rem;
+    }
+
+    .subtitle {
+        font-size: 0.85rem;
+    }
+
+    .kpi-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .kpi-card {
+        padding: 1.2rem;
+    }
+
+    .kpi-value {
+        font-size: 2rem;
+    }
+
+    .charts-grid {
+        gap: 1rem;
+    }
+
+    .chart-card {
+        padding: 1.2rem;
+    }
+
+    .chart-wrapper {
+        height: 250px;
+    }
+
+    .glass-footer {
+        padding: 0.8rem;
+        font-size: 0.8rem;
     }
 }

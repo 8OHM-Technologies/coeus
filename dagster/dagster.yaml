@@ -27,14 +27,14 @@ run_launcher:
       - COEUS_HOST_DATA_DIR
       - COEUS_DOCKER_NETWORK
       - COEUS_API_URL
+      - GITHUB_ACCESS_TOKEN
+      - GITHUB_REPO
     network: 8ohm-network
     container_kwargs:
       volumes:
-        # Docker socket allows run-launcher-spawned containers to use PipesDockerClient
         - /var/run/docker.sock:/var/run/docker.sock
         - /tmp/io_manager_storage:/tmp/io_manager_storage
-        # Shared scraping data volume — scrapers write here, extractors read here
-        - /var/shared_scraping_data:/var/shared_scraping_data
+        - /data/dagster:/var/shared_scraping_data
 
 run_storage:
   module: dagster_postgres.run_storage

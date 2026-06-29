@@ -20,6 +20,12 @@ Chart.defaults.plugins.tooltip.cornerRadius = 8;
 Chart.defaults.plugins.tooltip.borderColor = 'rgba(255, 255, 255, 0.1)';
 Chart.defaults.plugins.tooltip.borderWidth = 1;
 
+let currentIsMobile = window.innerWidth < 768;
+Chart.defaults.font.size = currentIsMobile ? 10 : 12;
+
+let activeMetrics = null;
+const chartInstances = [];
+
 // Colors
 const colors = {
     cyan: '#00f7ff',
@@ -40,13 +46,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Load data from the locally included syntheticData variable (from sabinet_fake.js)
         const data = syntheticData;
 
-        const metrics = processLegalMetrics(data);
-        renderKPIs(metrics.kpis);
-        renderCharts(metrics);
+        activeMetrics = processLegalMetrics(data);
+        renderKPIs(activeMetrics.kpis);
+        renderCharts(activeMetrics);
 
     } catch (error) {
         console.error("Failed to load or process data:", error);
         document.getElementById('kpi-container').innerHTML = `<div class="kpi-card glass-card" style="grid-column: 1/-1; color: #F43F5E; text-align: center;">Error loading data: ${error.message}. Please serve this directory with a local web server (e.g. python -m http.server).</div>`;
+    }
+});
+
+// Watch resize to dynamically update layout
+window.addEventListener('resize', () => {
+    const isMobileNow = window.innerWidth < 768;
+    if (isMobileNow !== currentIsMobile) {
+        currentIsMobile = isMobileNow;
+        Chart.defaults.font.size = isMobileNow ? 10 : 12;
+        if (activeMetrics) {
+            chartInstances.forEach(chart => chart.destroy());
+            chartInstances.length = 0;
+            renderCharts(activeMetrics);
+        }
     }
 });
 
@@ -198,6 +218,11 @@ function renderKPIs(kpis) {
 }
 
 function renderCharts(metrics) {
+    const isMobile = window.innerWidth < 768;
+    const legendPosition = isMobile ? 'bottom' : 'right';
+    const legendPositionTop = isMobile ? 'bottom' : 'top';
+    const tickFontSize = isMobile ? 9 : 11;
+
     // Top Outcomes (Doughnut)
     createChart('outcomesChart', 'doughnut', {
         labels: Object.keys(metrics.litigation_trends.top_outcomes),
@@ -209,7 +234,15 @@ function renderCharts(metrics) {
         }]
     }, {
         cutout: '70%',
-        plugins: { legend: { position: 'right' } }
+        plugins: { 
+            legend: { 
+                position: legendPosition,
+                labels: {
+                    boxWidth: isMobile ? 12 : 24,
+                    padding: isMobile ? 8 : 10
+                }
+            } 
+        }
     });
 
     // Court Workload by Division (Bar)
@@ -224,7 +257,10 @@ function renderCharts(metrics) {
         }]
     }, {
         plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        scales: { 
+            y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: tickFontSize } } },
+            x: { ticks: { font: { size: tickFontSize } } }
+        }
     });
 
     // Top Subject Matters (Horizontal Bar)
@@ -239,7 +275,10 @@ function renderCharts(metrics) {
     }, {
         indexAxis: 'y',
         plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        scales: { 
+            x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: tickFontSize } } },
+            y: { ticks: { font: { size: tickFontSize } } }
+        }
     });
 
     // Trending Keywords (Polar Area)
@@ -261,8 +300,21 @@ function renderCharts(metrics) {
             borderColor: 'rgba(255,255,255,0.1)'
         }]
     }, {
-        scales: { r: { ticks: { display: false } } },
-        plugins: { legend: { position: 'right' } }
+        scales: { 
+            r: { 
+                ticks: { display: false },
+                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+            } 
+        },
+        plugins: { 
+            legend: { 
+                position: legendPosition,
+                labels: {
+                    boxWidth: isMobile ? 12 : 24,
+                    padding: isMobile ? 8 : 10
+                }
+            } 
+        }
     });
 
     // Judge Analytics (Stacked Bar)
@@ -296,7 +348,17 @@ function renderCharts(metrics) {
         }]
     }, {
         plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, max: 100, ticks: { callback: function (value) { return value + "%" } } } }
+        scales: { 
+            y: { 
+                beginAtZero: true, 
+                max: 100, 
+                ticks: { 
+                    callback: function (value) { return value + "%" },
+                    font: { size: tickFontSize }
+                } 
+            },
+            x: { ticks: { font: { size: tickFontSize } } }
+        }
     });
 
     // Subject Matter Trends over Time
@@ -317,8 +379,19 @@ function renderCharts(metrics) {
         labels: years,
         datasets: subjectDatasets
     }, {
-        plugins: { legend: { position: 'top' } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        plugins: { 
+            legend: { 
+                position: legendPositionTop,
+                labels: {
+                    boxWidth: isMobile ? 12 : 24,
+                    padding: isMobile ? 8 : 10
+                }
+            } 
+        },
+        scales: { 
+            y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: tickFontSize } } },
+            x: { ticks: { font: { size: tickFontSize } } }
+        }
     });
 
     const datasets = outcomesArray.map((outcome, idx) => {
@@ -334,17 +407,25 @@ function renderCharts(metrics) {
         labels: judges,
         datasets: datasets
     }, {
-        plugins: { legend: { position: 'top' } },
+        plugins: { 
+            legend: { 
+                position: legendPositionTop,
+                labels: {
+                    boxWidth: isMobile ? 12 : 24,
+                    padding: isMobile ? 8 : 10
+                }
+            } 
+        },
         scales: {
-            x: { stacked: true },
-            y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } }
+            x: { stacked: true, ticks: { font: { size: tickFontSize } } },
+            y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { size: tickFontSize } } }
         }
     });
 }
 
 function createChart(id, type, data, options = {}) {
     const ctx = document.getElementById(id).getContext('2d');
-    return new Chart(ctx, {
+    const chart = new Chart(ctx, {
         type: type,
         data: data,
         options: {
@@ -353,6 +434,8 @@ function createChart(id, type, data, options = {}) {
             ...options
         }
     });
+    chartInstances.push(chart);
+    return chart;
 }
 
 function getGradient(ctx, color1, color2, horizontal = false) {

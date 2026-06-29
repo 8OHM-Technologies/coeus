@@ -84,8 +84,37 @@
                     <i class="ph-light ph-arrow-up-right"></i>
                 </div>
             </button>
+
+            <button type="button" class="mobile-nav-toggle" id="mobileNavToggle" aria-label="Toggle navigation menu">
+                <i class="ph-light ph-list"></i>
+            </button>
         </nav>
     </header>
+
+    <!-- Mobile Menu Drawer -->
+    <div class="mobile-drawer-overlay" id="mobileDrawerOverlay"></div>
+    <div class="mobile-menu-drawer" id="mobileMenuDrawer">
+        <div class="mobile-drawer-header">
+            <a href="#" class="nav-brand">
+                <span class="brand-logo-dot"></span>
+                <span class="brand-text">Infinity Ohm</span>
+            </a>
+            <button type="button" class="close-drawer-btn" id="closeDrawerBtn" aria-label="Close navigation menu">
+                <i class="ph-light ph-x"></i>
+            </button>
+        </div>
+        <div class="mobile-drawer-links">
+            <a href="#philosophy" class="mobile-drawer-link">Our Philosophy</a>
+            <a href="#consumer" class="mobile-drawer-link">Consumer Division</a>
+            <a href="#b2b" class="mobile-drawer-link">B2B Division</a>
+        </div>
+        <button type="button" class="mobile-drawer-cta contact-trigger-btn" data-division="general">
+            <span>Enquire Now</span>
+            <div class="nav-cta-icon">
+                <i class="ph-light ph-arrow-up-right"></i>
+            </div>
+        </button>
+    </div>
 
     <main>
         <section class="hero container">
@@ -124,7 +153,7 @@
         </section>
 
         <section class="features-section container reveal-item" id="philosophy" aria-label="Our Philosophy">
-            <div style="text-align: center; margin-bottom: 32px">
+            <div class="section-header">
                 <div class="eyebrow-badge">
                     <span class="eyebrow-dot"></span>
                     <span class="eyebrow-text">Why Infinity Ohm?</span>
@@ -136,30 +165,14 @@
                     Grounding both divisions in strategic engineering, absolute data ownership, and open standards.
                 </p>
             </div>
-            <div class="bento-grid" style="margin-top: 24px">
+            <div class="bento-grid">
                 <div class="bezel-card-outer reveal-item">
-                    <div class="bezel-card-inner" style="padding: 32px">
-                        <h4 style="
-                                    font-family: var(--font-display);
-                                    font-size: 1.2rem;
-                                    font-weight: 700;
-                                    color: var(--color-text-primary);
-                                    margin-bottom: 12px;
-                                    display: flex;
-                                    gap: 10px;
-                                    align-items: center;
-                                ">
-                            <i class="ph-light ph-git-merge" style="
-                                        color: var(--color-accent-primary);
-                                        font-size: 1.4rem;
-                                    "></i>
+                    <div class="bezel-card-inner philosophy-card">
+                        <h4 class="philosophy-card-title">
+                            <i class="ph-light ph-git-merge philosophy-card-icon"></i>
                             Ecosystem Interoperability
                         </h4>
-                        <p style="
-                                    font-size: 0.9rem;
-                                    color: var(--color-text-secondary);
-                                    line-height: 1.6;
-                                ">
+                        <p class="philosophy-card-text">
                             We design and map technology infrastructure to break down the boundaries of rigid, isolated
                             tech stacks. By evaluating your complete operational footprint, we deliver custom blueprints
                             that tightly integrate legacy devices, edge network intelligence, and modern cloud
@@ -171,28 +184,12 @@
                 </div>
 
                 <div class="bezel-card-outer reveal-item">
-                    <div class="bezel-card-inner" style="padding: 32px">
-                        <h4 style="
-                                    font-family: var(--font-display);
-                                    font-size: 1.2rem;
-                                    font-weight: 700;
-                                    color: var(--color-text-primary);
-                                    margin-bottom: 12px;
-                                    display: flex;
-                                    gap: 10px;
-                                    align-items: center;
-                                ">
-                            <i class="ph-light ph-cloud-check" style="
-                                        color: var(--color-accent-primary);
-                                        font-size: 1.4rem;
-                                    "></i>
+                    <div class="bezel-card-inner philosophy-card">
+                        <h4 class="philosophy-card-title">
+                            <i class="ph-light ph-cloud-check philosophy-card-icon"></i>
                             Diagnostic Strategic Planning
                         </h4>
-                        <p style="
-                                    font-size: 0.9rem;
-                                    color: var(--color-text-secondary);
-                                    line-height: 1.6;
-                                ">
+                        <p class="philosophy-card-text">
                             Technology requires a visionary roadmap, not just superficial software installations. Every
                             engagement begins with an objective, comprehensive IT assessment designed to evaluate your
                             current digital ecosystem. We deliver highly actionable consulting reports that empower your
@@ -204,28 +201,12 @@
                 </div>
 
                 <div class="bezel-card-outer reveal-item">
-                    <div class="bezel-card-inner" style="padding: 32px">
-                        <h4 style="
-                                    font-family: var(--font-display);
-                                    font-size: 1.2rem;
-                                    font-weight: 700;
-                                    color: var(--color-text-primary);
-                                    margin-bottom: 12px;
-                                    display: flex;
-                                    gap: 10px;
-                                    align-items: center;
-                                ">
-                            <i class="ph-light ph-lock-key" style="
-                                        color: var(--color-accent-primary);
-                                        font-size: 1.4rem;
-                                    "></i>
+                    <div class="bezel-card-inner philosophy-card">
+                        <h4 class="philosophy-card-title">
+                            <i class="ph-light ph-lock-key philosophy-card-icon"></i>
                             Enterprise Architecture & Advisory
                         </h4>
-                        <p style="
-                                    font-size: 0.9rem;
-                                    color: var(--color-text-secondary);
-                                    line-height: 1.6;
-                                ">
+                        <p class="philosophy-card-text">
                             We act as your dedicated strategic engineering partner, moving far beyond high-level
                             consulting to seamlessly integrate technology directly into your business operations and
                             products. From deploying secure, on-premises enterprise AI models to conducting exhaustive
@@ -239,28 +220,12 @@
                 </div>
 
                 <div class="bezel-card-outer reveal-item">
-                    <div class="bezel-card-inner" style="padding: 32px">
-                        <h4 style="
-                                    font-family: var(--font-display);
-                                    font-size: 1.2rem;
-                                    font-weight: 700;
-                                    color: var(--color-text-primary);
-                                    margin-bottom: 12px;
-                                    display: flex;
-                                    gap: 10px;
-                                    align-items: center;
-                                ">
-                            <i class="ph-light ph-recycle" style="
-                                        color: var(--color-accent-primary);
-                                        font-size: 1.4rem;
-                                    "></i>
+                    <div class="bezel-card-inner philosophy-card">
+                        <h4 class="philosophy-card-title">
+                            <i class="ph-light ph-recycle philosophy-card-icon"></i>
                             Sustainability Through Retrofitting
                         </h4>
-                        <p style="
-                                    font-size: 0.9rem;
-                                    color: var(--color-text-secondary);
-                                    line-height: 1.6;
-                                ">
+                        <p class="philosophy-card-text">
                             We actively combat the growing e-waste crisis by extending the operational lifespan of
                             existing mechanical and electrical machinery. Through modular, smart retrofitting, we
                             seamlessly inject modern digital capabilities into legacy hardware. This sustainable
@@ -274,24 +239,13 @@
         </section>
 
         <section class="features-section container reveal-item" id="consumer" aria-label="Consumer Bento Grid">
-            <div style="text-align: center; margin-bottom: 32px">
+            <div class="section-header">
                 <div class="eyebrow-badge">
                     <span class="eyebrow-dot"></span>
                     <span class="eyebrow-text">Consumer Division</span>
                 </div>
-                <h2 style="
-                            font-family: var(--font-display);
-                            font-size: 2.5rem;
-                            color: var(--color-text-primary);
-                            margin-top: 16px;
-                        ">
-                    The Self-Hosted Home
-                </h2>
-                <p style="
-                            color: var(--color-text-secondary);
-                            max-width: 600px;
-                            margin: 0 auto;
-                        ">
+                <h2 class="section-title">The Self-Hosted Home</h2>
+                <p class="section-subtitle">
                     Self-hosting is the first step to true digital
                     sovereignty. Build your own secure, private ecosystem.
                 </p>
@@ -305,7 +259,7 @@
                         <h3 class="card-title">
                             OhmBase: DIY Sovereignty Blueprints
                         </h3>
-                        <p class="card-desc" style="margin-bottom: 20px">
+                        <p class="card-desc mb-20">
                             We provide the knowledge and tools for you to
                             host your own digital life. Our blueprints guide
                             you through deploying everything you need from
@@ -313,69 +267,32 @@
                             servers and more. All without mandatory cloud
                             lock-in or ring-fenced ecosystems.
                         </p>
-                        <ul style="
-                                    list-style: none;
-                                    display: flex;
-                                    flex-direction: column;
-                                    gap: 12px;
-                                    margin-bottom: 24px;
-                                    text-align: left;
-                                ">
-                            <li style="
-                                        display: flex;
-                                        gap: 10px;
-                                        align-items: flex-start;
-                                        font-size: 0.9rem;
-                                        color: var(--color-text-secondary);
-                                    ">
-                                <i class="ph-light ph-brain" style="
-                                            color: var(--color-accent-primary);
-                                            font-size: 1.2rem;
-                                            flex-shrink: 0;
-                                            margin-top: 2px;
-                                        "></i>
-                                <div>
-                                    <strong style="
-                                                color: var(
-                                                    --color-text-primary
-                                                );
-                                            ">Local AI & Automation:</strong>
-                                    Lay the foundation to run personalized
-                                    AI agents and complex automations that
-                                    process entirely within the walls of
-                                    your home.
+                        <ul class="card-feature-list mb-24">
+                            <li class="card-feature-item">
+                                <i class="ph-light ph-brain card-feature-icon"></i>
+                                <div class="card-feature-text-group">
+                                    <span class="card-feature-title">Local AI & Automation</span>
+                                    <span class="card-feature-desc">
+                                        Lay the foundation to run personalized
+                                        AI agents and complex automations that
+                                        process entirely within the walls of
+                                        your home.
+                                    </span>
                                 </div>
                             </li>
-                            <li style="
-                                        display: flex;
-                                        gap: 10px;
-                                        align-items: flex-start;
-                                        font-size: 0.9rem;
-                                        color: var(--color-text-secondary);
-                                    ">
-                                <i class="ph-light ph-plug" style="
-                                            color: var(--color-accent-primary);
-                                            font-size: 1.2rem;
-                                            flex-shrink: 0;
-                                            margin-top: 2px;
-                                        "></i>
-                                <div>
-                                    <strong style="
-                                                color: var(
-                                                    --color-text-primary
-                                                );
-                                            ">Legacy Integration:</strong>
-                                    Safely bridge older alarms, gate motors,
-                                    and sensors directly into your
-                                    self-hosted network.
+                            <li class="card-feature-item">
+                                <i class="ph-light ph-plug card-feature-icon"></i>
+                                <div class="card-feature-text-group">
+                                    <span class="card-feature-title">Legacy Integration</span>
+                                    <span class="card-feature-desc">
+                                        Safely bridge older alarms, gate motors,
+                                        and sensors directly into your
+                                        self-hosted network.
+                                    </span>
                                 </div>
                             </li>
                         </ul>
-                        <button type="button" class="btn btn-primary contact-trigger-btn" style="
-                                    align-self: flex-start;
-                                    margin-top: auto;
-                                    justify-content: space-between;
-                                ">
+                        <button type="button" class="btn btn-primary btn-card contact-trigger-btn">
                             <span>Access Blueprints</span>
                             <div class="btn-icon">
                                 <i class="ph-light ph-arrow-right"></i>
@@ -390,18 +307,14 @@
                             <i class="ph-light ph-shopping-bag"></i>
                         </div>
                         <h3 class="card-title">Edge Hardware Store</h3>
-                        <p class="card-desc" style="margin-bottom: 24px">
+                        <p class="card-desc mb-24">
                             Skip the compatibility research. We stock all of
                             the components you need to jumpstart your
                             self-hosting journey. In the future, this
                             identical foundation will seamlessly power our
                             in development all-in-one, open-standard smart home devices.
                         </p>
-                        <button type="button" class="btn btn-primary contact-trigger-btn" style="
-                                    align-self: flex-start;
-                                    margin-top: auto;
-                                    justify-content: space-between;
-                                ">
+                        <button type="button" class="btn btn-primary btn-card contact-trigger-btn">
                             <span>Browse Store</span>
                             <div class="btn-icon">
                                 <i class="ph-light ph-shopping-bag"></i>
@@ -462,12 +375,7 @@
                             running Home Assistant OS, using hardware
                             provided by you.
                         </p>
-                        <a href="requirements.html" style="
-                                    color: var(--color-accent-primary);
-                                    font-size: 0.75rem;
-                                    margin-bottom: 10px;
-                                    display: block;
-                                ">Check hardware requirements</a>
+                        <a href="requirements.html" class="requirements-link">Check hardware requirements</a>
                         <div class="product-meta">
                             <span class="product-price"></span>
                             <span class="product-status"><span class="status-dot"></span>Coming
@@ -509,24 +417,13 @@
         </section>
 
         <section class="features-section container reveal-item" id="b2b" aria-label="B2B Division">
-            <div style="text-align: center; margin-bottom: 32px">
-                <div class="eyebrow-badge">
-                    <span class="eyebrow-dot" style="background: var(--color-accent-secondary)"></span>
-                    <span class="eyebrow-text" style="color: var(--color-accent-secondary)">Enterprise Division</span>
+            <div class="section-header">
+                <div class="eyebrow-badge secondary">
+                    <span class="eyebrow-dot"></span>
+                    <span class="eyebrow-text">Enterprise Division</span>
                 </div>
-                <h2 style="
-                            font-family: var(--font-display);
-                            font-size: 2.5rem;
-                            color: var(--color-text-primary);
-                            margin-top: 16px;
-                        ">
-                    On-Premises Servers & Solutions
-                </h2>
-                <p style="
-                            color: var(--color-text-secondary);
-                            max-width: 650px;
-                            margin: 0 auto;
-                        ">
+                <h2 class="section-title">On-Premises Servers & Solutions</h2>
+                <p class="section-subtitle">
                     Translating the self-hosted philosophy into
                     enterprise-grade on-premises operations. From secure
                     internal document hosting to complex hybrid AI
@@ -534,24 +431,15 @@
                 </p>
             </div>
             <div class="bezel-card-outer col-span-12 reveal-item">
-                <div class="bezel-card-inner editorial-card" style="
-                            background: linear-gradient(
-                                180deg,
-                                #0b0e12 0%,
-                                #06080b 100%
-                            );
-                        ">
+                <div class="bezel-card-inner editorial-card">
                     <div class="editorial-left">
-                        <div class="card-icon" style="
-                                    background: rgba(141, 215, 218, 0.04);
-                                    border-color: rgba(141, 215, 218, 0.15);
-                                ">
-                            <i class="ph-light ph-git-branch" style="color: var(--color-accent-secondary)"></i>
+                        <div class="card-icon secondary">
+                            <i class="ph-light ph-git-branch"></i>
                         </div>
                         <h3 class="card-title">
                             Custom IT & AI Consultancy
                         </h3>
-                        <p class="card-desc" style="margin-bottom: 20px">
+                        <p class="card-desc mb-20">
                             We design specialized on-premises server
                             environments for businesses requiring strict
                             data sovereignty. Whether deploying simple
@@ -559,44 +447,27 @@
                             cloud-accelerated AI models with your local systems, we build solutions
                             tailored to your operations.
                         </p>
-                        <div style="
-                                    display: grid;
-                                    grid-template-columns: 1fr 1fr;
-                                    gap: 20px;
-                                    margin-bottom: 28px;
-                                    text-align: left;
-                                ">
-                            <div style="
-                                        font-size: 0.85rem;
-                                        color: var(--color-text-secondary);
-                                    ">
-                                <strong style="
-                                            color: var(--color-text-primary);
-                                            display: block;
-                                            margin-bottom: 4px;
-                                        ">Local-First Infrastructure:</strong>
-                                Designing zero-trust web topologies and
-                                internal services (document hosting,
-                                intranet) with cloud-level reliability but
-                                local-level privacy.
+                        <div class="editorial-grid">
+                            <div class="editorial-grid-item">
+                                <strong class="editorial-grid-title">Local-First Infrastructure</strong>
+                                <span class="editorial-grid-desc">
+                                    Designing zero-trust web topologies and
+                                    internal services (document hosting,
+                                    intranet) with cloud-level reliability but
+                                    local-level privacy.
+                                </span>
                             </div>
-                            <div style="
-                                        font-size: 0.85rem;
-                                        color: var(--color-text-secondary);
-                                    ">
-                                <strong style="
-                                            color: var(--color-text-primary);
-                                            display: block;
-                                            margin-bottom: 4px;
-                                        ">Hybrid AI Workflows:</strong>
-                                Seamlessly blending secure, localized LLM
-                                inference setups and RAG databases with
-                                powerful cloud integrations when
-                                intensive scale is required.
+                            <div class="editorial-grid-item">
+                                <strong class="editorial-grid-title">Hybrid AI Workflows</strong>
+                                <span class="editorial-grid-desc">
+                                    Seamlessly blending secure, localized LLM
+                                    inference setups and RAG databases with
+                                    powerful cloud integrations when
+                                    intensive scale is required.
+                                </span>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-primary contact-trigger-btn" data-division="architecture"
-                            style="align-self: flex-start">
+                        <button type="button" class="btn btn-primary btn-card contact-trigger-btn" data-division="architecture">
                             <span>Request Consultation</span>
                             <div class="btn-icon">
                                 <i class="ph-light ph-arrow-up-right"></i>
@@ -627,8 +498,7 @@
                             local environments or preferred cloud
                             warehouses.
                         </p>
-                        <button type="button" class="btn btn-primary dashboard-trigger-btn" data-division="architecture"
-                            style="align-self: flex-start; margin-top: 16px">
+                        <button type="button" class="btn btn-primary btn-card dashboard-trigger-btn" data-division="architecture">
                             <span>View Demo Dashboard</span>
                             <div class="btn-icon">
                                 <i class="ph-light ph-arrow-up-right"></i>
@@ -638,28 +508,15 @@
                 </div>
 
                 <div class="bezel-card-outer reveal-item accent-glow">
-                    <div class="bezel-card-inner" style="
-                                padding: 0;
-                                overflow: hidden;
-                                display: flex;
-                                flex-direction: column;
-                            ">
-                        <div class="mock-diagram" style="
-                                    border: none;
-                                    border-radius: 0;
-                                    height: 100%;
-                                ">
+                    <div class="bezel-card-inner card-no-padding">
+                        <div class="mock-diagram mock-diagram-flat">
                             <div class="mock-header">
                                 <span class="mock-dot red"></span>
                                 <span class="mock-dot yellow"></span>
                                 <span class="mock-dot green"></span>
                                 <span class="mock-title">example_judgement_entity.json</span>
                             </div>
-                            <pre class="mock-code" style="
-                                        border-radius: 0;
-                                        margin: 0;
-                                        height: 100%;
-                                    "><code style="font-size: 0.75rem; text-align: left;">
+                            <pre class="mock-code mock-code-flat"><code class="mock-code-inner">
 {
     <span class="yaml-key">"applicant_plaintiff":</span> <span class="yaml-val">"An Employee..."</span>,
     <span class="yaml-key">"respondent_defendant":</span> <span class="yaml-val">"Big Company (Pty) Ltd t/a..."</span>,
@@ -680,12 +537,7 @@
                 </div>
 
                 <div class="bezel-card-outer reveal-item accent-glow">
-                    <div class="bezel-card-inner" style="
-                                padding: 0;
-                                overflow: hidden;
-                                display: flex;
-                                flex-direction: column;
-                            ">
+                    <div class="bezel-card-inner card-no-padding">
                         <div class="editorial-right" id="data-engineering">
                             <div class="coeus-diagram-container">
                                 <svg class="coeus-svg" viewBox="0 0 500 300" fill="none"
@@ -751,24 +603,15 @@
         </section>
 
         <section class="features-section container reveal-item" id="roadmap" aria-label="Future Vision and Roadmap">
-            <div style="text-align: center; margin-bottom: 32px">
-                <div class="eyebrow-badge">
-                    <span class="eyebrow-dot" style="background: var(--color-accent-secondary)"></span>
-                    <span class="eyebrow-text" style="color: var(--color-accent-secondary)">The Infinity Roadmap</span>
+            <div class="section-header">
+                <div class="eyebrow-badge secondary">
+                    <span class="eyebrow-dot"></span>
+                    <span class="eyebrow-text">The Infinity Roadmap</span>
                 </div>
-                <h2 style="
-                            font-family: var(--font-display);
-                            font-size: 2.5rem;
-                            color: var(--color-text-primary);
-                            margin-top: 16px;
-                        ">
+                <h2 class="section-title">
                     Building the Sovereign Future
                 </h2>
-                <p style="
-                            color: var(--color-text-secondary);
-                            max-width: 650px;
-                            margin: 0 auto;
-                        ">
+                <p class="section-subtitle">
                     Our current DIY kits and enterprise data pipelines are
                     the foundation. Here is exactly where our technology is
                     heading next.
@@ -777,14 +620,14 @@
 
             <div class="bento-grid">
                 <div class="bezel-card-outer reveal-item">
-                    <div class="bezel-card-inner" style="padding: 40px">
+                    <div class="bezel-card-inner card-padding-large">
                         <div class="card-icon">
                             <i class="ph-light ph-cpu"></i>
                         </div>
                         <h3 class="card-title">
                             Hardware: The Sovereign Smart Home Controller
                         </h3>
-                        <p class="card-desc" style="margin-bottom: 0">
+                        <p class="card-desc mb-0">
                             Today, we supply hardware kits,
                             microcontrollers, and IoT components to support
                             our self-hosting guides.
@@ -800,7 +643,7 @@
                 </div>
 
                 <div class="bezel-card-outer reveal-item accent-glow">
-                    <div class="bezel-card-inner" style="padding: 40px">
+                    <div class="bezel-card-inner card-padding-large">
                         <div class="card-icon">
                             <i class="ph-light ph-brain"></i>
                         </div>
@@ -808,7 +651,7 @@
                             Software: The South African Labour Law AI
                             Assistant
                         </h3>
-                        <p class="card-desc" style="margin-bottom: 0">
+                        <p class="card-desc mb-0">
                             Our in-house data acquisition pipeline currently
                             ingests and structures complex South African
                             legal and labor records and court rolls.
@@ -825,48 +668,24 @@
         </section>
 
         <section class="faq-section container reveal-item" id="faq" aria-label="Technical FAQs">
-            <div style="text-align: center; margin-bottom: 56px">
+            <div class="section-header">
                 <div class="eyebrow-badge">
                     <span class="eyebrow-dot"></span>
                     <span class="eyebrow-text">Infinity Ohm FAQs</span>
                 </div>
-                <h2 style="
-                            font-family: var(--font-display);
-                            font-size: 3rem;
-                            font-weight: 800;
-                            line-height: 1.2;
-                            color: var(--color-text-primary);
-                            margin: 16px 0;
-                        ">
+                <h2 class="section-title section-title-large">
                     Frequently Asked Questions
                 </h2>
             </div>
 
             <div class="faq-grid">
                 <div class="bezel-card-outer reveal-item">
-                    <div class="bezel-card-inner" style="padding: 32px">
-                        <h4 style="
-                                    font-family: var(--font-display);
-                                    font-size: 1.15rem;
-                                    font-weight: 700;
-                                    color: var(--color-text-primary);
-                                    margin-bottom: 12px;
-                                    display: flex;
-                                    gap: 10px;
-                                    align-items: center;
-                                ">
-                            <i class="ph-light ph-recycle" style="
-                                        color: var(--color-accent-primary);
-                                        font-size: 1.4rem;
-                                    "></i>
+                    <div class="bezel-card-inner faq-card-inner">
+                        <h4 class="faq-card-title">
+                            <i class="ph-light ph-recycle faq-card-icon"></i>
                             How do the Consumer and B2B divisions relate?
                         </h4>
-                        <p style="
-                                    font-size: 0.9rem;
-                                    color: var(--color-text-secondary);
-                                    line-height: 1.6;
-                                    padding-left: 32px;
-                                ">
+                        <p class="faq-card-text">
                             Both divisions are built on the identical core
                             philosophy: achieving true digital sovereignty
                             through self-hosting and on-premises control.
@@ -1002,6 +821,41 @@
             const successCloseBtn =
                 document.getElementById("successCloseBtn");
 
+            // Mobile navigation drawer toggle logic
+            const mobileNavToggle = document.getElementById("mobileNavToggle");
+            const mobileMenuDrawer = document.getElementById("mobileMenuDrawer");
+            const mobileDrawerOverlay = document.getElementById("mobileDrawerOverlay");
+            const closeDrawerBtn = document.getElementById("closeDrawerBtn");
+            const mobileDrawerLinks = document.querySelectorAll(".mobile-drawer-link");
+
+            const openDrawer = () => {
+                if (mobileMenuDrawer) mobileMenuDrawer.classList.add("active");
+                if (mobileDrawerOverlay) mobileDrawerOverlay.classList.add("active");
+                document.body.style.overflow = "hidden";
+            };
+
+            const closeDrawer = () => {
+                if (mobileMenuDrawer) mobileMenuDrawer.classList.remove("active");
+                if (mobileDrawerOverlay) mobileDrawerOverlay.classList.remove("active");
+                // Only restore body overflow if contact modal is NOT active
+                if (modal && !modal.classList.contains("active")) {
+                    document.body.style.overflow = "auto";
+                }
+            };
+
+            if (mobileNavToggle) {
+                mobileNavToggle.addEventListener("click", openDrawer);
+            }
+            if (closeDrawerBtn) {
+                closeDrawerBtn.addEventListener("click", closeDrawer);
+            }
+            if (mobileDrawerOverlay) {
+                mobileDrawerOverlay.addEventListener("click", closeDrawer);
+            }
+            mobileDrawerLinks.forEach(link => {
+                link.addEventListener("click", closeDrawer);
+            });
+
             // Open demo dashboard
             document
                 .querySelectorAll(".dashboard-trigger-btn")
@@ -1054,6 +908,14 @@
                             } else {
                                 divisionSelect.value = division;
                             }
+                        }
+
+                        // Close mobile drawer if it's open
+                        if (mobileMenuDrawer) {
+                            mobileMenuDrawer.classList.remove("active");
+                        }
+                        if (mobileDrawerOverlay) {
+                            mobileDrawerOverlay.classList.remove("active");
                         }
 
                         modal.classList.add("active");
