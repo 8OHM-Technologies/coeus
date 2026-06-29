@@ -186,9 +186,9 @@ def get_blueprint_for_partition(partition_key: str) -> Optional[dict]:
 # Resources
 # ---------------------------------------------------------------------------
 
-@ResourceDefinition
+@dg.resource
 def github_pat_resource(_):
-    token = EnvVar("GITHUB_ACCESS_TOKEN").get_value()
+    token = dg.EnvVar("GITHUB_ACCESS_TOKEN").get_value()
     return Github(token)
 
 # ---------------------------------------------------------------------------
@@ -346,7 +346,7 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
 
 defs = dg.Definitions(
     assets=[
-        github_pat_resource,
+        fetch_github_repo_info,
         raw_scraped_pages,
         extracted_structured_data
     ],

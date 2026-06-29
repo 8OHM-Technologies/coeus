@@ -163,7 +163,6 @@ body {
 /* --- Navigation --- */
 .navbar-wrapper {
     position: fixed;
-    top: 30px;
     left: 0;
     width: 100%;
     z-index: 100;
@@ -276,7 +275,7 @@ body {
 .hero {
     position: relative;
     z-index: 10;
-    padding: 190px 0 80px;
+    padding-top: 5rem;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -418,7 +417,8 @@ body {
 .features-section {
     position: relative;
     z-index: 10;
-    padding: 40px 0 60px;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
 }
 
 .bento-grid {
@@ -1194,16 +1194,12 @@ footer {
     }
 
     .hero {
-        padding: 160px 0 60px;
+        padding: 120px 0 60px;
     }
 
     .hero-title {
         font-size: 2.4rem;
         letter-spacing: -1px;
-    }
-
-    .hero-tagline {
-        font-size: 1.1rem;
     }
 
     .cta-group {

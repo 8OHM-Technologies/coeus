@@ -253,7 +253,7 @@ jobs:
               docker compose -f docker-compose.prod.yml up -d
 
               docker exec dagster-daemon test -f /opt/dagster/dagster_home/workspace.yaml
-              docker exec dagster-worker-playwright test -f /opt/dagster/app/definitions.py
+              docker exec dagster-worker test -f /opt/dagster/app/definitions.py
 
               docker image prune -f
             EOF
