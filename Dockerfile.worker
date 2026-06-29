@@ -21,7 +21,8 @@ RUN pip install --no-cache-dir --upgrade pip \
     dagster \
     dagster-postgres \
     dagster-docker \
-    requests
+    requests \
+    PyGithub 
 
 # Copy only what the gRPC code-server needs
 COPY dagster/definitions.py .
