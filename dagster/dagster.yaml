@@ -22,8 +22,8 @@ run_launcher:
       - DAGSTER_POSTGRES_PASSWORD
       - DAGSTER_POSTGRES_DB
       # PipesDockerClient image configuration
-      - COEUS_SCRAPER_IMAGE
-      - COEUS_EXTRACTOR_IMAGE
+      - DAGSTER_SCRAPER_IMAGE
+      - DAGSTER_EXTRACTOR_IMAGE
       - COEUS_HOST_DATA_DIR
       - COEUS_DOCKER_NETWORK
       - COEUS_API_URL

@@ -73,26 +73,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------
-  # 3. Marketing / Main Landing Page (Nginx)
-  # ---------------------------------------------------------
-  landing-page:
-    image: nginx:alpine
-    container_name: landing-page
-    restart: unless-stopped
-    volumes:
-      - /home/deploy-user/coeus/landing_page:/usr/share/nginx/html:ro
-    networks:
-      - 8ohm-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.landing-page.rule=Host(`8ohm.co.za`) || Host(`www.8ohm.co.za`)"
-      - "traefik.http.routers.landing-page.entrypoints=websecure"
-      - "traefik.http.routers.landing-page.tls=true"
-      - "traefik.http.services.landing-page.loadbalancer.server.port=80"
-      - "traefik.docker.network=8ohm-network"
-
-  # ---------------------------------------------------------
-  # 4. Django Application Backend (Control Plane)
+  # 3. Django Application Backend (Control Plane)
   # ---------------------------------------------------------
   control-plane:
     image: ghcr.io/8ohm-technologies/coeus-app:latest
@@ -117,7 +98,7 @@ services:
       bash -c "python control_plane/manage.py migrate && python control_plane/manage.py collectstatic --noinput && gunicorn core.wsgi:application --chdir control_plane --bind 0.0.0.0:8001 --workers 3"
 
   # ---------------------------------------------------------
-  # 5.1 Dagster Worker
+  # 4.1 Dagster Worker
   # ---------------------------------------------------------
   dagster-worker:
     image: ghcr.io/8ohm-technologies/coeus-dagster-worker:latest
@@ -128,23 +109,10 @@ services:
     env_file:
       - .env
     environment:
-      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
-      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
-      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
       DAGSTER_CURRENT_IMAGE: "ghcr.io/8ohm-technologies/coeus-dagster-worker:latest"
-      COEUS_API_URL: ${COEUS_API_URL}
-      # Images spawned via PipesDockerClient
-      COEUS_SCRAPER_IMAGE: "ghcr.io/8ohm-technologies/coeus-scraper:latest"
-      COEUS_EXTRACTOR_IMAGE: "ghcr.io/8ohm-technologies/coeus-extractor:latest"
-      COEUS_HOST_DATA_DIR: "/var/shared_scraping_data"
-      COEUS_DOCKER_NETWORK: "8ohm-network"
     volumes:
-      # Cache dir for blueprint API responses
-      - /home/deploy-user/coeus/data:/app/data
-      # Docker socket so PipesDockerClient can spawn sibling scraper/extractor containers
+      - ./data:/var/shared_scraping_data
       - /var/run/docker.sock:/var/run/docker.sock
-      # Shared intermediate scraping data volume
-      - shared_scraping_data:/var/shared_scraping_data
     healthcheck:
       test: [ "CMD", "dagster", "api", "grpc-health-check", "-p", "4000" ]
       interval: 10s
@@ -155,7 +123,7 @@ services:
       - 8ohm-network
 
   # ---------------------------------------------------------
-  # 5a. Dagster Webserver
+  # 4.2 Dagster Webserver
   # ---------------------------------------------------------
   dagster-webserver:
     image: ghcr.io/8ohm-technologies/coeus-dagster-webserver:latest
@@ -174,11 +142,8 @@ services:
       - "3000"
       - -w
       - workspace.yaml
-    environment:
-      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
-      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
-      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
-      COEUS_API_URL: ${COEUS_API_URL}
+    env_file:
+      - .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/io_manager_storage:/tmp/io_manager_storage
@@ -193,7 +158,7 @@ services:
       - "traefik.docker.network=8ohm-network"
 
   # ---------------------------------------------------------
-  # 5b. Dagster Daemon
+  # 4.3 Dagster Daemon
   # ---------------------------------------------------------
   dagster-daemon:
     image: ghcr.io/8ohm-technologies/coeus-dagster-daemon:latest
@@ -207,24 +172,21 @@ services:
     entrypoint:
       - dagster-daemon
       - run
+    env_file:
+      - .env
     environment:
-      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
-      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
-      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
-      COEUS_API_URL: ${COEUS_API_URL}
-      COEUS_SCRAPER_IMAGE: "ghcr.io/8ohm-technologies/coeus-scraper:latest"
-      COEUS_EXTRACTOR_IMAGE: "ghcr.io/8ohm-technologies/coeus-extractor:latest"
-      COEUS_HOST_DATA_DIR: "/var/shared_scraping_data"
-      COEUS_DOCKER_NETWORK: "8ohm-network"
+      DAGSTER_CURRENT_IMAGE: "ghcr.io/8ohm-technologies/coeus-dagster-daemon:latest"
+      DAGSTER_SCRAPER_IMAGE: "ghcr.io/8ohm-technologies/coeus-scraper:latest"
+      DAGSTER_EXTRACTOR_IMAGE: "ghcr.io/8ohm-technologies/coeus-extractor:latest"
     volumes:
+      - ./data:/var/shared_scraping_data
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/io_manager_storage:/tmp/io_manager_storage
-      - /data/dagster:/var/shared_scraping_data
     networks:
       - 8ohm-network
 
   # ---------------------------------------------------------
-  # 6a. ohmbase Application (BookStack)
+  # 5.1 ohmbase Application (BookStack)
   # ---------------------------------------------------------
   ohmbase:
     image: ghcr.io/linuxserver/bookstack:latest
@@ -256,7 +218,7 @@ services:
       - "traefik.docker.network=8ohm-network"
 
   # ---------------------------------------------------------
-  # 6b. ohmbase MariaDB
+  # 5.2 ohmbase MariaDB
   # ---------------------------------------------------------
   ohmbase-mariadb:
     image: ghcr.io/linuxserver/mariadb:latest
@@ -278,15 +240,7 @@ services:
 volumes:
   traefik_certificates:
   static_assets:
-  postgres_data: # Intermediate scraping data shared between scraper and extractor containers.
-
-  # Bind-mounted to /var/shared_scraping_data on the host (must exist: mkdir -p /var/shared_scraping_data && chmod 777 /var/shared_scraping_data)
-  shared_scraping_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: /var/shared_scraping_data
-      o: bind
+  postgres_data:
 
 networks:
   8ohm-network:

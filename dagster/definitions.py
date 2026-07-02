@@ -20,11 +20,11 @@ CACHE_FILE = "/app/data/coeus_blueprints_cache.json"
 CACHE_TTL = 300  # 5 minutes
 
 SCRAPER_IMAGE = os.getenv(
-    "COEUS_SCRAPER_IMAGE",
+    "DAGSTER_SCRAPER_IMAGE",
     "ghcr.io/8ohm-technologies/coeus-scraper:latest",
 )
 EXTRACTOR_IMAGE = os.getenv(
-    "COEUS_EXTRACTOR_IMAGE",
+    "DAGSTER_EXTRACTOR_IMAGE",
     "ghcr.io/8ohm-technologies/coeus-extractor:latest",
 )
 
@@ -247,6 +247,7 @@ def raw_scraped_pages(
         image=SCRAPER_IMAGE, # Fixed: Changed from EXTRACTOR_IMAGE to match scraper asset intent
         env=_build_container_env(),
         extras=extras,
+        log_forwarders=[PipesDefaultLogForwarder()], 
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
@@ -306,6 +307,7 @@ def extracted_structured_data(
         image=EXTRACTOR_IMAGE,
         env=_build_container_env(),
         extras=extras,
+        log_forwarders=[PipesDefaultLogForwarder()], 
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],

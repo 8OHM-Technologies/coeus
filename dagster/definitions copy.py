@@ -20,11 +20,11 @@ CACHE_TTL = 300  # 5 minutes
 
 # Container images spawned by PipesDockerClient
 SCRAPER_IMAGE = os.getenv(
-    "COEUS_SCRAPER_IMAGE",
+    "DAGSTER_SCRAPER_IMAGE",
     "ghcr.io/8ohm-technologies/coeus-scraper:latest",
 )
 EXTRACTOR_IMAGE = os.getenv(
-    "COEUS_EXTRACTOR_IMAGE",
+    "DAGSTER_EXTRACTOR_IMAGE",
     "ghcr.io/8ohm-technologies/coeus-extractor:latest",
 )
 

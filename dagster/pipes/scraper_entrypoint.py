@@ -58,19 +58,18 @@ def _run_subprocess(cmd: list[str], extra_env: dict[str, str]) -> None:
 
 def run_scraper(pipes: PipesContext) -> None:
     """Main scraping logic — dispatches to the correct worker script."""
-    context = PipesContext.get()
 
-    partition_key: str = context.get_extra("partition_key")
-    scraper_type: str = context.get_extra("scraper_type")
-    start_url: str = context.get_extra("start_url")
-    document_type: str = context.get_extra("document_type")
-    cat_selector: str = context.get_extra("cat_selector")
-    doc_selector: str = context.get_extra("doc_selector")
-    allow_insecure_https: bool = context.get_extra("allow_insecure_https")
-    allow_insecure_requests: bool = context.get_extra("allow_insecure_requests")
-    use_proxy: bool = context.get_extra("use_proxy")
-    extraction_params_raw: str = context.get_extra("extraction_params")
-    output_dir: str = context.get_extra("output_dir")
+    partition_key: str = pipes.get_extra("partition_key")
+    scraper_type: str = pipes.get_extra("scraper_type")
+    start_url: str = pipes.get_extra("start_url")
+    document_type: str = pipes.get_extra("document_type")
+    cat_selector: str = pipes.get_extra("cat_selector")
+    doc_selector: str = pipes.get_extra("doc_selector")
+    allow_insecure_https: bool = pipes.get_extra("allow_insecure_https")
+    allow_insecure_requests: bool = pipes.get_extra("allow_insecure_requests")
+    use_proxy: bool = pipes.get_extra("use_proxy")
+    extraction_params_raw: str = pipes.get_extra("extraction_params")
+    output_dir: str = pipes.get_extra("output_dir")
 
     extraction_params: dict = json.loads(extraction_params_raw) if extraction_params_raw else {}
 

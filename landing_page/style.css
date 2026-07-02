@@ -28,6 +28,7 @@
 
 html {
     scroll-behavior: smooth;
+    scroll-padding-top: 96px;
 }
 
 html,
@@ -37,6 +38,8 @@ body {
     color: var(--color-text-primary);
     line-height: 1.6;
     overflow-x: hidden;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
     -webkit-font-smoothing: antialiased;
 }
 
@@ -47,17 +50,12 @@ body {
     width: 100%;
 }
 
-/* --- Section Header Styles --- */
 .section-header {
     text-align: center;
     margin-bottom: 40px;
     display: flex;
     flex-direction: column;
     align-items: center;
-}
-
-.section-header-spacing {
-    margin-top: 100px;
 }
 
 .section-title {
@@ -78,25 +76,6 @@ body {
     color: var(--color-text-secondary);
     max-width: 600px;
     margin: 8px auto 0;
-}
-
-
-/* --- Compliance / Legal Safety Bar --- */
-.compliance-banner {
-    background: rgba(255, 136, 0, 0.07);
-    border-bottom: 1px solid rgba(255, 136, 0, 0.2);
-    padding: 10px 24px;
-    text-align: center;
-    font-size: 0.78rem;
-    color: #ffb066;
-    font-weight: 500;
-    position: relative;
-    z-index: 101;
-    letter-spacing: 0.3px;
-}
-
-.compliance-banner strong {
-    color: var(--color-text-primary);
 }
 
 /* --- Background Visuals --- */
@@ -273,13 +252,18 @@ body {
 
 /* --- Hero Section --- */
 .hero {
+    height: 100vh;
+    width: 100vw;
     position: relative;
     z-index: 10;
-    padding-top: 5rem;
+    padding-top: 8rem;
+    padding-bottom: 4rem;
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
 }
 
 .eyebrow-badge {
@@ -306,6 +290,19 @@ body {
     color: var(--color-accent-primary);
     letter-spacing: 2px;
     text-transform: uppercase;
+}
+
+.eyebrow-badge.secondary {
+    background: rgba(141, 215, 218, 0.06);
+    border-color: rgba(141, 215, 218, 0.15);
+}
+
+.eyebrow-badge.secondary .eyebrow-dot {
+    background: var(--color-accent-secondary);
+}
+
+.eyebrow-badge.secondary .eyebrow-text {
+    color: var(--color-accent-secondary);
 }
 
 .hero-title {
@@ -360,6 +357,12 @@ body {
     cursor: pointer;
     border: none;
     outline: none;
+}
+
+.btn-align-bottom {
+    align-self: flex-start;
+    margin-top: auto;
+    width: fit-content;
 }
 
 .btn-primary {
@@ -417,8 +420,13 @@ body {
 .features-section {
     position: relative;
     z-index: 10;
+    padding-bottom: 4rem;
     padding-left: 0.5rem;
     padding-right: 0.5rem;
+    height: 100vh;
+    width: 100%;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
 }
 
 .bento-grid {
@@ -477,6 +485,17 @@ body {
     position: relative;
     overflow: hidden;
 }
+
+.bezel-card-inner.flush {
+    padding: 0;
+}
+
+.bezel-card-inner.flush .mock-diagram {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
 
 .card-icon {
     width: 52px;
@@ -538,6 +557,76 @@ body {
     color: var(--color-text-secondary);
     font-size: 0.95rem;
     line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.card-desc:last-child {
+    margin-bottom: 0;
+}
+
+.card-title-small {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.card-title-small i {
+    color: var(--color-accent-primary);
+    font-size: 1.4rem;
+}
+
+.bezel-card-outer.accent-glow .card-title-small i {
+    color: var(--color-accent-secondary);
+}
+
+.card-desc-small {
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+}
+
+.card-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+    text-align: left;
+}
+
+.card-list-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+}
+
+.card-list-icon {
+    color: var(--color-accent-primary);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.bezel-card-outer.accent-glow .card-list-icon {
+    color: var(--color-accent-secondary);
+}
+
+.card-list-item strong {
+    color: var(--color-text-primary);
+}
+
+.product-link {
+    color: var(--color-accent-primary);
+    font-size: 0.75rem;
+    margin-bottom: 10px;
+    display: block;
 }
 
 /* --- Editorial Layout (B2B Structural Split) --- */
@@ -546,6 +635,7 @@ body {
     gap: 48px;
     align-items: stretch;
     padding: 48px;
+    background: linear-gradient(180deg, #0b0e12 0%, #06080b 100%);
 }
 
 .editorial-left {
@@ -558,6 +648,25 @@ body {
 .editorial-left .btn {
     margin-top: 36px;
     align-self: flex-start;
+}
+
+.editorial-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 28px;
+    text-align: left;
+}
+
+.editorial-grid-item {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+}
+
+.editorial-grid-item strong {
+    color: var(--color-text-primary);
+    display: block;
+    margin-bottom: 4px;
 }
 
 .editorial-right {
@@ -806,6 +915,12 @@ body {
     line-height: 1.5;
     background: #07090c;
     height: 100%;
+    border-radius: 0;
+}
+
+.mock-code code {
+    font-size: 0.75rem;
+    text-align: left;
 }
 
 .mock-code .yaml-key {
@@ -816,29 +931,17 @@ body {
     color: #ffffff;
 }
 
-.mock-code .yaml-comment {
-    color: var(--color-text-muted);
-}
-
-/* --- Sovereign Paradigm & Proofs --- */
-.proof-section {
-    position: relative;
-    z-index: 10;
-    padding: 40px 0 80px;
-}
-
-.proof-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 24px;
-    margin-top: 40px;
-}
-
 /* --- Shop Section --- */
 .store-section {
-    padding: 40px 0 80px;
     position: relative;
     z-index: 10;
+    padding-bottom: 4rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    height: 100vh;
+    width: 100%;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
 }
 
 .store-header {
@@ -960,15 +1063,12 @@ body {
     font-weight: 600;
 }
 
-.buy-btn {
-    width: 100%;
-    justify-content: space-between;
-    padding: 8px 8px 8px 20px;
-}
-
 /* --- FAQ Grid --- */
 .faq-section {
-    padding: 40px 0 120px;
+    height: 100vh;
+    width: 100%;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
 }
 
 .faq-grid {
@@ -977,6 +1077,17 @@ body {
     gap: 24px;
     text-align: left;
     margin-top: 40px;
+}
+
+.faq-grid .bezel-card-inner {
+    padding: 32px;
+}
+
+.faq-answer {
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    padding-left: 32px;
 }
 
 /* --- Footer --- */
@@ -1208,6 +1319,28 @@ footer {
         max-width: 320px;
     }
 
+    html,
+    body {
+        scroll-snap-type: none;
+    }
+
+    .hero,
+    .features-section,
+    .store-section,
+    .faq-section {
+        height: auto;
+        min-height: auto;
+        scroll-snap-align: none;
+        scroll-snap-stop: normal;
+    }
+
+    .features-section,
+    .store-section,
+    .faq-section {
+        padding-top: 80px;
+        padding-bottom: 80px;
+    }
+
     .btn {
         width: 100%;
         justify-content: space-between;
@@ -1246,6 +1379,11 @@ footer {
 
     .editorial-right {
         min-width: 100%;
+    }
+
+    .editorial-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
     }
 
     .nav-links {
