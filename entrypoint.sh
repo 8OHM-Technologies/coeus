@@ -3,8 +3,10 @@ set -e
 
 echo "Running container environment setup..."
 
-echo "Waiting for database..."
-while ! nc -z $POSTGRES_HOST $POSTGRES_PORT; do sleep 0.1; done
+while ! (timeout 1 bash -c '</dev/null > /dev/tcp/postgres/5432') 2>/dev/null; do
+  echo "Waiting for Postgres..."
+  sleep 1
+done
 
 echo "Applying database migrations..."
 python control_plane/manage.py migrate
