@@ -238,13 +238,14 @@ def raw_scraped_pages(
         "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
         "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
         "use_proxy": use_proxy,
-        "extraction_params": json.dumps(extraction_params),  # Serialize to JSON string for the entrypoint
+        "output_dir": CONTAINER_DATA_DIR,
+        "extraction_params": json.dumps(extraction_params),
         "partition_key": context.partition_key,
     }
 
     result = pipes_docker.run(
         context=context,
-        image=SCRAPER_IMAGE, # Fixed: Changed from EXTRACTOR_IMAGE to match scraper asset intent
+        image=SCRAPER_IMAGE,
         env=_build_container_env(),
         extras=extras,
         container_kwargs={
