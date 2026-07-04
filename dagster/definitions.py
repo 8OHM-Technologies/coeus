@@ -164,6 +164,7 @@ def _build_container_env() -> dict[str, str]:
         "COEUS_API_URL",
         "USE_PROXY",
         "GOOGLE_APPLICATION_CREDENTIALS",
+        "DAGSTER_PIPES_DEBUG"
     ]
     return {k: os.environ[k] for k in forwarded if k in os.environ}
 
@@ -238,7 +239,6 @@ def raw_scraped_pages(
         "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
         "use_proxy": use_proxy,
         "extraction_params": json.dumps(extraction_params),  # Serialize to JSON string for the entrypoint
-        "output_dir": CONTAINER_DATA_DIR,
         "partition_key": context.partition_key,
     }
 
@@ -250,6 +250,7 @@ def raw_scraped_pages(
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+            "user": "root", 
         }
     )
     return result.get_materialize_result()
