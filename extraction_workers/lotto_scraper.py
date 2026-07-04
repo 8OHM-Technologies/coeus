@@ -6,7 +6,7 @@ import os
 import sys
 
 from playwright.async_api import async_playwright
-from utils import fetch_pipeline_config
+from .utils.utils import fetch_pipeline_config
 
 logging.basicConfig(
     level=logging.INFO,

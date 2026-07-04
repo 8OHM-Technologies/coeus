@@ -6,7 +6,7 @@ import sys
 
 from playwright.async_api import TimeoutError, async_playwright
 from misstcha import HCaptchaSolver
-from utils import fetch_pipeline_config
+from .utils.utils import fetch_pipeline_config
 
 logging.basicConfig(
     level=logging.INFO,

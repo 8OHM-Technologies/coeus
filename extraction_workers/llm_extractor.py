@@ -35,7 +35,7 @@ from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 from db import get_db_connection
-from utils import fetch_pipeline_config
+from .utils.utils import fetch_pipeline_config
 
 logging.basicConfig(
     level=logging.INFO,
