@@ -4,7 +4,7 @@ set -e
 echo "Running container environment setup..."
 
 echo "Waiting for database..."
-while ! nc -z $DB_HOST $DB_PORT; do sleep 0.1; done
+while ! nc -z $POSTGRES_HOST $POSTGRES_PORT; do sleep 0.1; done
 
 echo "Applying database migrations..."
 python control_plane/manage.py migrate
