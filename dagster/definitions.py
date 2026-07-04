@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 API_URL = os.getenv("COEUS_API_URL")
-CACHE_FILE = "/app/data/coeus_blueprints_cache.json"
-CACHE_TTL = 300  # 5 minutes
+CACHE_FILE = os.getenv("COEUS_BLUEPRINTS_CACHE_FILE", "/app/data/coeus_blueprints_cache.json")
+CACHE_TTL = int(os.getenv("COEUS_BLUEPRINTS_CACHE_TTL", 60))
 
 SCRAPER_IMAGE = os.getenv(
     "DAGSTER_SCRAPER_IMAGE",
