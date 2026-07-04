@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-API_URL = os.getenv("COEUS_API_URL")
+API_URL = os.getenv("COEUS_API_URL", "http://coeus-control-plane:8001/api/pipelines/active/")
 CACHE_FILE = os.getenv("COEUS_BLUEPRINTS_CACHE_FILE", "/app/data/coeus_blueprints_cache.json")
 CACHE_TTL = int(os.getenv("COEUS_BLUEPRINTS_CACHE_TTL", 60))
 
