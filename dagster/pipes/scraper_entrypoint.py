@@ -68,10 +68,17 @@ def run_scraper(pipes: PipesContext) -> None:
     allow_insecure_https: bool = pipes.get_extra("allow_insecure_https")
     allow_insecure_requests: bool = pipes.get_extra("allow_insecure_requests")
     use_proxy: bool = pipes.get_extra("use_proxy")
-    extraction_params_raw: str = pipes.get_extra("extraction_params")
     output_dir: str = pipes.get_extra("output_dir")
 
-    extraction_params: dict = json.loads(extraction_params_raw) if extraction_params_raw else {}
+    extraction_params_raw = pipes.get_extra("extraction_params")
+    # Handle both JSON string and direct dict input for robustness
+    if isinstance(extraction_params_raw, str):
+        extraction_params = json.loads(extraction_params_raw) if extraction_params_raw else {}
+    elif isinstance(extraction_params_raw, dict):
+        extraction_params = extraction_params_raw
+    else:
+        extraction_params = {}
+
 
     # Ensure partition-scoped output directory exists on the shared volume
     partition_dir = os.path.join(output_dir, partition_key)
