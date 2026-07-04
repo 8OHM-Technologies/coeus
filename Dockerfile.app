@@ -16,7 +16,9 @@ RUN pip install --no-cache-dir -r requirements-app.txt
 
 COPY control_plane/ ./control_plane/
 
-EXPOSE 8001
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
-# Will be overridden by the docker-compose command for migrations)
-CMD ["python", "control_plane/manage.py", "runserver", "0.0.0.0:8001"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+CMD ["gunicorn", "core.wsgi:application", "--chdir", "control_plane", "--bind", "0.0.0.0:8001", "--workers", "3"]
