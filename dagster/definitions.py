@@ -133,6 +133,7 @@ def _blueprint_to_run_config(blueprint: dict) -> dict:
                     "allow_insecure_https": to_bool(phase1.get("allow_insecure_https")),
                     "allow_insecure_requests": to_bool(phase1.get("allow_insecure_requests")),
                     "use_proxy": use_proxy,
+                    "output_dir": CONTAINER_DATA_DIR,
                     "extraction_params": json.dumps(extraction_params),
                 }
             },
