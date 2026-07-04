@@ -247,7 +247,6 @@ def raw_scraped_pages(
         image=SCRAPER_IMAGE, # Fixed: Changed from EXTRACTOR_IMAGE to match scraper asset intent
         env=_build_container_env(),
         extras=extras,
-        log_forwarders=[PipesDefaultLogForwarder()], 
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
@@ -307,7 +306,6 @@ def extracted_structured_data(
         image=EXTRACTOR_IMAGE,
         env=_build_container_env(),
         extras=extras,
-        log_forwarders=[PipesDefaultLogForwarder()], 
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],

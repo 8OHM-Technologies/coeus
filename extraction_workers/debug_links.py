@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 from playwright.async_api import async_playwright
-from misstcha import TurnstileSolver
+from ..misstcha import TurnstileSolver
 
 async def debug_start():
     turnstile_solver = TurnstileSolver()
