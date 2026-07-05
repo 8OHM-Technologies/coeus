@@ -8,6 +8,7 @@
 # Spin up all containers in the background
 up:
 	docker compose up -d --build
+	docker compose build coeus-scraper coeus-extractor
 
 # Tear down all containers, networks, and volumes
 down:
@@ -32,6 +33,7 @@ logs:
 # Spin up the 3 specific Dagster containers together
 dagster:
 	docker compose up -d --build dagster-webserver dagster-daemon postgres
+	docker compose build coeus-scraper coeus-extractor
 
 # Spin down just the Dagster stack
 stop-dagster:

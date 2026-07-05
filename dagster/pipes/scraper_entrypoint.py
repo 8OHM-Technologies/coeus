@@ -45,8 +45,9 @@ def _run_subprocess(cmd: list[str], extra_env: dict[str, str]) -> None:
         text=True,
     )
 
-    for line in process.stdout:
-        logger.info(line.rstrip())
+    if process.stdout is not None:
+        for line in process.stdout:
+            logger.info(line.rstrip())
 
     process.wait()
 
@@ -103,7 +104,7 @@ def run_scraper(pipes: PipesContext) -> None:
         "OUTPUT_DIR": partition_dir,
     }
 
-    worker_script = f"/app/extraction_workers/{scraper_type}_scraper.py"
+    worker_module = f"extraction_workers.{scraper_type}_scraper"
 
     worker_args = ["--pipeline_name", partition_key]
 
@@ -124,14 +125,14 @@ def run_scraper(pipes: PipesContext) -> None:
 
     # Xvfb is required for headed Playwright scrapers
     if scraper_type in ("saflii", "new_saflii"):
-        cmd_str = " ".join(["python", worker_script] + worker_args)
+        cmd_str = " ".join(["python", "-m", worker_module] + worker_args)
         full_cmd = [
             "bash",
             "-c",
             f"Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && sleep 1 && {cmd_str}",
         ]
     else:
-        full_cmd = ["python", worker_script] + worker_args
+        full_cmd = ["python", "-m", worker_module] + worker_args
 
     _run_subprocess(full_cmd, base_env)
 
@@ -156,6 +157,9 @@ def run_scraper(pipes: PipesContext) -> None:
 if __name__ == "__main__":
     try:
         with open_dagster_pipes() as pipes:
+            # Forward python logging to Dagster Pipes
+            for handler in pipes.log.handlers:
+                logging.getLogger().addHandler(handler)
             run_scraper(pipes)
     except Exception as exc:
         logger.error(f"Fatal scraper error: {exc}", exc_info=True)

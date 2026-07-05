@@ -5,7 +5,11 @@ import logging
 import os
 import sys
 from playwright.async_api import async_playwright
-from .utils.utils import fetch_pipeline_config
+try:
+    from .utils.utils import fetch_pipeline_config
+except ImportError:
+    # pyrefly: ignore [missing-import]
+    from utils.utils import fetch_pipeline_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,7 +167,7 @@ async def run_extraction(pipeline_name: str):
                     break
 
                 # Extract items via a JS evaluation – mirrors original logic
-                page_items = await page.evaluate('''
+                page_items = await page.evaluate(r'''
                     () => {
                         const cards = Array.from(document.querySelectorAll('li.ant-list-item'));
                         if (cards.length === 0) return [];
@@ -369,7 +373,7 @@ async def run_detail_extraction(pipeline_name: str):
                         except Exception:
                             pass
 
-                    page_info = await page.evaluate('''
+                    page_info = await page.evaluate(r'''
                         () => {
                             const h1El = document.querySelector('h1');
                             // Expand any hidden sections
@@ -463,6 +467,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coeus Sabinet Unified Scraper")
     parser.add_argument(
         "stage",
+        nargs="?",
         choices=["auth", "index", "details"],
         help="Which part of the workflow to execute: auth generates session state, index scrapes the list, details enriches records.",
     )
@@ -474,14 +479,25 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.stage == "auth":
+    stage = args.stage
+    if not stage:
+        pipeline_name = args.pipeline_name or ""
+        if "detail" in pipeline_name.lower():
+            stage = "details"
+        else:
+            stage = "index"
+        logger.info(f"Auto-detected stage '{stage}' from pipeline name '{pipeline_name}'")
+
+    if stage == "auth":
         asyncio.run(generate_state())
-    elif args.stage == "index":
+    elif stage == "index":
         if not args.pipeline_name:
             logger.error("--pipeline_name is required for the index stage.")
             sys.exit(1)
         asyncio.run(run_extraction(args.pipeline_name))
-    elif args.stage == "details":
+        logger.info("Index extraction complete. Starting detail extraction stage...")
+        asyncio.run(run_detail_extraction(args.pipeline_name))
+    elif stage == "details":
         if not args.pipeline_name:
             logger.error("--pipeline_name is required for the details stage.")
             sys.exit(1)

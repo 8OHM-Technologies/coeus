@@ -226,3 +226,4 @@ ohmbase/bookstack_app_data/
 ohmbase/bookstack_db_data/
 control_plane/staticfiles/
 control_plane/storage/
+data/lotto_results/historical_lotto_results.csv

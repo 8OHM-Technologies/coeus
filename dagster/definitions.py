@@ -317,17 +317,63 @@ def extracted_structured_data(
     return result.get_materialize_result()
 
 
-# ---------------------------------------------------------------------------
-# Automation: Dynamic Sensor (Now drastically simplified)
-# ---------------------------------------------------------------------------
+def cron_field_matches(field_val: str, current_val: int) -> bool:
+    if field_val == "*":
+        return True
+    for part in field_val.split(","):
+        if "/" in part:
+            val, step = part.split("/")
+            step = int(step)
+            if val == "*":
+                if current_val % step == 0:
+                    return True
+            else:
+                start, end = val.split("-")
+                if int(start) <= current_val <= int(end) and (current_val - int(start)) % step == 0:
+                    return True
+        elif "-" in part:
+            start, end = part.split("-")
+            if int(start) <= current_val <= int(end):
+                return True
+        else:
+            if int(part) == current_val:
+                return True
+    return False
+
+
+def is_cron_active(cron_str: str, timestamp: float) -> bool:
+    try:
+        import pytz
+        from datetime import datetime
+        tz = pytz.timezone("Africa/Johannesburg")
+    except ImportError:
+        tz = None
+
+    dt = datetime.fromtimestamp(timestamp, tz)
+    parts = cron_str.split()
+    if len(parts) != 5:
+        return False
+        
+    minute, hour, day_m, month, day_w = parts
+    current_day_w = (dt.weekday() + 1) % 7
+    
+    return (
+        cron_field_matches(minute, dt.minute)
+        and cron_field_matches(hour, dt.hour)
+        and cron_field_matches(day_m, dt.day)
+        and cron_field_matches(month, dt.month)
+        and cron_field_matches(day_w, current_day_w)
+    )
+
 
 @dg.sensor(
     name="coeus_blueprint_sensor",
     minimum_interval_seconds=60,
     target=dg.AssetSelection.all(),
+    default_status=dg.DefaultSensorStatus.RUNNING,
 )
 def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
-    """Fetches blueprints from API, registers partitions, and triggers runs."""
+    """Fetches blueprints from API, registers partitions, and triggers runs at scheduled cron times."""
     blueprints = fetch_blueprints()
     if not blueprints:
         return
@@ -335,12 +381,22 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
     active_partition_keys = [str(bp["pipeline_id"]) for bp in blueprints if "pipeline_id" in bp]
     dynamic_partitions_requests = [pipeline_partitions.build_add_request(active_partition_keys)]
     
+    current_time = time.time()
+    current_minute_ts = int(current_time // 60) * 60
+
     run_requests = []
-    for partition_key in active_partition_keys:
-        run_requests.append(dg.RunRequest(
-            run_key=f"{partition_key}_{int(time.time() // 60)}",
-            partition_key=partition_key,
-        ))
+    for bp in blueprints:
+        partition_key = str(bp.get("pipeline_id"))
+        if not partition_key:
+            continue
+            
+        cron_str = bp.get("schedule")
+        if cron_str and is_cron_active(cron_str, current_minute_ts):
+            context.log.info(f"Cron match found for pipeline '{partition_key}': '{cron_str}'. Triggering run request.")
+            run_requests.append(dg.RunRequest(
+                run_key=f"{partition_key}_{current_minute_ts}",
+                partition_key=partition_key,
+            ))
         
     return dg.SensorResult(
         run_requests=run_requests, 

@@ -42,8 +42,9 @@ def _run_subprocess(cmd: list[str], extra_env: dict[str, str]) -> None:
         text=True,
     )
 
-    for line in process.stdout:
-        logger.info(line.rstrip())
+    if process.stdout is not None:
+        for line in process.stdout:
+            logger.info(line.rstrip())
 
     process.wait()
 
@@ -103,10 +104,10 @@ def run_extractor(pipes: PipesContext) -> None:
 
     cmd = [
         "python",
-        "/app/extraction_workers/llm_extractor.py",
+        "-m", "extraction_workers.llm_extractor",
         "--pipeline_name", partition_key,
         "--schema", expected_schema,
-    ]
+     ]
 
     _run_subprocess(cmd, base_env)
 
@@ -124,6 +125,9 @@ def run_extractor(pipes: PipesContext) -> None:
 if __name__ == "__main__":
     try:
         with open_dagster_pipes() as pipes:
+            # Forward python logging to Dagster Pipes
+            for handler in pipes.log.handlers:
+                logging.getLogger().addHandler(handler)
             run_extractor(pipes)
     except Exception as exc:
         logger.error(f"Fatal extractor error: {exc}", exc_info=True)
