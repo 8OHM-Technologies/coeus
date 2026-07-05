@@ -224,3 +224,5 @@ project_context.json
 data
 ohmbase/bookstack_app_data/
 ohmbase/bookstack_db_data/
+control_plane/staticfiles/
+control_plane/storage/
