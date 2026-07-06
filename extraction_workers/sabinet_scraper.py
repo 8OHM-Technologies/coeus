@@ -432,21 +432,29 @@ async def run_extraction(pipeline_name: str):
                     # 4a. Open Advanced Search panel and apply the date filter
                     # --------------------------------------------------------
                     try:
-                        # Click the "Advanced Search" toggle button
-                        adv_btn = page.locator(
-                            'button.css-1d0rxin, #search-col-4 button, button:has-text("Advanced Search")'
-                        ).first
-                        if await adv_btn.count() > 0:
-                            # Only click if the date inputs are not already visible
-                            date_from_input = page.locator('input[placeholder="Date From"]').first
-                            if not await date_from_input.is_visible():
+                        # Ensure the Advanced Search panel is open each iteration.
+                        # The panel can collapse after a search result is rendered,
+                        # so we check for the Date From input visibility every time.
+                        date_from_input = page.locator('input[placeholder="Date From"]').first
+                        if not await date_from_input.is_visible():
+                            # Try the toggle button – prefer text-based role over a
+                            # brittle CSS hash class so it survives style recompiles.
+                            adv_btn = page.locator(
+                                'button:has-text("Advanced Search"), #search-col-4 button'
+                            ).first
+                            if await adv_btn.count() > 0:
                                 await adv_btn.click()
-                                await asyncio.sleep(1)
-                        else:
-                            logger.warning("  Advanced Search button not found – attempting to proceed anyway.")
+                                # Wait until the date input actually appears
+                                try:
+                                    await date_from_input.wait_for(state="visible", timeout=8000)
+                                except Exception:
+                                    logger.warning("  Advanced Search panel did not open. Skipping window.")
+                                    _save_progress(year, month, completed=True)
+                                    continue
+                            else:
+                                logger.warning("  Advanced Search button not found – attempting to proceed anyway.")
 
                         # Fill "Date From"
-                        date_from_input = page.locator('input[placeholder="Date From"]').first
                         await date_from_input.click()
                         await date_from_input.click(click_count=3)
                         await date_from_input.fill(date_from)
@@ -455,20 +463,38 @@ async def run_extraction(pipeline_name: str):
                         await date_from_input.press("Tab")
                         await asyncio.sleep(0.5)
 
-                        # Fill "Date To"
+                        # Fill "Date To" – use Tab (not Escape) to dismiss the
+                        # calendar popover without collapsing the Advanced Search panel.
                         date_to_input = page.locator('input[placeholder="Date To"]').first
                         await date_to_input.click()
                         await date_to_input.click(click_count=3)
                         await date_to_input.fill(date_to)
                         await asyncio.sleep(0.4)
-                        await date_to_input.press("Escape")  # dismiss any open calendar
+                        await date_to_input.press("Tab")  # close calendar, keep panel open
                         await asyncio.sleep(0.3)
 
-                        # Click the Search button inside the Advanced Search panel
-                        search_btn = page.locator(
-                            'button.btn-search, button.ant-btn.btn-search, button.ant-btn:has-text("Search")'
-                        ).first
-                        await search_btn.click()
+                        # Use JS to click the first *actually visible* .btn-search.
+                        # Playwright's locator-based click fails when multiple .btn-search
+                        # elements exist (one in the main bar, one in the Advanced Search
+                        # panel) and the first match happens to be hidden/animating.
+                        clicked = await page.evaluate("""
+                            () => {
+                                const btn = [...document.querySelectorAll('.btn-search')].find(el => {
+                                    const style = window.getComputedStyle(el);
+                                    const rect = el.getBoundingClientRect();
+                                    return (
+                                        style.display !== 'none' &&
+                                        style.visibility !== 'hidden' &&
+                                        parseFloat(style.opacity) > 0 &&
+                                        rect.width > 0 && rect.height > 0
+                                    );
+                                });
+                                if (btn) { btn.click(); return true; }
+                                return false;
+                            }
+                        """)
+                        if not clicked:
+                            raise RuntimeError("No visible .btn-search found after filling dates")
                         await page.wait_for_load_state("networkidle")
                         await asyncio.sleep(2)
 
@@ -477,7 +503,9 @@ async def run_extraction(pipeline_name: str):
                             f"  Could not apply date filter for {date_from}→{date_to}: {adv_err}. "
                             "Skipping window."
                         )
-                        _save_progress(year, month, completed=True)
+                        # Do NOT mark as completed – leave completed=False so the
+                        # next run retries this window instead of skipping past it.
+                        _save_progress(year, month, completed=False)
                         continue
 
                     # --------------------------------------------------------
