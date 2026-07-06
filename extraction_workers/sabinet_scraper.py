@@ -9,9 +9,13 @@ from datetime import datetime, date
 from playwright.async_api import async_playwright
 try:
     from .utils.utils import fetch_pipeline_config
+    from .utils.gdrive_helper import load_gdrive_credentials, list_gdrive_files, upload_file_to_gdrive
 except ImportError:
     # pyrefly: ignore [missing-import]
     from utils.utils import fetch_pipeline_config
+    from utils.gdrive_helper import load_gdrive_credentials, list_gdrive_files, upload_file_to_gdrive
+
+from googleapiclient.discovery import build
 
 logging.basicConfig(
     level=logging.INFO,
@@ -672,7 +676,52 @@ async def run_detail_extraction(pipeline_name: str):
         except Exception as e:
             logger.warning(f"Could not read existing details file: {e}. Starting fresh details scrape.")
 
-    pending_cases = [c for c in cases if c.get("detail_url") and c["detail_url"] not in scraped_urls]
+    # GDrive configuration
+    output_dir = os.path.join(base_dir, index_pipeline_name, doc_type)
+    os.makedirs(output_dir, exist_ok=True)
+
+    gdrive_folder_id = extraction_params.get("gdrive_folder_id")
+    gdrive_delete_local = extraction_params.get("gdrive_delete_local", False)
+    gdrive_service = None
+    existing_files = set()
+
+    if gdrive_folder_id:
+        logger.info(
+            "Google Drive integration is enabled. Initializing deduplication set..."
+        )
+        try:
+            creds = load_gdrive_credentials(extraction_params)
+            gdrive_service = build("drive", "v3", credentials=creds)
+            gdrive_files = list_gdrive_files(gdrive_service, gdrive_folder_id)
+            logger.info(
+                f"Found {len(gdrive_files)} existing files on Google Drive."
+            )
+            existing_files.update(gdrive_files)
+        except Exception as e:
+            logger.error(f"Failed to initialize Google Drive: {e}")
+            sys.exit(1)
+    else:
+        logger.info(
+            "Google Drive integration not enabled. Checking local output directory..."
+        )
+        for fname in os.listdir(output_dir):
+            if fname.endswith(".html"):
+                existing_files.add(fname)
+        logger.info(f"Found {len(existing_files)} existing local HTML files.")
+
+    pending_cases = []
+    for c in cases:
+        url = c.get("detail_url")
+        if not url:
+            continue
+        if url in scraped_urls:
+            continue
+        document_id = url.split("/")[-1]
+        file_name = f"{document_id}.html"
+        if file_name in existing_files:
+            continue
+        pending_cases.append(c)
+
     logger.info(f"Found {len(pending_cases)} pending cases to scrape.")
 
     if not pending_cases:
@@ -773,9 +822,41 @@ async def run_detail_extraction(pipeline_name: str):
                         "extracted_main_content": page_info.get("main_content"),
                         "raw_preview_text": page_info.get("raw_preview_text"),
                         **page_info.get("metadata", {}),
-                        "scraped_at": datetime.now(),
+                        "scraped_at": datetime.now().isoformat(),
                     }
                     existing_details.append(detail_record)
+
+                    document_id = url.split("/")[-1]
+                    file_name = f"{document_id}.html"
+                    file_path = os.path.join(output_dir, file_name)
+
+                    html_content = await page.content()
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        f.write(html_content)
+                    logger.info(f"  [+] Saved HTML locally: {file_name}")
+
+                    if gdrive_service:
+                        if upload_file_to_gdrive(
+                            gdrive_service, file_path, gdrive_folder_id
+                        ):
+                            existing_files.add(file_name)
+                            if gdrive_delete_local:
+                                try:
+                                    os.remove(file_path)
+                                    logger.info(
+                                        f"  [+] Deleted local HTML file: {file_name}"
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Failed to delete local HTML file {file_name}: {e}"
+                                    )
+                        else:
+                            logger.error(
+                                f"Failed to upload {file_name} to Google Drive."
+                            )
+                    else:
+                        existing_files.add(file_name)
+
                     count += 1
 
                     # Incremental checkpoint every 10 records

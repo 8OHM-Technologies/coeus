@@ -228,3 +228,5 @@ control_plane/staticfiles/
 control_plane/storage/
 data/lotto_results/historical_lotto_results.csv
 .playwright-cli/
+ohmbot-telegram/
+misstcha/
