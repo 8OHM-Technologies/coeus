@@ -2,27 +2,23 @@ import argparse
 import asyncio
 import calendar
 import json
-import logging
 import os
 import sys
 from datetime import datetime, date
 from playwright.async_api import async_playwright
-try:
-    from .utils.utils import fetch_pipeline_config
-    from .utils.gdrive_helper import load_gdrive_credentials, list_gdrive_files, upload_file_to_gdrive
-except ImportError:
-    # pyrefly: ignore [missing-import]
-    from utils.utils import fetch_pipeline_config
-    from utils.gdrive_helper import load_gdrive_credentials, list_gdrive_files, upload_file_to_gdrive
 
-from googleapiclient.discovery import build
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+from .utils.utils import fetch_pipeline_config, resolve_data_dir, save_json
+from .utils.gdrive_helper import GDriveBackupManager
+from .utils.browser_helper import (
+    setup_logger,
+    launch_browser_cdp,
+    close_browser_cdp,
+    create_browser_context,
+    dismiss_cookie_consent,
+    resolve_storage_state,
 )
-logger = logging.getLogger(__name__)
+
+logger = setup_logger(__name__)
 
 # -----------------------------------------------------------------------------
 # Authentication / Session State Generation
@@ -57,16 +53,11 @@ async def generate_state():
 
     async with async_playwright() as p:
         logger.info("[INFO] Launching Chromium browser for automated authentication...")
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(
+        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=False)
+        context, page = await create_browser_context(
+            browser,
             viewport={"width": 1280, "height": 800},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/123.0.0.0 Safari/537.36"
-            ),
         )
-        page = await context.new_page()
 
         # ------------------------------------------------------------------
         # Step 1: Navigate to the scrape URL
@@ -78,15 +69,7 @@ async def generate_state():
         # ------------------------------------------------------------------
         # Step 2: Dismiss cookie consent banner (if present)
         # ------------------------------------------------------------------
-        try:
-            cookie_btn = page.locator("button:has-text('Accept all cookies')").first
-            await cookie_btn.wait_for(state="visible", timeout=5000)
-            logger.info("🍪 Cookie consent modal detected. Accepting...")
-            await cookie_btn.click()
-            await page.wait_for_load_state("networkidle")
-            await asyncio.sleep(1)
-        except Exception:
-            logger.info("No cookie consent modal detected or already dismissed.")
+        await dismiss_cookie_consent(page)
 
         # ------------------------------------------------------------------
         # Step 3: Click the "Sign in" button in the top-right header
@@ -130,7 +113,7 @@ async def generate_state():
         logger.info(f"   - {save_path_root}")
         logger.info(f"   - {save_path_ccma}")
 
-        await browser.close()
+        await close_browser_cdp(browser, chrome_proc)
         logger.info("Browser closed.")
 
 # -----------------------------------------------------------------------------
@@ -227,10 +210,7 @@ async def run_extraction(pipeline_name: str):
     )
 
     # Resolve an appropriate output directory – support both container and local layouts
-    output_dir = os.path.join("/app/data", pipeline_name, config.get("document_type", "awards").lower())
-    if not os.path.exists("/app/data") and not os.path.exists("/app"):
-        output_dir = os.path.join("data", pipeline_name, config.get("document_type", "awards").lower())
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = resolve_data_dir(pipeline_name, config.get("document_type", "awards"))
 
     logger.info("==================================================")
     logger.info(f"🚀 COEUS SABINET WORKER INITIALIZED (PIPELINE: {pipeline_name})")
@@ -273,8 +253,7 @@ async def run_extraction(pipeline_name: str):
         progress_state["last_year"] = year
         progress_state["last_month"] = month
         progress_state["last_completed"] = completed
-        with open(progress_file, "w", encoding="utf-8") as pf:
-            json.dump(progress_state, pf, indent=2)
+        save_json(progress_file, progress_state, indent=2)
 
     # -------------------------------------------------------------------------
     # Determine the resume point
@@ -297,21 +276,17 @@ async def run_extraction(pipeline_name: str):
 
     async with async_playwright() as p:
         # Resolve storage state (cookies)
-        storage_state_path = os.path.join(output_dir, "state.json")
-        if not os.path.exists(storage_state_path):
-            fallback_path = "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json"
-            storage_state_path = fallback_path if os.path.exists(fallback_path) else None
-        if storage_state_path:
-            logger.info(f"🔑 Loading active browser session state from: {storage_state_path}")
+        storage_state_path = resolve_storage_state(
+            os.path.join(output_dir, "state.json"),
+            "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
+        )
 
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=True)
+        context, page = await create_browser_context(
+            browser,
             ignore_https_errors=config.get("allow_insecure_https", False),
             storage_state=storage_state_path,
         )
-        page = await context.new_page()
 
         try:
             # ------------------------------------------------------------------
@@ -322,15 +297,7 @@ async def run_extraction(pipeline_name: str):
             await page.wait_for_load_state("networkidle")
 
             # Dismiss cookie consent if present
-            try:
-                cookie_btn = page.locator('button.accept-btn')
-                await cookie_btn.wait_for(state="visible", timeout=5000)
-                logger.info("Cookie consent modal detected. Dismissing it...")
-                await cookie_btn.click()
-                await page.wait_for_load_state("networkidle")
-                await asyncio.sleep(1)
-            except Exception:
-                logger.info("No cookie consent modal detected or it was auto‑dismissed.")
+            await dismiss_cookie_consent(page)
 
             # ------------------------------------------------------------------
             # 2. Set pagination to 100 items per page
@@ -545,6 +512,8 @@ async def run_extraction(pipeline_name: str):
                             if url and url in existing_urls:
                                 # Already have this record – skip silently
                                 continue
+                            item_data["index_scraped"] = True
+                            item_data["index_scraped_at"] = datetime.now().isoformat()
                             extracted_data.append(item_data)
                             if url:
                                 existing_urls.add(url)
@@ -554,8 +523,7 @@ async def run_extraction(pipeline_name: str):
                         total_so_far = total_new + window_new
                         if window_new > 0 and total_so_far % 500 < len(page_items):
                             combined = extracted_data + existing_data
-                            with open(output_file, "w", encoding="utf-8") as f:
-                                json.dump(combined, f, indent=4, ensure_ascii=False)
+                            save_json(output_file, combined)
                             logger.info(f"    💾 Incremental save: {len(combined)} total records.")
 
                         # Navigate to the next page within this window
@@ -607,8 +575,7 @@ async def run_extraction(pipeline_name: str):
             # 5. Final save
             # ------------------------------------------------------------------
             combined_data = extracted_data + existing_data
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(combined_data, f, indent=4, ensure_ascii=False)
+            save_json(output_file, combined_data)
             logger.info(
                 f"✅ Extraction completed. Saved {len(combined_data)} total records "
                 f"({total_new} new) to {output_file}."
@@ -617,26 +584,40 @@ async def run_extraction(pipeline_name: str):
             # Mark the entire run as fully complete in the progress state
             progress_state["fully_complete"] = True
             progress_state["completed_at"] = datetime.now().isoformat()
-            with open(progress_file, "w", encoding="utf-8") as pf:
-                json.dump(progress_state, pf, indent=2)
+            save_json(progress_file, progress_state, indent=2)
+
+            # ------------------------------------------------------------------
+            # 6. Google Drive backup
+            # ------------------------------------------------------------------
+            extraction_params = config.get("extraction_params") or {}
+            gdrive_mgr = GDriveBackupManager.from_config(extraction_params)
+            if gdrive_mgr:
+                gdrive_mgr.backup_files([output_file, progress_file])
 
         except Exception as e:
             logger.error(f"❌ Playwright extraction failed: {str(e)}")
             sys.exit(1)
         finally:
-            await browser.close()
+            await close_browser_cdp(browser, chrome_proc)
             logger.info("Browser closed. Run complete.")
 
 # -----------------------------------------------------------------------------
 # Detail Scraper – enriches each record with full page content
 # -----------------------------------------------------------------------------
 async def run_detail_extraction(pipeline_name: str):
-    config = await fetch_pipeline_config(pipeline_name)
+    """Enrich each case in the index JSON with detailed metadata from its detail page.
 
-    # Resolve base directory (container vs local)
-    base_dir = "/app/data"
-    if not os.path.exists(base_dir) and not os.path.exists("/app"):
-        base_dir = "data"
+    This function reads the main ``{pipeline_name}.json`` file produced by the
+    index scraper, visits each case's ``detail_url``, extracts structured
+    metadata from the ``paywall-content item-content-loaded`` div, and writes
+    the enriched data back to the **same** JSON file.  No separate details JSON
+    or HTML files are created – the only output is the updated index JSON.
+
+    If the detail page's content div has the ``item-content-loaded`` class but
+    is missing the ``paywall-content`` class, the authentication session has
+    expired and the function will abort so the ``auth`` stage can be re-run.
+    """
+    config = await fetch_pipeline_config(pipeline_name)
 
     doc_type = config.get("document_type", "awards").lower()
 
@@ -645,225 +626,209 @@ async def run_detail_extraction(pipeline_name: str):
     extraction_params = config.get("extraction_params") or {}
     index_pipeline_name = extraction_params.get("index_pipeline_name") or re.sub(r'_(details?)$', '', pipeline_name)
 
-    input_file = os.path.join(base_dir, index_pipeline_name, doc_type, f"{index_pipeline_name}.json")
-    output_file = os.path.join(base_dir, index_pipeline_name, doc_type, f"{index_pipeline_name}_details.json")
+    # Resolve output directory and data file path
+    output_dir = resolve_data_dir(index_pipeline_name, doc_type)
+    data_file = os.path.join(output_dir, f"{index_pipeline_name}.json")
 
     logger.info("==================================================")
     logger.info(f"🚀 SABINET DETAIL SCRAPER INITIALIZED (PIPELINE: {pipeline_name})")
     logger.info(f"Index Pipeline Source: {index_pipeline_name}")
-    logger.info(f"Input Index File: {input_file}")
-    logger.info(f"Output Details File: {output_file}")
+    logger.info(f"Data File: {data_file}")
     logger.info("==================================================")
 
-    if not os.path.exists(input_file):
-        logger.error(f"❌ Input index file {input_file} not found. Please run the index scraper first.")
+    if not os.path.exists(data_file):
+        logger.error(f"❌ Data file {data_file} not found. Please run the index scraper first.")
         sys.exit(1)
 
-    with open(input_file, "r", encoding="utf-8") as f:
+    with open(data_file, "r", encoding="utf-8") as f:
         cases = json.load(f)
-    logger.info(f"Loaded {len(cases)} cases from index.")
+    logger.info(f"Loaded {len(cases)} cases from {data_file}.")
 
-    existing_details = []
-    scraped_urls = set()
-    if os.path.exists(output_file):
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                existing_details = json.load(f)
-            for item in existing_details:
-                if item.get("detail_url"):
-                    scraped_urls.add(item["detail_url"])
-            logger.info(f"Loaded {len(existing_details)} already scraped details. Skipping these on this run.")
-        except Exception as e:
-            logger.warning(f"Could not read existing details file: {e}. Starting fresh details scrape.")
-
-    # GDrive configuration
-    output_dir = os.path.join(base_dir, index_pipeline_name, doc_type)
-    os.makedirs(output_dir, exist_ok=True)
-
-    gdrive_folder_id = extraction_params.get("gdrive_folder_id")
-    gdrive_delete_local = extraction_params.get("gdrive_delete_local", False)
-    gdrive_service = None
-    existing_files = set()
-
-    if gdrive_folder_id:
-        logger.info(
-            "Google Drive integration is enabled. Initializing deduplication set..."
-        )
-        try:
-            creds = load_gdrive_credentials(extraction_params)
-            gdrive_service = build("drive", "v3", credentials=creds)
-            gdrive_files = list_gdrive_files(gdrive_service, gdrive_folder_id)
-            logger.info(
-                f"Found {len(gdrive_files)} existing files on Google Drive."
-            )
-            existing_files.update(gdrive_files)
-        except Exception as e:
-            logger.error(f"Failed to initialize Google Drive: {e}")
-            sys.exit(1)
-    else:
-        logger.info(
-            "Google Drive integration not enabled. Checking local output directory..."
-        )
-        for fname in os.listdir(output_dir):
-            if fname.endswith(".html"):
-                existing_files.add(fname)
-        logger.info(f"Found {len(existing_files)} existing local HTML files.")
-
-    pending_cases = []
-    for c in cases:
-        url = c.get("detail_url")
+    # Build list of cases that have a detail_url and still need enrichment
+    pending_indices: list[int] = []
+    for idx, case in enumerate(cases):
+        url = case.get("detail_url")
         if not url:
             continue
-        if url in scraped_urls:
+        # Skip entries that have already been successfully detail-scraped
+        if case.get("details_scraped"):
             continue
-        document_id = url.split("/")[-1]
-        file_name = f"{document_id}.html"
-        if file_name in existing_files:
-            continue
-        pending_cases.append(c)
+        pending_indices.append(idx)
 
-    logger.info(f"Found {len(pending_cases)} pending cases to scrape.")
+    logger.info(f"Found {len(pending_indices)} cases with detail URLs to enrich.")
 
-    if not pending_cases:
-        logger.info("✅ All cases are already scraped. Exiting.")
+    if not pending_indices:
+        logger.info("✅ No cases with detail URLs to enrich. Exiting.")
         return
 
-    async with async_playwright() as p:
-        # Resolve storage state for auth – same logic as the index scraper
-        storage_state_path = os.path.join(base_dir, index_pipeline_name, doc_type, "state.json")
-        if not os.path.exists(storage_state_path):
-            fallback_path = os.path.join(base_dir, "state.json")
-            storage_state_path = fallback_path if os.path.exists(fallback_path) else None
-        if storage_state_path:
-            logger.info(f"🔑 Loading active browser session state from: {storage_state_path}")
+    # JS snippet that extracts structured metadata from the paywall-content div.
+    # Returns an object with:
+    #   - auth_ok: whether the paywall-content class is present (auth valid)
+    #   - content_loaded: whether item-content-loaded is present at all
+    #   - metadata: dict of label→value pairs from the metaDataLabel/metaDataValue rows
+    _EXTRACT_DETAIL_JS = r'''
+        () => {
+            const result = { auth_ok: false, content_loaded: false, metadata: {} };
 
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            // Look for the content div
+            const paywallDiv = document.querySelector('div.paywall-content.item-content-loaded');
+            const contentOnlyDiv = document.querySelector('div.item-content-loaded');
+
+            if (paywallDiv) {
+                // Auth is valid – paywall-content class is present
+                result.auth_ok = true;
+                result.content_loaded = true;
+            } else if (contentOnlyDiv) {
+                // item-content-loaded exists but WITHOUT paywall-content → auth expired
+                result.auth_ok = false;
+                result.content_loaded = true;
+                return result;
+            } else {
+                // Neither div found – page may not have loaded properly
+                result.auth_ok = false;
+                result.content_loaded = false;
+                return result;
+            }
+
+            // Expand any truncated text sections
+            const expandButtons = paywallDiv.querySelectorAll('.ant-typography-expand');
+            expandButtons.forEach(btn => { try { btn.click(); } catch(e) {} });
+
+            // Extract the title from the h1 inside the paywall div
+            const h1El = paywallDiv.querySelector('h1');
+            if (h1El) {
+                // Clone and remove icon elements to get clean title text
+                const clone = h1El.cloneNode(true);
+                const icons = clone.querySelectorAll('.anticon, [role="img"]');
+                icons.forEach(icon => icon.remove());
+                const titleText = clone.innerText.trim();
+                if (titleText) {
+                    result.metadata['detail_title'] = titleText;
+                }
+            }
+
+            // Extract all label/value metadata pairs from ant-row elements
+            const rows = paywallDiv.querySelectorAll('.ant-row');
+            rows.forEach(row => {
+                const labelEl = row.querySelector('.metaDataLabel');
+                const valueEl = row.querySelector('.metaDataValue');
+                if (!labelEl || !valueEl) return;
+
+                const labelText = labelEl.innerText.trim();
+                if (!labelText) return;
+
+                let value = "";
+                // Check for list-type values (e.g. Forum, Court Location)
+                const listItems = Array.from(
+                    valueEl.querySelectorAll('.ant-list-items .ant-list-item')
+                );
+                if (listItems.length > 0) {
+                    value = listItems.map(li => li.innerText.trim()).filter(Boolean);
+                    // If single-element list, unwrap to a plain string
+                    if (value.length === 1) value = value[0];
+                } else {
+                    // Check for ellipsis elements with aria-label (full text)
+                    const ellipsisEl = valueEl.querySelector(
+                        '.ant-typography-ellipsis[aria-label]'
+                    );
+                    if (ellipsisEl) {
+                        value = ellipsisEl.getAttribute('aria-label').trim();
+                    } else {
+                        value = valueEl.innerText.trim();
+                    }
+                }
+
+                // Normalise the label into a snake_case key
+                const key = labelText
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_]/g, '_')
+                    .replace(/_+/g, '_')
+                    .replace(/^_+|_+$/g, '');
+
+                if (key) {
+                    result.metadata[key] = value;
+                }
+            });
+
+            // Extract preview image URL if available
+            const previewImg = paywallDiv.querySelector('.ant-image img');
+            if (previewImg && previewImg.src) {
+                result.metadata['preview_image_url'] = previewImg.src;
+            }
+
+            return result;
+        }
+    '''
+
+    async with async_playwright() as p:
+        # Resolve storage state for auth
+        storage_state_path = resolve_storage_state(
+            os.path.join(output_dir, "state.json"),
+            "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
+        )
+
+        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=True)
+        context, page = await create_browser_context(
+            browser,
             ignore_https_errors=config.get("allow_insecure_https", False),
             storage_state=storage_state_path,
         )
-        page = await context.new_page()
 
         try:
             count = 0
-            for case_item in pending_cases:
+            for progress_idx, case_idx in enumerate(pending_indices):
+                case_item = cases[case_idx]
                 url = case_item["detail_url"]
-                logger.info(f"[{count + 1}/{len(pending_cases)}] Scraping details from: {url}")
+                logger.info(f"[{progress_idx + 1}/{len(pending_indices)}] Scraping details from: {url}")
                 try:
                     await page.goto(url, wait_until="domcontentloaded", timeout=45000)
                     await page.wait_for_load_state("networkidle")
 
                     # Occasionally dismiss cookie consent
                     if count == 0 or count % 50 == 0:
-                        try:
-                            cookie_btn = page.locator('button.accept-btn').first
-                            if await cookie_btn.count() > 0 and await cookie_btn.is_visible():
-                                await cookie_btn.click()
-                                await page.wait_for_load_state("networkidle")
-                        except Exception:
-                            pass
+                        await dismiss_cookie_consent(page)
 
-                    page_info = await page.evaluate(r'''
-                        () => {
-                            const h1El = document.querySelector('h1');
-                            // Expand any hidden sections
-                            const expandButtons = document.querySelectorAll('.ant-typography-expand');
-                            expandButtons.forEach(btn => { try { btn.click(); } catch(e) {} });
+                    # Wait briefly for the content div to render
+                    try:
+                        await page.wait_for_selector(
+                            'div.item-content-loaded', timeout=15000
+                        )
+                    except Exception:
+                        logger.warning(f"  Content div did not appear for {url}. Skipping.")
+                        continue
 
-                            const metadata = {};
-                            const rows = document.querySelectorAll('.ant-row');
-                            rows.forEach(row => {
-                                const labelEl = row.querySelector('.metaDataLabel');
-                                const valueEl = row.querySelector('.metaDataValue');
-                                if (labelEl && valueEl) {
-                                    const labelText = labelEl.innerText.trim();
-                                    if (!labelText) return;
-                                    let value = "";
-                                    const listItems = Array.from(valueEl.querySelectorAll('.ant-list-items .ant-list-item'));
-                                    if (listItems.length > 0) {
-                                        value = listItems.map(li => li.innerText.trim()).filter(Boolean);
-                                    } else {
-                                        const ellipsisEl = valueEl.querySelector('.ant-typography-ellipsis[aria-label]');
-                                        if (ellipsisEl) {
-                                            value = ellipsisEl.getAttribute('aria-label').trim();
-                                        } else {
-                                            value = valueEl.innerText.trim();
-                                        }
-                                    }
-                                    const key = labelText
-                                        .toLowerCase()
-                                        .replace(/[^a-z0-9_]/g, '_')
-                                        .replace(/_+/g, '_')
-                                        .trim()
-                                        .replace(/^_+|_+$/g, '');
-                                    if (key) {
-                                        metadata[key] = value;
-                                    }
-                                }
-                            });
+                    detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
 
-                            const mainEl = document.querySelector('#main-content, .item-details, .item-content-loaded');
-                            const bodyText = document.body ? document.body.innerText.trim().substring(0, 3000) : "";
+                    # ---- Auth expiry check ----
+                    if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
+                        logger.error(
+                            "🔒 Authentication has expired! The detail page has "
+                            "'item-content-loaded' but is missing 'paywall-content'. "
+                            "Please re-run the 'auth' stage to refresh the session."
+                        )
+                        # Save any progress made so far before aborting
+                        save_json(data_file, cases)
+                        logger.info(f"💾 Saved progress ({count} enriched) to {data_file} before aborting.")
+                        sys.exit(1)
 
-                            return {
-                                h1: h1El ? h1El.innerText.trim() : "",
-                                main_content: mainEl ? mainEl.innerText.trim() : "",
-                                raw_preview_text: bodyText,
-                                metadata: metadata,
-                            };
-                        }
-                    ''')
+                    if not detail_info.get("content_loaded"):
+                        logger.warning(f"  No content div found on {url}. Skipping.")
+                        continue
 
-                    detail_record = {
-                        **case_item,
-                        "extracted_h1": page_info.get("h1"),
-                        "extracted_main_content": page_info.get("main_content"),
-                        "raw_preview_text": page_info.get("raw_preview_text"),
-                        **page_info.get("metadata", {}),
-                        "scraped_at": datetime.now().isoformat(),
-                    }
-                    existing_details.append(detail_record)
-
-                    document_id = url.split("/")[-1]
-                    file_name = f"{document_id}.html"
-                    file_path = os.path.join(output_dir, file_name)
-
-                    html_content = await page.content()
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(html_content)
-                    logger.info(f"  [+] Saved HTML locally: {file_name}")
-
-                    if gdrive_service:
-                        if upload_file_to_gdrive(
-                            gdrive_service, file_path, gdrive_folder_id
-                        ):
-                            existing_files.add(file_name)
-                            if gdrive_delete_local:
-                                try:
-                                    os.remove(file_path)
-                                    logger.info(
-                                        f"  [+] Deleted local HTML file: {file_name}"
-                                    )
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to delete local HTML file {file_name}: {e}"
-                                    )
-                        else:
-                            logger.error(
-                                f"Failed to upload {file_name} to Google Drive."
-                            )
-                    else:
-                        existing_files.add(file_name)
+                    # Merge the extracted metadata into the existing case entry
+                    metadata = detail_info.get("metadata", {})
+                    for key, value in metadata.items():
+                        cases[case_idx][key] = value
+                    cases[case_idx]["details_scraped"] = True
+                    cases[case_idx]["details_scraped_at"] = datetime.now().isoformat()
 
                     count += 1
+                    logger.info(f"  ✅ Enriched with {len(metadata)} fields.")
 
                     # Incremental checkpoint every 10 records
                     if count % 10 == 0:
-                        with open(output_file, "w", encoding="utf-8") as f:
-                            json.dump(existing_details, f, indent=4, ensure_ascii=False)
-                        logger.info(f"Saved {count} records incrementally to {output_file}.")
+                        save_json(data_file, cases)
+                        logger.info(f"💾 Incremental save: {count} enriched records saved to {data_file}.")
 
                     await asyncio.sleep(2)  # basic throttling
                     if count % 100 == 0:
@@ -874,14 +839,24 @@ async def run_detail_extraction(pipeline_name: str):
                     await asyncio.sleep(5)
 
             # Final save
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(existing_details, f, indent=4, ensure_ascii=False)
-            logger.info(f"✅ Finished! Successfully scraped {count} new details records. Saved to {output_file}.")
+            save_json(data_file, cases)
+            logger.info(f"✅ Finished! Enriched {count} case records. Saved to {data_file}.")
+
+            # Google Drive backup
+            gdrive_mgr = GDriveBackupManager.from_config(extraction_params)
+            if gdrive_mgr:
+                gdrive_mgr.backup_files([data_file])
         except Exception as e:
             logger.error(f"❌ Detail scraper failed: {str(e)}")
+            # Save whatever progress we have before exiting
+            try:
+                save_json(data_file, cases)
+                logger.info(f"💾 Emergency save: progress saved to {data_file}.")
+            except Exception:
+                pass
             sys.exit(1)
         finally:
-            await browser.close()
+            await close_browser_cdp(browser, chrome_proc)
             logger.info("Browser closed. Run complete.")
 
 # -----------------------------------------------------------------------------

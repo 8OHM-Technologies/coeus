@@ -2,32 +2,28 @@ import argparse
 import asyncio
 import base64
 import json
-import logging
 import os
 import re
 import sys
 import urllib.parse
 from datetime import datetime
-import subprocess
-import socket
-import tempfile
 import time
 
 import requests
-from googleapiclient.discovery import build
 from playwright.async_api import async_playwright
-from utils.utils import fetch_pipeline_config
+from utils.utils import fetch_pipeline_config, resolve_data_dir
 from misstcha import TurnstileSolver
-from utils.gdrive_helper import load_gdrive_credentials, list_gdrive_files, upload_file_to_gdrive
+from utils.gdrive_helper import GDriveBackupManager
 from utils.utils import take_screenshot
 from utils.debug_helper import log_browser_proxy_ip
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+from utils.browser_helper import (
+    setup_logger,
+    launch_browser_cdp,
+    close_browser_cdp,
+    create_browser_context,
 )
-logger = logging.getLogger(__name__)
+
+logger = setup_logger(__name__)
 
 turnstile_solver = TurnstileSolver()
 
@@ -227,122 +223,31 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     court_name = path_parts[-1] if path_parts else "SAFLII"
 
     document_type = config.get("document_type", "awards").lower()
-    base_data_dir = "/app/data" if os.path.exists("/app/data") else "data"
-    output_dir = os.path.join(base_data_dir, pipeline_name, document_type)
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = resolve_data_dir(pipeline_name, document_type)
     logger.info(f"Output directory: {os.path.abspath(output_dir)}")
 
     take_debug_screenshots = config.get("take_debug_screenshots", False)
-    screenshots_dir = os.path.join(base_data_dir, pipeline_name, "screenshots")
+    screenshots_dir = os.path.join(os.path.dirname(output_dir), "screenshots")
     os.makedirs(screenshots_dir, exist_ok=True)
     logger.info(f"Screenshots directory: {os.path.abspath(screenshots_dir)}")
 
-    gdrive_folder_id = extraction_params.get("gdrive_folder_id")
-    gdrive_delete_local = extraction_params.get("gdrive_delete_local", False)
-    gdrive_service = None
+    gdrive_mgr = GDriveBackupManager.from_config(extraction_params)
     existing_files = set()
-
-    if gdrive_folder_id:
-        logger.info(
-            "Google Drive integration is enabled. Initializing deduplication set..."
-        )
-        try:
-            creds = load_gdrive_credentials(extraction_params)
-            gdrive_service = build("drive", "v3", credentials=creds)
-            gdrive_files = list_gdrive_files(gdrive_service, gdrive_folder_id)
-            logger.info(
-                f"Found {len(gdrive_files)} existing files on Google Drive."
-            )
-            existing_files.update(gdrive_files)
-        except Exception as e:
-            logger.error(f"Failed to initialize Google Drive: {e}")
-            sys.exit(1)
+    if gdrive_mgr:
+        existing_files = gdrive_mgr.load_existing_files(output_dir)
     else:
-        logger.info(
-            "Google Drive integration not enabled. Checking local output directory..."
-        )
-        for fname in os.listdir(output_dir):
-            if fname.endswith(".html"):
-                existing_files.add(fname)
-        logger.info(f"Found {len(existing_files)} existing local HTML files.")
+        logger.info("Google Drive integration not enabled. Checking local output directory...")
+        existing_files = GDriveBackupManager._list_local(output_dir)
 
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser via CDP (headless={headless})...")
-        
-        def find_free_port():
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', 0))
-                return s.getsockname()[1]
-                
-        cdp_port = find_free_port()
-        user_data_dir = tempfile.mkdtemp()
-        
-        chrome_args = [
-            p.chromium.executable_path,
-            f"--remote-debugging-port={cdp_port}",
-            f"--user-data-dir={user_data_dir}",
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-background-networking",
-            "--disable-gcm",
-            "--disable-default-apps",
-            "--disable-component-update",
-            "--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC",
-            "--disable-peer-connection-encryption",
-            "--window-size=1280,720"
-        ]
-        
-        if headless:
-            chrome_args.append("--headless=new")
-            
-        logger.info(f"Starting Chrome with CDP on port {cdp_port}...")
-        chrome_proc = subprocess.Popen(
-            chrome_args
+        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=headless)
+        context, page = await create_browser_context(
+            browser,
+            ignore_https_errors=allow_insecure_requests,
+            proxy_url=proxy_url,
+            viewport={"width": 1280, "height": 720}
         )
-        
-        # Wait a bit for Chrome to start
-        await asyncio.sleep(3)
-        
-        browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
-        
-        proxy_config = None
-        if proxy_url:
-            parsed_proxy = urllib.parse.urlparse(proxy_url)
-            server_url = f"{parsed_proxy.scheme}://{parsed_proxy.hostname}"
-            if parsed_proxy.port:
-                server_url += f":{parsed_proxy.port}"
-
-            proxy_config = {"server": server_url}
-            if parsed_proxy.username:
-                proxy_config["username"] = parsed_proxy.username
-            if parsed_proxy.password:
-                proxy_config["password"] = parsed_proxy.password
-
-            masked_log = server_url
-            if parsed_proxy.username:
-                masked_log = (
-                    f"{parsed_proxy.scheme}://{parsed_proxy.username}:****@"
-                    f"{parsed_proxy.hostname}"
-                )
-                if parsed_proxy.port:
-                    masked_log += f":{parsed_proxy.port}"
-            logger.info(f"Using proxy for browser context: {masked_log}")
-
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        
-        context_kwargs = {
-            "viewport": {"width": 1280, "height": 720},
-            "user_agent": user_agent,
-            "ignore_https_errors": allow_insecure_requests,
-        }
-        if proxy_config:
-            context_kwargs["proxy"] = proxy_config
-            
-        context = await browser.new_context(**context_kwargs)
-        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        page = await context.new_page()
 
         await log_browser_proxy_ip(page, "Startup", use_proxy)
 
@@ -626,25 +531,9 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                         f.write(html_content)
                     logger.info(f"  [+] Saved HTML locally: {file_name}")
 
-                    if gdrive_service:
-                        if upload_file_to_gdrive(
-                            gdrive_service, file_path, gdrive_folder_id
-                        ):
+                    if gdrive_mgr:
+                        if gdrive_mgr.upload_file(file_path):
                             existing_files.add(file_name)
-                            if gdrive_delete_local:
-                                try:
-                                    os.remove(file_path)
-                                    logger.info(
-                                        f"  [+] Deleted local HTML file: {file_name}"
-                                    )
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to delete local HTML file {file_name}: {e}"
-                                    )
-                        else:
-                            logger.error(
-                                f"Failed to upload {file_name} to Google Drive."
-                            )
                     else:
                         existing_files.add(file_name)
 
@@ -674,13 +563,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             if success:
                 await asyncio.sleep(cooldown_seconds)
 
-        await browser.close()
-        
-        try:
-            chrome_proc.terminate()
-            chrome_proc.wait(timeout=5)
-        except Exception as e:
-            logger.warning(f"Error terminating chrome_proc: {e}")
+        await close_browser_cdp(browser, chrome_proc)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coeus New SAFLII Scraper")

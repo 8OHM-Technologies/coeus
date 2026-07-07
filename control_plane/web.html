@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge AI Analytics Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script type="module">
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+        let engine;
+        let activeChartInstances = []; // Now an array to track multiple charts
+        const modelId = "Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC"; // Or Llama-3.2-3B
+
+        function logToDebug(message, type = "INFO") {
+            const debugLog = document.getElementById("debugLog");
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] [${type}] ${message}\n`;
+
+            if (type === "ERROR") console.error(logEntry);
+            else console.log(logEntry);
+
+            debugLog.innerText += logEntry;
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }
+
+        async function initEngine() {
+            const statusLabel = document.getElementById("status");
+            statusLabel.innerText = "⏳ Initializing WebGPU and loading model...";
+            logToDebug(`Starting engine initialization for model: ${modelId}`);
+
+            try {
+                engine = await webllm.CreateMLCEngine(
+                    modelId,
+                    {
+                        initProgressCallback: (report) => {
+                            statusLabel.innerText = `Loading: ${Math.round(report.progress * 100)}% - ${report.text}`;
+                        }
+                    },
+                    { context_window_size: 2048 }
+                );
+
+                statusLabel.innerText = "✅ Edge Model Ready (100% Local)";
+                document.getElementById("generateBtn").disabled = false;
+                logToDebug("WebLLM Engine successfully initialized.");
+            } catch (err) {
+                statusLabel.innerText = "❌ WebGPU error. Check console.";
+                logToDebug(`Initialization failed: ${err.message}`, "ERROR");
+            }
+        }
+
+        async function processAndRender() {
+            const statusLabel = document.getElementById("status");
+            const rawJsonText = document.getElementById("jsonInput").value;
+
+            document.getElementById("debugLog").innerText = "";
+            logToDebug("Starting RecursiveMAS multi-agent pipeline.");
+
+            let structuredData;
+            try {
+                structuredData = JSON.parse(rawJsonText);
+                if (!Array.isArray(structuredData)) structuredData = [structuredData];
+            } catch (e) {
+                alert("Invalid JSON format!");
+                return;
+            }
+
+            document.getElementById("generateBtn").disabled = true;
+            const jsonSample = structuredData.slice(0, 2);
+
+            try {
+                // ==========================================
+                // LAYER 1: THE PLANNER AGENT
+                // ==========================================
+                statusLabel.innerText = "🤖 [Agent 1/3] Planner: Analyzing schema strategy...";
+                logToDebug("Invoking Planner Agent...");
+
+                const plannerSystem = `You are the Planner Agent in a multi-agent system. Your job is solely to look at data and determine WHICH fields are best to visualize and WHY. 
+
+                        CRITICAL RULE: 
+                        You must ONLY select fields that contain primitive values (strings, numbers, booleans). 
+                        NEVER select a key that resolves to a nested object or dictionary. If a useful property is nested, you MUST use dot notation to drill down to a text/number leaf node.
+
+                        Good targets: "court", "result.outcome_type", "parties.applicant_plaintiff"
+                        Bad targets: "parties", "result" (because these are objects, not direct values).
+
+                        Recommend 2 to 4 distinct key-paths to group by. Provide your reasoning clearly, followed by your final choices.`;
+
+                const plannerUser = `Analyze this data schema and outline a visualization plan: ${JSON.stringify(jsonSample)}`;
+
+                const plannerReply = await engine.chat.completions.create({
+                    messages: [
+                        { role: "system", content: plannerSystem },
+                        { role: "user", content: plannerUser }
+                    ],
+                    temperature: 0.3
+                });
+                const plannerOutput = plannerReply.choices[0].message.content;
+                logToDebug(`Planner Output:\n${plannerOutput}`);
+
+                // ==========================================
+                // LAYER 2: THE SOLVER AGENT
+                // ==========================================
+                statusLabel.innerText = "🤖 [Agent 2/3] Solver: Mapping charts to configurations...";
+                logToDebug("Invoking Solver Agent...");
+
+                const solverSystem = `You are the Solver Agent. Read the structural plan provided by the Planner Agent. Transform their text recommendations into structured chart configurations.
+        Rules:
+        - Assign "pie" or "doughnut" for low-cardinality fields.
+        - Assign "bar" for high-cardinality fields.
+        - Output a preliminary configuration structure.`;
+
+                const solverReply = await engine.chat.completions.create({
+                    messages: [
+                        { role: "system", content: solverSystem },
+                        { role: "user", content: `Here is the plan to execute:\n${plannerOutput}` }
+                    ],
+                    temperature: 0.1
+                });
+                const solverOutput = solverReply.choices[0].message.content;
+                logToDebug(`Solver Output:\n${solverOutput}`);
+
+                // ==========================================
+                // LAYER 3: THE REFINER AGENT (Recursion & Extraction)
+                // ==========================================
+                statusLabel.innerText = "🤖 [Agent 3/3] Refiner: Validating and formatting syntax...";
+                logToDebug("Invoking Refiner Agent...");
+
+                const refinerSystem = `You are the Refiner Agent. Your sole job is to take the Solver's output and clean it into a strict, executable JSON array.
+        
+        CRITICAL OUTPUT FORMAT:
+        Return ONLY a raw JSON array. No markdown fences (\`\`\`), no conversational text.
+        Each object must have: "tallyKey", "datasetLabel", and "chartType".
+        
+        Example: [{"tallyKey": "court", "datasetLabel": "Cases by Court", "chartType": "bar"}]`;
+
+                const refinerReply = await engine.chat.completions.create({
+                    messages: [
+                        { role: "system", content: refinerSystem },
+                        { role: "user", content: `Clean and format this configuration into raw JSON array data:\n${solverOutput}` }
+                    ],
+                    temperature: 0.0 // Strict adherence
+                });
+
+                let aiConfigText = refinerReply.choices[0].message.content.trim();
+
+                // Sanitize any remaining markdown leakage
+                if (aiConfigText.startsWith("```")) {
+                    aiConfigText = aiConfigText.replace(/^```[a-zA-Z]*\n/, "").replace(/```$/, "").trim();
+                }
+                logToDebug(`Refiner Final Output:\n${aiConfigText}`);
+
+                // ==========================================
+                // EXECUTION & RENDERING
+                // ==========================================
+                let aiSelections = JSON.parse(aiConfigText);
+                if (!Array.isArray(aiSelections)) aiSelections = [aiSelections];
+
+                statusLabel.innerText = "⚙️ Executing structural aggregation locally...";
+
+                const chartsContainer = document.getElementById("chartsContainer");
+                chartsContainer.innerHTML = "";
+                activeChartInstances.forEach(chart => chart.destroy());
+                activeChartInstances = [];
+
+                aiSelections.forEach((selection, index) => {
+                    const tallyMap = {};
+                    const pathParts = selection.tallyKey.split('.');
+
+                    structuredData.forEach(item => {
+                        let val = item;
+                        for (const part of pathParts) {
+                            val = val ? val[part] : null;
+                        }
+                        const groupName = val !== null && val !== undefined ? String(val) : "Unknown";
+                        tallyMap[groupName] = (tallyMap[groupName] || 0) + 1;
+                    });
+
+                    const sortedLabels = Object.keys(tallyMap).sort((a, b) => tallyMap[b] - tallyMap[a]);
+                    const sortedData = sortedLabels.map(label => tallyMap[label]);
+                    const bgColors = sortedLabels.map((_, i) => `hsl(${(i * 360) / Math.max(sortedLabels.length, 1)}, 70%, 60%)`);
+
+                    const chartConfig = {
+                        type: selection.chartType || 'bar',
+                        data: {
+                            labels: sortedLabels,
+                            datasets: [{
+                                label: selection.datasetLabel || selection.tallyKey,
+                                data: sortedData,
+                                backgroundColor: bgColors,
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: { display: true, text: selection.datasetLabel, font: { size: 16 } }
+                            }
+                        }
+                    };
+
+                    const wrapperDiv = document.createElement("div");
+                    wrapperDiv.className = "canvas-wrapper";
+                    const canvasEl = document.createElement("canvas");
+                    canvasEl.id = `chartCanvas_${index}`;
+                    wrapperDiv.appendChild(canvasEl);
+                    chartsContainer.appendChild(wrapperDiv);
+
+                    const ctx = canvasEl.getContext('2d');
+                    activeChartInstances.push(new Chart(ctx, chartConfig));
+                });
+
+                statusLabel.innerText = `✅ Success! Generated ${aiSelections.length} recursive-agent charts.`;
+            } catch (err) {
+                statusLabel.innerText = "❌ Pipeline failure. Check debug log.";
+                logToDebug(`Process failed: ${err.message}`, "ERROR");
+            } finally {
+                document.getElementById("generateBtn").disabled = false;
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", initEngine);
+        window.processAndRender = processAndRender;
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 30px;
+            background: #fafafa;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            /* Widened for grid layout */
+            margin: 0 auto;
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        textarea {
+            width: 100%;
+            height: 140px;
+            font-family: monospace;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        button:disabled {
+            background: #eaeaea;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        #status {
+            font-weight: 500;
+            color: #666;
+            margin: 15px 0;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* Dynamic Grid Layout for Multiple Charts */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+            margin-bottom: 20px;
+        }
+
+        .canvas-wrapper {
+            width: 100%;
+            height: 350px;
+            /* Fixed height so they sit uniformly in the grid */
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            padding: 15px;
+            box-sizing: border-box;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
+        }
+
+        #debugLog {
+            background: #1e1e1e;
+            color: #4af626;
+            padding: 15px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h2>Edge AI Analytics Dashboard</h2>
+        <div id="status">🚀 Initializing...</div>
+
+        <label for="jsonInput">Paste JSON Data Array:</label>
+        <textarea id="jsonInput">[
+  {
+        "case_title": "SAPU v Minister of Police",
+        "court": "Labour Court",
+        "parties": {
+            "applicant_plaintiff": "SAPU",
+            "respondent_defendant": "Minister of Police"
+        },
+        "judge": "Van Niekerk [J]",
+        "result": {
+            "outcome_type": "Granted"
+        }
+  },
+  {
+        "case_title": "NUM v Eskom",
+        "court": "Labour Appeal Court",
+        "parties": {
+            "applicant_plaintiff": "NUM",
+            "respondent_defendant": "Eskom"
+        },
+        "judge": "Tlhotlhalemaje [J]",
+        "result": {
+            "outcome_type": "Dismissed"
+        }
+  }
+]</textarea>
+
+        <button id="generateBtn" onclick="processAndRender()" disabled>Analyze Data & Generate Dashboard</button>
+
+        <!-- Dynamic Container for Charts -->
+        <div id="chartsContainer" class="charts-grid"></div>
+
+        <h3>Debug Log</h3>
+        <pre id="debugLog"></pre>
+    </div>
+
+</body>
+
+</html>

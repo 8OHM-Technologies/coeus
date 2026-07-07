@@ -141,3 +141,114 @@ def upload_file_to_gdrive(service, file_path, folder_id):
     except Exception as e:
         logger.error(f"Error uploading {file_name} to Google Drive: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# High-level GDrive Backup Manager
+# ---------------------------------------------------------------------------
+class GDriveBackupManager:
+    """Wraps the full Google Drive init → list → upload → delete-local cycle.
+
+    Usage::
+
+        mgr = GDriveBackupManager.from_config(extraction_params)
+        if mgr:
+            existing = mgr.load_existing_files(local_output_dir)
+            # ... scrape loop ...
+            mgr.backup_files(["/path/to/data.json"])
+    """
+
+    def __init__(self, service, folder_id: str, delete_local: bool = False):
+        self.service = service
+        self.folder_id = folder_id
+        self.delete_local = delete_local
+
+    # -- Factory ----------------------------------------------------------
+
+    @classmethod
+    def from_config(cls, extraction_params: dict) -> "GDriveBackupManager | None":
+        """Create from pipeline extraction_params, or return ``None``."""
+        folder_id = extraction_params.get("gdrive_folder_id")
+        if not folder_id:
+            logger.info("Google Drive integration not enabled (no gdrive_folder_id).")
+            return None
+
+        logger.info("☁️  Initialising Google Drive backup manager...")
+        try:
+            from googleapiclient.discovery import build as _build
+
+            creds = load_gdrive_credentials(extraction_params)
+            service = _build("drive", "v3", credentials=creds)
+        except Exception as e:
+            logger.error(f"Failed to initialise Google Drive: {e}")
+            raise
+
+        delete_local = extraction_params.get("gdrive_delete_local", False)
+        return cls(service, folder_id, delete_local=delete_local)
+
+    # -- File listing -----------------------------------------------------
+
+    def load_existing_files(self, local_output_dir: str | None = None) -> set[str]:
+        """Return a set of filenames already stored (GDrive or local).
+
+        When GDrive is active the remote listing is used; otherwise falls
+        back to scanning *local_output_dir* for ``.html`` files.
+        """
+        try:
+            remote_files = list_gdrive_files(self.service, self.folder_id)
+            logger.info(f"Found {len(remote_files)} existing files on Google Drive.")
+            return remote_files
+        except Exception as e:
+            logger.warning(f"Could not list GDrive files: {e}")
+            if local_output_dir:
+                return self._list_local(local_output_dir)
+            return set()
+
+    @staticmethod
+    def _list_local(output_dir: str) -> set[str]:
+        files = set()
+        if os.path.isdir(output_dir):
+            for fname in os.listdir(output_dir):
+                if fname.endswith(".html"):
+                    files.add(fname)
+        logger.info(f"Found {len(files)} existing local HTML files.")
+        return files
+
+    # -- Upload / backup --------------------------------------------------
+
+    def backup_files(self, file_paths: list[str]) -> None:
+        """Upload a list of local files to Google Drive.
+
+        If ``self.delete_local`` is ``True``, each file is removed from the
+        local filesystem after a successful upload.
+        """
+        for fpath in file_paths:
+            fname = os.path.basename(fpath)
+            if not os.path.exists(fpath):
+                logger.warning(f"  ⚠️ File does not exist, skipping upload: {fname}")
+                continue
+            if upload_file_to_gdrive(self.service, fpath, self.folder_id):
+                logger.info(f"  ✅ Uploaded {fname} to Google Drive.")
+                if self.delete_local:
+                    try:
+                        os.remove(fpath)
+                        logger.info(f"  🗑️  Deleted local file: {fname}")
+                    except Exception as e:
+                        logger.warning(f"  Failed to delete local file {fname}: {e}")
+            else:
+                logger.warning(f"  ⚠️ Failed to upload {fname} to Google Drive.")
+
+    def upload_file(self, file_path: str) -> bool:
+        """Upload a single file. Returns ``True`` on success.
+
+        Handles ``delete_local`` automatically.
+        """
+        fname = os.path.basename(file_path)
+        ok = upload_file_to_gdrive(self.service, file_path, self.folder_id)
+        if ok and self.delete_local:
+            try:
+                os.remove(file_path)
+                logger.info(f"  🗑️  Deleted local file: {fname}")
+            except Exception as e:
+                logger.warning(f"  Failed to delete local file {fname}: {e}")
+        return ok

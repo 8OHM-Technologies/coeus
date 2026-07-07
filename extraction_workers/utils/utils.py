@@ -173,3 +173,27 @@ async def take_screenshot(page, screenshot_dir: str, name: str):
         logger.info(f"Saved screenshot: {path}")
     except Exception as e:
         logger.warning(f"Failed to take screenshot {name}: {e}")
+
+
+def resolve_data_dir(pipeline_name: str, document_type: str = "awards") -> str:
+    """Resolve the output data directory, handling container vs local layouts.
+
+    Returns the absolute path to the output directory, creating it if needed.
+    Uses ``/app/data`` when running inside a container, otherwise ``data/``.
+    """
+    if os.path.exists("/app/data"):
+        base = "/app/data"
+    elif os.path.exists("/app"):
+        base = "/app/data"
+    else:
+        base = "data"
+
+    output_dir = os.path.join(base, pipeline_name, document_type.lower())
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+
+def save_json(path: str, data, indent: int = 4) -> None:
+    """Atomically write *data* as JSON to *path*."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=indent, ensure_ascii=False)
