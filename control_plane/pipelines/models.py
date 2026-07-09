@@ -2,12 +2,6 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
-class PaginationStrategy(models.TextChoices):
-    URL_PARAM = "url_param", "URL Parameter (?page=2)"
-    CLICK_NEXT = "click_next", "Click Next Button (Playwright)"
-    SCROLL = "scroll", "Infinite Scroll"
-
-
 class DocumentType(models.TextChoices):
     PDF = "pdf", "PDF Document"
     JSON = "json", "JSON Document"

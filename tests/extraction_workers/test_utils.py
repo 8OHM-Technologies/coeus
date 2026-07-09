@@ -14,8 +14,6 @@ async def test_fetch_pipeline_config_from_env(monkeypatch, mocker):
     # Set mock environment variables
     monkeypatch.setenv("START_URL", "https://env.example.com")
     monkeypatch.setenv("DOCUMENT_TYPE", "pdf")
-    monkeypatch.setenv("CAT_SELECTOR", ".cat")
-    monkeypatch.setenv("DOC_SELECTOR", ".doc")
     monkeypatch.setenv("ALLOW_INSECURE_HTTPS", "True")
     monkeypatch.setenv("ALLOW_INSECURE_REQUESTS", "True")
     monkeypatch.setenv("USE_PROXY", "False")

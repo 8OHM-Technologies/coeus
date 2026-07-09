@@ -64,8 +64,6 @@ def run_scraper(pipes: PipesContext) -> None:
     scraper_type: str = pipes.get_extra("scraper_type")
     start_url: str = pipes.get_extra("start_url")
     document_type: str = pipes.get_extra("document_type")
-    cat_selector: str = pipes.get_extra("cat_selector")
-    doc_selector: str = pipes.get_extra("doc_selector")
     allow_insecure_https: bool = pipes.get_extra("allow_insecure_https")
     allow_insecure_requests: bool = pipes.get_extra("allow_insecure_requests")
     use_proxy: bool = pipes.get_extra("use_proxy")
@@ -95,8 +93,6 @@ def run_scraper(pipes: PipesContext) -> None:
         "PYTHONPATH": "/app:/app/extraction_workers",
         "START_URL": start_url,
         "DOCUMENT_TYPE": document_type,
-        "CAT_SELECTOR": cat_selector,
-        "DOC_SELECTOR": doc_selector,
         "ALLOW_INSECURE_HTTPS": str(allow_insecure_https),
         "ALLOW_INSECURE_REQUESTS": str(allow_insecure_requests),
         "USE_PROXY": str(use_proxy),

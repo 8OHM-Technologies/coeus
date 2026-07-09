@@ -1,6 +1,6 @@
 import pytest
 from django.core.exceptions import ValidationError
-from pipelines.models import PipelineConfiguration, ScraperType, DocumentType, LLMEngine, PaginationStrategy
+from pipelines.models import PipelineConfiguration, ScraperType, DocumentType, LLMEngine
 
 @pytest.mark.django_db
 def test_pipeline_configuration_creation_and_defaults():

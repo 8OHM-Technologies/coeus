@@ -62,8 +62,6 @@ def run_extractor(pipes: PipesContext) -> None:
     requires_extraction: bool = context.get_extra("requires_extraction")
     document_type: str = context.get_extra("document_type")
     start_url: str = context.get_extra("start_url")
-    cat_selector: str = context.get_extra("cat_selector")
-    doc_selector: str = context.get_extra("doc_selector")
     allow_insecure_https: bool = context.get_extra("allow_insecure_https")
     allow_insecure_requests: bool = context.get_extra("allow_insecure_requests")
     use_proxy: bool = context.get_extra("use_proxy")
@@ -91,8 +89,6 @@ def run_extractor(pipes: PipesContext) -> None:
         "PIPELINE_NAME": partition_key,
         "START_URL": start_url,
         "DOCUMENT_TYPE": document_type,
-        "CAT_SELECTOR": cat_selector,
-        "DOC_SELECTOR": doc_selector,
         "ALLOW_INSECURE_HTTPS": str(allow_insecure_https),
         "ALLOW_INSECURE_REQUESTS": str(allow_insecure_requests),
         "USE_PROXY": str(use_proxy),

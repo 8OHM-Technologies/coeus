@@ -135,7 +135,6 @@ Every scraper container receives a standardized set of environment variables pre
 | `PIPELINE_CONFIG` | Set to `COEUS_API_URL` |
 | `START_URL` | `phase_1_ingestion.start_url` from blueprint |
 | `DOCUMENT_TYPE` | `metadata.document_type` from blueprint |
-| `CAT_SELECTOR` / `DOC_SELECTOR` | CSS selectors from blueprint |
 | `ALLOW_INSECURE_HTTPS` / `ALLOW_INSECURE_REQUESTS` | SSL bypass flags |
 | `EXTRACTION_PARAMS` | `json.dumps(extraction_params)` — always JSON-encoded |
 
