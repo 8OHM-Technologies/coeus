@@ -22,6 +22,9 @@ import logging
 import subprocess
 
 from dagster_pipes import PipesContext, open_dagster_pipes
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,

@@ -1,13 +1,14 @@
 import os
-
 import asyncpg
+from dotenv import load_dotenv
 
+load_dotenv()
 
 async def get_db_connection() -> asyncpg.Connection:
     """
     Establishes an asynchronous connection to the PostgreSQL instance via the proxy.
     """
-    db_host = os.environ.get("POSTGRES_HOST", "cloud-sql-proxy")
+    db_host = os.environ.get("POSTGRES_HOST")
     db_user = os.environ.get("POSTGRES_USER")
     db_pass = os.environ.get("POSTGRES_PASSWORD")
     db_name = os.environ.get("POSTGRES_DB")
@@ -24,7 +25,7 @@ async def get_db_pool():
     """
     Creates an asynchronous connection pool to the PostgreSQL instance via the proxy.
     """
-    db_host = os.environ.get("POSTGRES_HOST", "cloud-sql-proxy")
+    db_host = os.environ.get("POSTGRES_HOST")
     db_user = os.environ.get("POSTGRES_USER")
     db_pass = os.environ.get("POSTGRES_PASSWORD")
     db_name = os.environ.get("POSTGRES_DB")
