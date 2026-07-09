@@ -33,8 +33,6 @@ def test_blueprint_to_run_config():
         "metadata": {"document_type": "pdf"},
         "phase_1_ingestion": {
             "start_url": "https://start.com",
-            "target_css_selector_categories": ".cat",
-            "target_css_selector_documents": ".doc",
             "allow_insecure_https": True,
             "allow_insecure_requests": False,
             "use_proxy": True,
@@ -54,8 +52,6 @@ def test_blueprint_to_run_config():
     raw_config = ops["raw_scraped_pages"]["config"]
     assert raw_config["scraper_type"] == "saflii"
     assert raw_config["start_url"] == "https://start.com"
-    assert raw_config["cat_selector"] == ".cat"
-    assert raw_config["doc_selector"] == ".doc"
     assert raw_config["allow_insecure_https"] is True
     assert raw_config["allow_insecure_requests"] is False
     assert raw_config["use_proxy"] is True

@@ -44,7 +44,7 @@ async def run_extraction(pipeline_name: str):
     end_year = extraction_params.get("end_year", 2026)
     
     # Standardized selector
-    doc_selector = config.get("target_css_selector_documents") or "table tbody tr"
+    doc_selector = "table tbody tr"
 
     logger.info("==================================================")
     logger.info(f"🚀 COEUS PLAYWRIGHT WORKER INITIALIZED (LOTTO: {pipeline_name})")

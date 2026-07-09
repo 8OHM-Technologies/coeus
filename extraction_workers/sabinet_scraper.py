@@ -7,8 +7,9 @@ import sys
 from datetime import datetime, date
 from playwright.async_api import async_playwright
 
-from .utils.utils import fetch_pipeline_config, resolve_data_dir, save_json
-from .utils.gdrive_helper import GDriveBackupManager
+from .utils.utils import fetch_pipeline_config, resolve_data_dir
+from .db import get_db_connection
+from . import db_storage
 from .utils.browser_helper import (
     setup_logger,
     launch_browser_cdp,
@@ -209,7 +210,6 @@ async def run_extraction(pipeline_name: str):
         or "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards"
     )
 
-    # Resolve an appropriate output directory – support both container and local layouts
     output_dir = resolve_data_dir(pipeline_name, config.get("document_type", "awards"))
 
     logger.info("==================================================")
@@ -217,47 +217,31 @@ async def run_extraction(pipeline_name: str):
     logger.info(f"Target URL: {start_url}")
     logger.info("==================================================")
 
-    output_file = os.path.join(output_dir, f"{pipeline_name}.json")
-    progress_file = os.path.join(output_dir, f"{pipeline_name}_index_state.json")
+    # -------------------------------------------------------------------------
+    # Establish DB Connection and Resolve target/deduplication URLs/progress
+    # -------------------------------------------------------------------------
+    conn = await get_db_connection()
+    entity_name = config.get("name") or pipeline_name
+    target_name = config.get("subset") or "CCMA Awards"
 
-    # -------------------------------------------------------------------------
-    # Load previously scraped data – build a URL-based deduplication set so we
-    # can skip records we already have regardless of pagination order.
-    # -------------------------------------------------------------------------
-    existing_data: list[dict] = []
-    existing_urls: set[str] = set()
-    if os.path.exists(output_file):
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                existing_data = json.load(f)
-            for item in existing_data:
-                if item.get("detail_url"):
-                    existing_urls.add(item["detail_url"])
-            logger.info(f"Loaded {len(existing_data)} existing records. {len(existing_urls)} unique URLs tracked.")
-        except Exception as read_err:
-            logger.warning(f"Could not load existing data from {output_file}: {read_err}. Performing full scrape.")
+    logger.info(f"Resolving entity='{entity_name}' and target='{target_name}'...")
+    target_id = await db_storage.resolve_target_id(
+        conn, entity_name, target_name, start_url
+    )
 
-    # -------------------------------------------------------------------------
-    # Load progress state for resumability
-    # -------------------------------------------------------------------------
-    progress_state: dict = {}
-    if os.path.exists(progress_file):
-        try:
-            with open(progress_file, "r", encoding="utf-8") as f:
-                progress_state = json.load(f)
-            logger.info(f"Resuming from progress state: {progress_state}")
-        except Exception:
-            logger.warning("Could not read progress state file. Starting from scratch.")
+    existing_urls = await db_storage.get_existing_urls(conn, pipeline_name)
+    logger.info(f"Loaded {len(existing_urls)} unique URLs from database.")
 
-    def _save_progress(year: int, month: int, completed: bool = False) -> None:
+    progress_state = await db_storage.load_pipeline_state(conn, pipeline_name)
+    logger.info(f"Loaded progress state: {progress_state}")
+
+    async def save_progress(year: int, month: int, completed: bool = False) -> None:
         progress_state["last_year"] = year
         progress_state["last_month"] = month
         progress_state["last_completed"] = completed
-        save_json(progress_file, progress_state, indent=2)
+        await db_storage.save_pipeline_state(conn, pipeline_name, progress_state)
 
-    # -------------------------------------------------------------------------
     # Determine the resume point
-    # -------------------------------------------------------------------------
     resume_year: int = progress_state.get("last_year", 0)
     resume_month: int = progress_state.get("last_month", 0)
     last_completed: bool = progress_state.get("last_completed", True)
@@ -268,11 +252,6 @@ async def run_extraction(pipeline_name: str):
         if resume_month > 12:
             resume_month = 1
             resume_year += 1
-
-    # -------------------------------------------------------------------------
-    # Playwright session
-    # -------------------------------------------------------------------------
-    extracted_data: list[dict] = []
 
     async with async_playwright() as p:
         # Resolve storage state (cookies)
@@ -397,7 +376,7 @@ async def run_extraction(pipeline_name: str):
                     logger.info(f"  🗓  Window: {date_from} → {date_to}")
 
                     # Mark this window as in-progress before we start
-                    _save_progress(year, month, completed=False)
+                    await save_progress(year, month, completed=False)
 
                     # --------------------------------------------------------
                     # 4a. Open Advanced Search panel and apply the date filter
@@ -420,7 +399,7 @@ async def run_extraction(pipeline_name: str):
                                     await date_from_input.wait_for(state="visible", timeout=8000)
                                 except Exception:
                                     logger.warning("  Advanced Search panel did not open. Skipping window.")
-                                    _save_progress(year, month, completed=True)
+                                    await save_progress(year, month, completed=True)
                                     continue
                             else:
                                 logger.warning("  Advanced Search button not found – attempting to proceed anyway.")
@@ -476,7 +455,7 @@ async def run_extraction(pipeline_name: str):
                         )
                         # Do NOT mark as completed – leave completed=False so the
                         # next run retries this window instead of skipping past it.
-                        _save_progress(year, month, completed=False)
+                        await save_progress(year, month, completed=False)
                         continue
 
                     # --------------------------------------------------------
@@ -486,7 +465,7 @@ async def run_extraction(pipeline_name: str):
                         await page.wait_for_selector('.ant-list-item', timeout=10000)
                     except Exception:
                         logger.info(f"  No results for window {date_from}→{date_to}. Moving on.")
-                        _save_progress(year, month, completed=True)
+                        await save_progress(year, month, completed=True)
                         continue
 
                     # --------------------------------------------------------
@@ -507,23 +486,23 @@ async def run_extraction(pipeline_name: str):
                         page_items: list[dict] = await page.evaluate(_EXTRACT_ITEMS_JS)
                         logger.info(f"    Extracted {len(page_items)} items.")
 
+                        new_items = []
                         for item_data in page_items:
                             url = item_data.get("detail_url")
                             if url and url in existing_urls:
                                 # Already have this record – skip silently
                                 continue
                             item_data["index_scraped_at"] = datetime.now().isoformat()
-                            extracted_data.append(item_data)
+                            new_items.append(item_data)
                             if url:
                                 existing_urls.add(url)
                             window_new += 1
 
-                        # Incremental checkpoint every 500 new records across all windows
-                        total_so_far = total_new + window_new
-                        if window_new > 0 and total_so_far % 500 < len(page_items):
-                            combined = extracted_data + existing_data
-                            save_json(output_file, combined)
-                            logger.info(f"    💾 Incremental save: {len(combined)} total records.")
+                        if new_items:
+                            await db_storage.upsert_scraped_records_batch(
+                                conn, target_id, pipeline_name, new_items, "detail_url"
+                            )
+                            logger.info(f"    Saved {len(new_items)} new items to database.")
 
                         # Navigate to the next page within this window
                         next_btn = page.locator('li.ant-pagination-next:not(.ant-pagination-disabled) a').first
@@ -565,33 +544,22 @@ async def run_extraction(pipeline_name: str):
                         f"  ✅ Window {date_from}→{date_to}: {window_new} new records "
                         f"(running total: {total_new})."
                     )
-                    _save_progress(year, month, completed=True)
+                    await save_progress(year, month, completed=True)
 
                     # Short pause between windows to be polite to the server
                     await asyncio.sleep(3)
 
             # ------------------------------------------------------------------
-            # 5. Final save
+            # 5. Final save (Pipeline state only)
             # ------------------------------------------------------------------
-            combined_data = extracted_data + existing_data
-            save_json(output_file, combined_data)
             logger.info(
-                f"✅ Extraction completed. Saved {len(combined_data)} total records "
-                f"({total_new} new) to {output_file}."
+                f"✅ Extraction completed. Scraped {total_new} new records in total."
             )
 
             # Mark the entire run as fully complete in the progress state
             progress_state["fully_complete"] = True
             progress_state["completed_at"] = datetime.now().isoformat()
-            save_json(progress_file, progress_state, indent=2)
-
-            # ------------------------------------------------------------------
-            # 6. Google Drive backup
-            # ------------------------------------------------------------------
-            extraction_params = config.get("extraction_params") or {}
-            gdrive_mgr = GDriveBackupManager.from_config(extraction_params)
-            if gdrive_mgr:
-                gdrive_mgr.backup_files([output_file, progress_file])
+            await db_storage.save_pipeline_state(conn, pipeline_name, progress_state)
 
         except Exception as e:
             logger.error(f"❌ Playwright extraction failed: {str(e)}")
@@ -604,17 +572,12 @@ async def run_extraction(pipeline_name: str):
 # Detail Scraper – enriches each record with full page content
 # -----------------------------------------------------------------------------
 async def run_detail_extraction(pipeline_name: str):
-    """Enrich each case in the index JSON with detailed metadata from its detail page.
+    """Enrich each case in Postgres with detailed metadata from its detail page.
 
-    This function reads the main ``{pipeline_name}.json`` file produced by the
-    index scraper, visits each case's ``detail_url``, extracts structured
-    metadata from the ``paywall-content item-content-loaded`` div, and writes
-    the enriched data back to the **same** JSON file.  No separate details JSON
-    or HTML files are created – the only output is the updated index JSON.
-
-    If the detail page's content div has the ``item-content-loaded`` class but
-    is missing the ``paywall-content`` class, the authentication session has
-    expired and the function will abort so the ``auth`` stage can be re-run.
+    This function reads the pending records for the given pipeline from the database,
+    visits each case's ``detail_url``, extracts structured metadata from the
+    ``paywall-content item-content-loaded`` div, and writes the enriched data back
+    to the database.
     """
     config = await fetch_pipeline_config(pipeline_name)
 
@@ -625,38 +588,16 @@ async def run_detail_extraction(pipeline_name: str):
     extraction_params = config.get("extraction_params") or {}
     index_pipeline_name = extraction_params.get("index_pipeline_name") or re.sub(r'_(details?)$', '', pipeline_name)
 
-    # Resolve output directory and data file path
-    output_dir = resolve_data_dir(index_pipeline_name, doc_type)
-    data_file = os.path.join(output_dir, f"{index_pipeline_name}.json")
-
     logger.info("==================================================")
     logger.info(f"🚀 SABINET DETAIL SCRAPER INITIALIZED (PIPELINE: {pipeline_name})")
     logger.info(f"Index Pipeline Source: {index_pipeline_name}")
-    logger.info(f"Data File: {data_file}")
     logger.info("==================================================")
 
-    if not os.path.exists(data_file):
-        logger.error(f"❌ Data file {data_file} not found. Please run the index scraper first.")
-        sys.exit(1)
+    conn = await get_db_connection()
+    cases = await db_storage.load_records_needing_detail(conn, index_pipeline_name)
+    logger.info(f"Loaded {len(cases)} pending cases from database.")
 
-    with open(data_file, "r", encoding="utf-8") as f:
-        cases = json.load(f)
-    logger.info(f"Loaded {len(cases)} cases from {data_file}.")
-
-    # Build list of cases that have a detail_url and still need enrichment
-    pending_indices: list[int] = []
-    for idx, case in enumerate(cases):
-        url = case.get("detail_url")
-        if not url:
-            continue
-        # Skip entries that have already been successfully detail-scraped
-        if case.get("details_scraped_at"):
-            continue
-        pending_indices.append(idx)
-
-    logger.info(f"Found {len(pending_indices)} cases with detail URLs to enrich.")
-
-    if not pending_indices:
+    if not cases:
         logger.info("✅ No cases with detail URLs to enrich. Exiting.")
         return
 
@@ -759,6 +700,9 @@ async def run_detail_extraction(pipeline_name: str):
         }
     '''
 
+    # Resolve output directory for finding state.json
+    output_dir = resolve_data_dir(index_pipeline_name, doc_type)
+
     async with async_playwright() as p:
         # Resolve storage state for auth
         storage_state_path = resolve_storage_state(
@@ -775,10 +719,12 @@ async def run_detail_extraction(pipeline_name: str):
 
         try:
             count = 0
-            for progress_idx, case_idx in enumerate(pending_indices):
-                case_item = cases[case_idx]
-                url = case_item["detail_url"]
-                logger.info(f"[{progress_idx + 1}/{len(pending_indices)}] Scraping details from: {url}")
+            for progress_idx, case_item in enumerate(cases):
+                record_id = case_item["id"]
+                url = case_item["source_url"]
+                data_payload = case_item["data"]
+
+                logger.info(f"[{progress_idx + 1}/{len(cases)}] Scraping details from: {url}")
                 try:
                     await page.goto(url, wait_until="domcontentloaded", timeout=45000)
                     await page.wait_for_load_state("networkidle")
@@ -805,9 +751,6 @@ async def run_detail_extraction(pipeline_name: str):
                             "'item-content-loaded' but is missing 'paywall-content'. "
                             "Please re-run the 'auth' stage to refresh the session."
                         )
-                        # Save any progress made so far before aborting
-                        save_json(data_file, cases)
-                        logger.info(f"💾 Saved progress ({count} enriched) to {data_file} before aborting.")
                         sys.exit(1)
 
                     if not detail_info.get("content_loaded"):
@@ -817,16 +760,14 @@ async def run_detail_extraction(pipeline_name: str):
                     # Merge the extracted metadata into the existing case entry
                     metadata = detail_info.get("metadata", {})
                     for key, value in metadata.items():
-                        cases[case_idx][key] = value
-                    cases[case_idx]["details_scraped_at"] = datetime.now().isoformat()
+                        data_payload[key] = value
+                    data_payload["details_scraped_at"] = datetime.now().isoformat()
+
+                    # Save update in-place in Postgres
+                    await db_storage.update_record_data(conn, record_id, data_payload)
 
                     count += 1
                     logger.info(f"  ✅ Enriched with {len(metadata)} fields.")
-
-                    # Incremental checkpoint every 10 records
-                    if count % 10 == 0:
-                        save_json(data_file, cases)
-                        logger.info(f"💾 Incremental save: {count} enriched records saved to {data_file}.")
 
                     await asyncio.sleep(2)  # basic throttling
                     if count % 100 == 0:
@@ -836,22 +777,9 @@ async def run_detail_extraction(pipeline_name: str):
                     logger.error(f"Failed to scrape detail page {url}: {page_err}")
                     await asyncio.sleep(5)
 
-            # Final save
-            save_json(data_file, cases)
-            logger.info(f"✅ Finished! Enriched {count} case records. Saved to {data_file}.")
-
-            # Google Drive backup
-            gdrive_mgr = GDriveBackupManager.from_config(extraction_params)
-            if gdrive_mgr:
-                gdrive_mgr.backup_files([data_file])
+            logger.info(f"✅ Finished! Enriched {count} case records directly in Postgres.")
         except Exception as e:
             logger.error(f"❌ Detail scraper failed: {str(e)}")
-            # Save whatever progress we have before exiting
-            try:
-                save_json(data_file, cases)
-                logger.info(f"💾 Emergency save: progress saved to {data_file}.")
-            except Exception:
-                pass
             sys.exit(1)
         finally:
             await close_browser_cdp(browser, chrome_proc)

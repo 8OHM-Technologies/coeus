@@ -44,19 +44,4 @@ class Migration(migrations.Migration):
             name='schedule_cron',
             field=models.CharField(default='0 0 * * *', help_text='Midnight - Standard Cron syntax.', max_length=50),
         ),
-        migrations.AlterField(
-            model_name='pipelineconfiguration',
-            name='target_css_selector',
-            field=models.CharField(blank=True, help_text='(Optional) CSS selector identifying the PDF download links (legacy/generic).', max_length=255),
-        ),
-        migrations.AlterField(
-            model_name='pipelineconfiguration',
-            name='target_css_selector_categories',
-            field=models.CharField(blank=True, help_text='(Optional) CSS selector for category links/buttons.', max_length=255),
-        ),
-        migrations.AlterField(
-            model_name='pipelineconfiguration',
-            name='target_css_selector_documents',
-            field=models.CharField(blank=True, help_text='(Optional) CSS selector for document links.', max_length=255),
-        ),
     ]

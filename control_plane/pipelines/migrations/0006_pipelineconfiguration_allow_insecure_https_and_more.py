@@ -25,19 +25,4 @@ class Migration(migrations.Migration):
             name='extraction_params',
             field=models.JSONField(blank=True, default=dict, help_text='Arbitrary key-value pairs for specific scraper logic (e.g., filter_keyword).'),
         ),
-        migrations.AddField(
-            model_name='pipelineconfiguration',
-            name='target_css_selector_categories',
-            field=models.CharField(blank=True, help_text='CSS selector for category links/buttons.', max_length=255),
-        ),
-        migrations.AddField(
-            model_name='pipelineconfiguration',
-            name='target_css_selector_documents',
-            field=models.CharField(blank=True, help_text='CSS selector for document links.', max_length=255),
-        ),
-        migrations.AlterField(
-            model_name='pipelineconfiguration',
-            name='target_css_selector',
-            field=models.CharField(blank=True, help_text='CSS selector identifying the PDF download links (legacy/generic).', max_length=255),
-        ),
     ]

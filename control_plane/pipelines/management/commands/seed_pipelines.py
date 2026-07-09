@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from pipelines.models import PipelineConfiguration, ScraperType, DocumentType, PaginationStrategy, LLMEngine
+from pipelines.models import PipelineConfiguration, ScraperType, DocumentType, LLMEngine
 
 
 class Command(BaseCommand):
@@ -28,11 +28,9 @@ class Command(BaseCommand):
                 "is_active": True,
                 "schedule_cron": "0 0 * * *",
                 "start_url": "https://www.mantech.co.za/Categories.aspx",
-                "target_css_selector_documents": "a[id*='HyperLink1_']",
                 "allow_insecure_https": True,
                 "allow_insecure_requests": True,
                 "use_proxy": False,
-                "pagination_strategy": PaginationStrategy.CLICK_NEXT,
                 "requires_extraction": False,
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "",
@@ -54,11 +52,9 @@ class Command(BaseCommand):
                 "is_active": True,
                 "schedule_cron": "0 0 * * *",
                 "start_url": "https://livestainable.co.za/collections/vendors?sort_by=title-ascending&q=Keyestudio&filter.v.availability=1",
-                "target_css_selector_documents": ".product-item__title",
                 "allow_insecure_https": True,
                 "allow_insecure_requests": True,
                 "use_proxy": False,
-                "pagination_strategy": PaginationStrategy.CLICK_NEXT,
                 "requires_extraction": False,
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "",
@@ -103,7 +99,6 @@ class Command(BaseCommand):
                 "allow_insecure_https": True,
                 "allow_insecure_requests": True,
                 "use_proxy": False,
-                "pagination_strategy": PaginationStrategy.CLICK_NEXT,
                 "requires_extraction": True,
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "",
@@ -126,7 +121,6 @@ class Command(BaseCommand):
                 "allow_insecure_https": True,
                 "allow_insecure_requests": True,
                 "use_proxy": False,
-                "pagination_strategy": PaginationStrategy.CLICK_NEXT,
                 "requires_extraction": True,
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "",
@@ -149,7 +143,6 @@ class Command(BaseCommand):
                 "allow_insecure_https": True,
                 "allow_insecure_requests": True,
                 "use_proxy": False,
-                "pagination_strategy": PaginationStrategy.CLICK_NEXT,
                 "requires_extraction": True,
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "",
@@ -172,7 +165,6 @@ class Command(BaseCommand):
                 "allow_insecure_https": True,
                 "allow_insecure_requests": True,
                 "use_proxy": False,
-                "pagination_strategy": PaginationStrategy.CLICK_NEXT,
                 "requires_extraction": False,
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "",
@@ -195,7 +187,6 @@ class Command(BaseCommand):
                 "allow_insecure_https": True,
                 "allow_insecure_requests": True,
                 "use_proxy": False,
-                "pagination_strategy": PaginationStrategy.CLICK_NEXT,
                 "requires_extraction": False,
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "",

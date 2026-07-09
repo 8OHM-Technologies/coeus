@@ -12,10 +12,10 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
-from .utils.utils import fetch_pipeline_config, resolve_data_dir, save_json
+from .utils.utils import fetch_pipeline_config, resolve_data_dir, take_screenshot
+from .db import get_db_connection
+from . import db_storage
 from ..misstcha import TurnstileSolver
-from .utils.gdrive_helper import GDriveBackupManager
-from .utils.utils import take_screenshot
 from .utils.debug_helper import log_browser_proxy_ip
 from .utils.browser_helper import (
     setup_logger,
@@ -232,24 +232,18 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     os.makedirs(screenshots_dir, exist_ok=True)
     logger.info(f"Screenshots directory: {os.path.abspath(screenshots_dir)}")
 
-    # Single JSON output file (like sabinet_scraper)
-    output_file = os.path.join(output_dir, f"{pipeline_name}.json")
+    # Establish DB Connection and Resolve target/deduplication URLs
+    conn = await get_db_connection()
+    entity_name = config.get("name") or pipeline_name
+    target_name = config.get("subset") or court_name
 
-    # Load previously scraped data and build a URL-based deduplication set
-    existing_data: list[dict] = []
-    existing_urls: set[str] = set()
-    if os.path.exists(output_file):
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                existing_data = json.load(f)
-            for item in existing_data:
-                if item.get("url"):
-                    existing_urls.add(item["url"])
-            logger.info(f"Loaded {len(existing_data)} existing records. {len(existing_urls)} unique URLs tracked.")
-        except Exception as read_err:
-            logger.warning(f"Could not load existing data from {output_file}: {read_err}. Performing full scrape.")
+    logger.info(f"Resolving entity='{entity_name}' and target='{target_name}'...")
+    target_id = await db_storage.resolve_target_id(
+        conn, entity_name, target_name, start_url
+    )
 
-    gdrive_mgr = GDriveBackupManager.from_config(extraction_params)
+    existing_urls = await db_storage.get_existing_urls(conn, pipeline_name)
+    logger.info(f"Loaded {len(existing_urls)} unique URLs from database.")
 
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser via CDP (headless={headless})...")
@@ -468,7 +462,6 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
         case_urls = sorted(list(set(case_urls)))
         logger.info(f"Total unique case URLs to process: {len(case_urls)}")
 
-        extracted_data: list[dict] = []
         total_new = 0
 
         for idx, case_url in enumerate(case_urls, start=1):
@@ -559,16 +552,18 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                         "scraped_at": datetime.now().isoformat(),
                     }
 
-                    extracted_data.append(record)
+                    try:
+                        doc_date = date(int(c_year), 1, 1)
+                    except Exception:
+                        from datetime import date as dt_date
+                        doc_date = dt_date.today()
+
+                    await db_storage.upsert_scraped_record(
+                        conn, target_id, pipeline_name, case_url, record, doc_date
+                    )
                     existing_urls.add(case_url)
                     total_new += 1
                     logger.info(f"  [+] Extracted record: {c_court}_{c_year}_{c_id}")
-
-                    # Incremental save every 50 new records
-                    if total_new % 50 == 0:
-                        combined = extracted_data + existing_data
-                        save_json(output_file, combined)
-                        logger.info(f"  💾 Incremental save: {len(combined)} total records.")
 
                     success = True
                     break
@@ -596,17 +591,9 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             if success:
                 await asyncio.sleep(cooldown_seconds)
 
-        # Final save – merge new records with existing data
-        combined_data = extracted_data + existing_data
-        save_json(output_file, combined_data)
         logger.info(
-            f"✅ Extraction completed. Saved {len(combined_data)} total records "
-            f"({total_new} new) to {output_file}."
+            f"✅ Extraction completed. Saved {total_new} new records directly to database."
         )
-
-        # Google Drive backup of the output file
-        if gdrive_mgr:
-            gdrive_mgr.backup_files([output_file])
 
         await close_browser_cdp(browser, chrome_proc)
 

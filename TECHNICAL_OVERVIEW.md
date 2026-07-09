@@ -57,11 +57,8 @@ The model configuration is structured into three clear logical phases:
 | | `is_active` | BooleanField | Pauses/resumes scheduling. |
 | | `schedule_cron` | CharField | Standard cron format (e.g., `0 0 * * *`). |
 | **Phase 1: Ingestion** | `start_url` | URLField | Root entry-point for crawler. |
-| | `target_css_selector_categories` | CharField | Selector for category navigation. |
-| | `target_css_selector_documents` | CharField | Selector for PDF/asset downloads. |
 | | `allow_insecure_https` | BooleanField | Bypass SSL verification in Playwright. |
 | | `allow_insecure_requests` | BooleanField | Bypass SSL verification in urllib3/requests. |
-| | `pagination_strategy` | CharField | Strategies: URL parameter, next button click, or infinite scroll. |
 | **Phase 2: LLM Extraction** | `requires_extraction` | BooleanField | Whether to process documents via LLM. |
 | | `llm_engine` | CharField | Selects the model provider (e.g., `ollama/phi4-mini`). |
 | | `pydantic_schema_name` | CharField | Expected schema class in `schemas.py` for structured outputs. |
@@ -86,12 +83,8 @@ def to_blueprint(self) -> dict:
         },
         "phase_1_ingestion": {
             "start_url": self.start_url,
-            "target_asset_selector": self.target_css_selector,
-            "target_css_selector_categories": self.target_css_selector_categories,
-            "target_css_selector_documents": self.target_css_selector_documents,
             "allow_insecure_https": self.allow_insecure_https,
             "allow_insecure_requests": self.allow_insecure_requests,
-            "pagination_strategy": self.pagination_strategy,
         },
         "phase_2_extraction": {
             "requires_extraction": self.requires_extraction,

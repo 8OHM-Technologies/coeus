@@ -102,6 +102,8 @@ def run_scraper(pipes: PipesContext) -> None:
         "USE_PROXY": str(use_proxy),
         "EXTRACTION_PARAMS": extraction_params_raw,
         "OUTPUT_DIR": partition_dir,
+        "PIPELINE_NAME": pipes.get_extra("pipeline_name") or partition_key,
+        "SUBSET": pipes.get_extra("subset") or "",
     }
 
     worker_module = f"extraction_workers.{scraper_type}_scraper"

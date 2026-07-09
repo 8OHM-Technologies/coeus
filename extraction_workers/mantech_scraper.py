@@ -81,7 +81,7 @@ async def run_extraction(
             loops = [{"search_keyword": None, "category": None}]
 
     # Standardized Selectors from DB or fallback to defaults
-    doc_selector = config.get("target_css_selector_documents") or "a[id*='HyperLink1_']"
+    doc_selector = "a[id*='HyperLink1_']"
 
     logger.info("==================================================")
     logger.info(f"🚀 COEUS MANTECH WORKER INITIALIZED (PIPELINE: {pipeline_name})")

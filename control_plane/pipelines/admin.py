@@ -18,7 +18,7 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
         "updated_at",
     )
 
-    list_filter = ("is_active", "scraper_type", "industry", "llm_engine", "pagination_strategy")
+    list_filter = ("is_active", "scraper_type", "industry", "llm_engine")
     search_fields = ("name", "start_url")
 
     readonly_fields = (
@@ -32,11 +32,13 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "name",
+                    "subset",
                     "scraper_type",
                     "industry",
                     "document_type",
                     "is_active",
                     "schedule_cron",
+                    "pipeline_state",
                 )
             },
         ),
@@ -45,12 +47,9 @@ class PipelineConfigurationAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "start_url",
-                    "target_css_selector",
-                    "target_css_selector_categories",
-                    "target_css_selector_documents",
-                    "pagination_strategy",
                     "allow_insecure_https",
                     "allow_insecure_requests",
+                    "use_proxy",
                 )
             },
         ),

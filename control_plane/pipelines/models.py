@@ -10,7 +10,8 @@ class PaginationStrategy(models.TextChoices):
 
 class DocumentType(models.TextChoices):
     PDF = "pdf", "PDF Document"
-    HTML = "html", "HTML / JSON"
+    JSON = "json", "JSON Document"
+    HTML = "html", "HTML"
 
 
 class LLMEngine(models.TextChoices):
@@ -35,12 +36,17 @@ class PipelineConfiguration(models.Model):
     # Metadata & Scheduling
     # ---------------------------------------------------------
     name = models.CharField(
-        max_length=255, unique=True, help_text="e.g., SEC 10-K Filings"
+        max_length=255, unique=True, help_text="e.g., Saflii"
+    )
+    subset = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Subset label used as the Target name for scraped records (e.g., 'CCMA Awards', 'ZACC').",
     )
     scraper_type = models.CharField(
         max_length=20,
         choices=ScraperType.choices,
-        default=ScraperType.SEDARPLUS,
+        default=ScraperType.SAFLII,
         help_text="The specific worker script to execute.",
     )
     industry = models.CharField(
@@ -49,11 +55,11 @@ class PipelineConfiguration(models.Model):
     document_type = models.CharField(
         max_length=10,
         choices=DocumentType.choices,
-        default=DocumentType.PDF,
-        help_text="The primary document type that the LLM extractor will read.",
+        default=DocumentType.JSON,
+        help_text="The primary document type that will be scraped. e.g. PDF, JSON or sometimes plain HTML",
     )
     is_active = models.BooleanField(
-        default=True, help_text="Uncheck to pause this pipeline in the orchestrator."
+        default=True, help_text="Uncheck to pause this pipeline in Dagster."
     )
     schedule_cron = models.CharField(
         max_length=50, default="0 0 * * *", help_text="Midnight - Standard Cron syntax."
@@ -66,21 +72,6 @@ class PipelineConfiguration(models.Model):
     # Phase 1: Ingestion Config (Playwright)
     # ---------------------------------------------------------
     start_url = models.URLField(help_text="The root URL for the crawler to begin.")
-    target_css_selector = models.CharField(
-        max_length=255,
-        blank=True,
-        help_text="(Optional) CSS selector identifying the PDF download links (legacy/generic).",
-    )
-    target_css_selector_categories = models.CharField(
-        max_length=255,
-        blank=True,
-        help_text="(Optional) CSS selector for category links/buttons.",
-    )
-    target_css_selector_documents = models.CharField(
-        max_length=255,
-        blank=True,
-        help_text="(Optional) CSS selector for document links.",
-    )
     allow_insecure_https = models.BooleanField(
         default=True, help_text="Ignore SSL errors in Playwright."
     )
@@ -96,10 +87,10 @@ class PipelineConfiguration(models.Model):
         blank=True,
         help_text="Arbitrary key-value pairs for specific scraper logic (e.g., filter_keyword).",
     )
-    pagination_strategy = models.CharField(
-        max_length=20,
-        choices=PaginationStrategy.choices,
-        default=PaginationStrategy.CLICK_NEXT,
+    pipeline_state = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Scraper progress state (e.g., last_year/last_month for rolling-window scrapers). Managed automatically.",
     )
 
     # -----------------------------------------
@@ -157,11 +148,12 @@ class PipelineConfiguration(models.Model):
     def to_blueprint(self) -> dict:
         """
         Serializes the model into the exact JSON dictionary format
-        expected by the Airflow dynamic DAG generator.
+        expected by the Dagster dynamic DAG generator.
         """
         return {
             "pipeline_id": self.name.lower().replace(" ", "_").replace("-", "_"),
             "name": self.name,
+            "subset": self.subset,
             "scraper_type": self.scraper_type,
             "is_active": self.is_active,
             "schedule": self.schedule_cron,
@@ -171,13 +163,9 @@ class PipelineConfiguration(models.Model):
             },
             "phase_1_ingestion": {
                 "start_url": self.start_url,
-                "target_asset_selector": self.target_css_selector,
-                "target_css_selector_categories": self.target_css_selector_categories,
-                "target_css_selector_documents": self.target_css_selector_documents,
                 "allow_insecure_https": self.allow_insecure_https,
                 "allow_insecure_requests": self.allow_insecure_requests,
                 "use_proxy": self.use_proxy,
-                "pagination_strategy": self.pagination_strategy,
             },
             "phase_2_extraction": {
                 "requires_extraction": self.requires_extraction,

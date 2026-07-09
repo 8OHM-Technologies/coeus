@@ -114,11 +114,11 @@ services:
       - ./data:/var/shared_scraping_data
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
-      test: [ "CMD", "dagster", "api", "grpc-health-check", "-p", "4000" ]
-      interval: 10s
-      timeout: 10s
+      test: [ "CMD", "dagster", "api", "grpc-health-check", "-h", "localhost", "-p", "4000" ]
+      interval: 30s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 45s
     networks:
       - 8ohm-network
 

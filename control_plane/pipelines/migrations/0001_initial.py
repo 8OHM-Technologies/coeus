@@ -21,8 +21,6 @@ class Migration(migrations.Migration):
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('start_url', models.URLField(help_text='The root URL for the crawler to begin.')),
-                ('target_css_selector', models.CharField(help_text='CSS selector identifying the PDF download links.', max_length=255)),
-                ('pagination_strategy', models.CharField(choices=[('url_param', 'URL Parameter (?page=2)'), ('click_next', 'Click Next Button (Playwright)'), ('scroll', 'Infinite Scroll')], default='click_next', max_length=20)),
                 ('llm_engine', models.CharField(choices=[('gpt-4o', 'OpenAI GPT-4o'), ('gpt-4o-mini', 'OpenAI GPT-4o-Mini'), ('claude-3-opus', 'Anthropic Claude 3 Opus')], default='gpt-4o', max_length=20)),
                 ('pydantic_schema_name', models.CharField(default='NI43101ReportExtraction', help_text='The exact name of the Python class in schemas.py to enforce.', max_length=100)),
                 ('target_table', models.CharField(default='resource_estimates', help_text='The database table where the structured data will be UPSERTed.', max_length=100)),

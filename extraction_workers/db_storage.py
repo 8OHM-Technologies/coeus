@@ -1,0 +1,278 @@
+"""
+Coeus DB Storage Helpers
+========================
+Shared async helpers for persisting scraped records directly to the
+``extracted_records`` Postgres table via ``asyncpg``.
+
+Used by ``sabinet_scraper.py`` and ``new_saflii_scraper.py`` to replace the
+old JSON-file + Google-Drive backup workflow.
+"""
+
+import json
+import logging
+import sys
+import uuid
+from datetime import date
+from typing import Any
+
+import asyncpg
+
+from .db import get_db_connection
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Entity / Target resolution
+# ---------------------------------------------------------------------------
+
+async def resolve_target_id(
+    conn: asyncpg.Connection,
+    entity_name: str,
+    target_name: str,
+    location_url: str | None = None,
+) -> uuid.UUID:
+    """Upsert an Entity + Target pair and return the ``target_id``.
+
+    * **entity_name** – derived from ``PipelineConfiguration.name``
+    * **target_name** – derived from ``PipelineConfiguration.subset``
+    * **location_url** – optional, stored on the Target row
+    """
+    # 1. Upsert entity
+    entity_id = await conn.fetchval(
+        """
+        INSERT INTO entities (id, name)
+        VALUES ($1, $2)
+        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
+        """,
+        uuid.uuid4(),
+        entity_name,
+    )
+
+    # 2. Upsert target
+    target_id = await conn.fetchval(
+        """
+        INSERT INTO targets (id, entity_id, target_name, location)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (entity_id, target_name)
+        DO UPDATE SET location = COALESCE(EXCLUDED.location, targets.location)
+        RETURNING id
+        """,
+        uuid.uuid4(),
+        entity_id,
+        target_name,
+        location_url,
+    )
+
+    return target_id
+
+
+# ---------------------------------------------------------------------------
+# Deduplication
+# ---------------------------------------------------------------------------
+
+async def get_existing_urls(
+    conn: asyncpg.Connection,
+    record_type: str,
+) -> set[str]:
+    """Return the set of ``source_url`` values already stored for *record_type*."""
+    rows = await conn.fetch(
+        """
+        SELECT source_url FROM extracted_records
+        WHERE record_type = $1 AND source_url IS NOT NULL
+        """,
+        record_type,
+    )
+    return {row["source_url"] for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Upsert scraped records
+# ---------------------------------------------------------------------------
+
+async def upsert_scraped_record(
+    conn: asyncpg.Connection,
+    target_id: uuid.UUID,
+    record_type: str,
+    source_url: str,
+    data_dict: dict[str, Any],
+    document_date: date | None = None,
+) -> None:
+    """Upsert a single scraped record into ``extracted_records``.
+
+    Conflict is resolved on ``source_url``; on conflict the ``data`` JSONB
+    payload is updated (merged) and ``record_type`` is refreshed.
+    """
+    if not document_date:
+        # Try to resolve a date from the dictionary
+        parsed_date = None
+        for key in ("document_date", "date", "publication_date"):
+            val = data_dict.get(key)
+            if val:
+                try:
+                    if isinstance(val, date):
+                        parsed_date = val
+                        break
+                    elif isinstance(val, str):
+                        # Try standard ISO formats
+                        parsed_date = date.fromisoformat(val[:10])
+                        break
+                except Exception:
+                    pass
+        if not parsed_date:
+            # Try year
+            yr = data_dict.get("year")
+            if yr:
+                try:
+                    parsed_date = date(int(yr), 1, 1)
+                except Exception:
+                    pass
+        document_date = parsed_date or date.today()
+
+    await conn.execute(
+        """
+        INSERT INTO extracted_records (
+            id, target_id, document_date, record_type,
+            data, source_url
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (source_url)
+        DO UPDATE SET
+            data        = EXCLUDED.data,
+            record_type = EXCLUDED.record_type
+        """,
+        uuid.uuid4(),
+        target_id,
+        document_date,
+        record_type,
+        json.dumps(data_dict, ensure_ascii=False),
+        source_url,
+    )
+
+
+async def upsert_scraped_records_batch(
+    conn: asyncpg.Connection,
+    target_id: uuid.UUID,
+    record_type: str,
+    records: list[dict[str, Any]],
+    url_key: str = "detail_url",
+) -> int:
+    """Batch-upsert a list of scraped record dicts.
+
+    Each dict must contain a key identified by *url_key* which is used as the
+    ``source_url``.  Returns the number of records upserted.
+    """
+    count = 0
+    for record in records:
+        source_url = record.get(url_key)
+        if not source_url:
+            continue
+        await upsert_scraped_record(
+            conn, target_id, record_type, source_url, record,
+        )
+        count += 1
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Detail enrichment helpers
+# ---------------------------------------------------------------------------
+
+async def load_records_needing_detail(
+    conn: asyncpg.Connection,
+    record_type: str,
+) -> list[dict]:
+    """Return records that have a ``source_url`` but haven't been detail-scraped yet.
+
+    A record is considered "not detail-scraped" if its ``data`` JSONB does NOT
+    contain a ``details_scraped_at`` key.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT id, source_url, data
+        FROM extracted_records
+        WHERE record_type = $1
+          AND source_url IS NOT NULL
+          AND (data->>'details_scraped_at') IS NULL
+        ORDER BY extracted_at ASC
+        """,
+        record_type,
+    )
+    results = []
+    for row in rows:
+        data = row["data"]
+        if isinstance(data, str):
+            data = json.loads(data)
+        results.append({
+            "id": row["id"],
+            "source_url": row["source_url"],
+            "data": data,
+        })
+    return results
+
+
+async def update_record_data(
+    conn: asyncpg.Connection,
+    record_id: uuid.UUID,
+    merged_data: dict[str, Any],
+) -> None:
+    """Replace the ``data`` JSONB column for a specific record."""
+    await conn.execute(
+        """
+        UPDATE extracted_records
+        SET data = $1
+        WHERE id = $2
+        """,
+        json.dumps(merged_data, ensure_ascii=False),
+        record_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pipeline state (progress tracking)
+# ---------------------------------------------------------------------------
+
+async def load_pipeline_state(
+    conn: asyncpg.Connection,
+    pipeline_name: str,
+) -> dict:
+    """Load the ``pipeline_state`` JSONB from ``pipelines_pipelineconfiguration``.
+
+    Returns an empty dict if the pipeline doesn't exist or the state is null.
+    """
+    row = await conn.fetchval(
+        """
+        SELECT pipeline_state
+        FROM pipelines_pipelineconfiguration
+        WHERE name = $1
+        """,
+        pipeline_name,
+    )
+    if row is None:
+        return {}
+    if isinstance(row, str):
+        return json.loads(row)
+    return dict(row) if row else {}
+
+
+async def save_pipeline_state(
+    conn: asyncpg.Connection,
+    pipeline_name: str,
+    state: dict,
+) -> None:
+    """Persist scraper progress into the ``pipeline_state`` JSONB column."""
+    await conn.execute(
+        """
+        UPDATE pipelines_pipelineconfiguration
+        SET pipeline_state = $1
+        WHERE name = $2
+        """,
+        json.dumps(state, ensure_ascii=False),
+        pipeline_name,
+    )

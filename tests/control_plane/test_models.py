@@ -15,7 +15,6 @@ def test_pipeline_configuration_creation_and_defaults():
     assert config.llm_engine == LLMEngine.LOCAL
     assert config.is_active is True
     assert config.schedule_cron == "0 0 * * *"
-    assert config.pagination_strategy == PaginationStrategy.CLICK_NEXT
     assert config.extraction_params == {}
     assert str(config) == "🟢 Active | Test Pipeline (0 0 * * *)"
 
@@ -54,14 +53,10 @@ def test_to_blueprint_serialization():
         is_active=False,
         schedule_cron="0 12 * * *",
         start_url="https://saflii.org/content/recent",
-        target_css_selector=".pdf-link",
-        target_css_selector_categories=".year-link",
-        target_css_selector_documents=".case-link",
         allow_insecure_https=False,
         allow_insecure_requests=False,
         use_proxy=True,
         extraction_params={"cooldown_seconds": 2.5},
-        pagination_strategy=PaginationStrategy.SCROLL,
         requires_extraction=True,
         llm_engine=LLMEngine.LOCAL,
         pydantic_schema_name="GenericDocumentExtraction",
@@ -82,13 +77,9 @@ def test_to_blueprint_serialization():
 
     phase1 = blueprint["phase_1_ingestion"]
     assert phase1["start_url"] == "https://saflii.org/content/recent"
-    assert phase1["target_asset_selector"] == ".pdf-link"
-    assert phase1["target_css_selector_categories"] == ".year-link"
-    assert phase1["target_css_selector_documents"] == ".case-link"
     assert phase1["allow_insecure_https"] is False
     assert phase1["allow_insecure_requests"] is False
     assert phase1["use_proxy"] is True
-    assert phase1["pagination_strategy"] == PaginationStrategy.SCROLL
 
     phase2 = blueprint["phase_2_extraction"]
     assert phase2["requires_extraction"] is True

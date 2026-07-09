@@ -27,7 +27,7 @@ async def run_extraction(pipeline_name: str):
     # Standardized Selectors from DB or extraction_params
     doc_type_selector = extraction_params.get("doc_type_selector", '#W926-fieldset textarea[type="search"]')
     profile_input_selector = extraction_params.get("profile_input_selector", 'Profile name or number')
-    results_table_selector = config.get("target_css_selector_documents") or "table tbody tr"
+    results_table_selector = "table tbody tr"
 
     logger.info("==================================================")
     logger.info(f"🚀 COEUS SEDARPLUS WORKER INITIALIZED (PIPELINE: {pipeline_name})")

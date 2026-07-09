@@ -59,29 +59,3 @@ def test_sync_selectors_from_lab_file_not_found(rf, mocker):
     data = json.loads(response.content)
     assert data["status"] == "error"
     assert data["message"] == "No discovery file found."
-
-
-@pytest.mark.django_db
-def test_sync_selectors_from_lab_success(rf, mocker):
-    config = PipelineConfiguration.objects.create(
-        name="Sync Test 2",
-        start_url="https://sync2.com",
-        target_css_selector="",
-    )
-    
-    mocker.patch("os.path.exists", return_value=True)
-    
-    # Mock open() to return a specific selector code
-    mock_open = mocker.patch("builtins.open", mocker.mock_open(read_data="class Selector:\n    pass"))
-    
-    request = rf.post(f"/pipelines/sync/{config.pk}/")
-    response = sync_selectors_from_lab(request, config.pk)
-    
-    assert response.status_code == 200
-    data = json.loads(response.content)
-    assert data["status"] == "success"
-    assert data["message"] == "Selectors synced!"
-    
-    # Reload from DB and verify update
-    config.refresh_from_db()
-    assert config.target_css_selector == "class Selector:\n    pass"

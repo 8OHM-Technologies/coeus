@@ -50,13 +50,13 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
     env_config = {
         "start_url": os.getenv("START_URL"),
         "document_type": os.getenv("DOCUMENT_TYPE"),
-        "target_css_selector_categories": os.getenv("CAT_SELECTOR"),
-        "target_css_selector_documents": os.getenv("DOC_SELECTOR"),
         "allow_insecure_https": os.getenv("ALLOW_INSECURE_HTTPS", "False").lower()
         == "true",
         "allow_insecure_requests": os.getenv("ALLOW_INSECURE_REQUESTS", "False").lower()
         == "true",
         "use_proxy": os.getenv("USE_PROXY", "False").lower() == "true",
+        "name": os.getenv("PIPELINE_NAME", pipeline_name_or_id),
+        "subset": os.getenv("SUBSET", ""),
     }
 
     # Extract extraction_params from env if it exists
@@ -68,7 +68,6 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
             logger.warning(
                 "Failed to parse EXTRACTION_PARAMS env var as JSON. Using empty dict."
             )
-            env_config["extraction_params"] = {}
 
     # If we have the essential bits from env, use them
     if env_config["start_url"] and env_config["document_type"]:
@@ -111,6 +110,7 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
             **config["phase_2_extraction"],
             "pipeline_id": config["pipeline_id"],
             "name": config.get("name"),
+            "subset": config.get("subset", ""),
             "use_proxy": config["phase_1_ingestion"].get("use_proxy", False),
         }
 
@@ -196,4 +196,4 @@ def resolve_data_dir(pipeline_name: str, document_type: str = "awards") -> str:
 def save_json(path: str, data, indent: int = 4) -> None:
     """Atomically write *data* as JSON to *path*."""
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=indent, ensure_ascii=False)
+        json.dump(data, f, indent=indent, ensure_ascii=False)

@@ -57,7 +57,6 @@ def sync_selectors_from_lab(request, pk):
     with open(discovery_path, "r") as f:
         code = f.read()
 
-    config.target_css_selector = code
     config.save()
 
     return JsonResponse({"status": "success", "message": "Selectors synced!"})

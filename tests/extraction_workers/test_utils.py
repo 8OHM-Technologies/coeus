@@ -28,8 +28,6 @@ async def test_fetch_pipeline_config_from_env(monkeypatch, mocker):
 
     assert config["start_url"] == "https://env.example.com"
     assert config["document_type"] == "pdf"
-    assert config["target_css_selector_categories"] == ".cat"
-    assert config["target_css_selector_documents"] == ".doc"
     assert config["allow_insecure_https"] is True
     assert config["allow_insecure_requests"] is True
     assert config["use_proxy"] is False
@@ -55,13 +53,9 @@ async def test_fetch_pipeline_config_fallback_to_api(monkeypatch, mocker):
         },
         "phase_1_ingestion": {
             "start_url": "https://api.example.com",
-            "target_asset_selector": ".pdf",
-            "target_css_selector_categories": ".api-cat",
-            "target_css_selector_documents": ".api-doc",
             "allow_insecure_https": False,
             "allow_insecure_requests": True,
             "use_proxy": True,
-            "pagination_strategy": "click_next",
         },
         "phase_2_extraction": {
             "requires_extraction": True,
