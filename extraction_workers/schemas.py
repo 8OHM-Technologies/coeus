@@ -44,3 +44,57 @@ class GenericDocumentExtraction(BaseModel):
         ..., description="Key-value pairs of the core data points."
     )
     data_quality_flags: DataQualityFlags
+
+class SafliiCaseExtraction(BaseModel):
+    applicant_plaintiff: str = Field(
+        ..., 
+        description="The name of the applicant or plaintiff."
+    )
+    respondent_defendant: List[str] = Field(
+        ..., 
+        description="List of respondents or defendants."
+    )
+    judgment_date: date = Field(
+        ..., 
+        description="The date the judgment was delivered (YYYY-MM-DD)."
+    )
+    case_number: str = Field(
+        ..., 
+        description="The official case reference number."
+    )
+    reportable: bool = Field(
+        ..., 
+        description="Indicates whether the case is reportable."
+    )
+    subjects: List[str] = Field(
+        ..., 
+        description="List of legal subject areas or classifications."
+    )
+    court: str = Field(
+        ..., 
+        description="The court where the case was heard."
+    )
+    judges: List[str] = Field(
+        ..., 
+        description="List of presiding judges."
+    )
+    summary: str = Field(
+        ..., 
+        description="Headnotes or formal summary of the case."
+    )
+    court_location: str = Field(
+        ..., 
+        description="The city or location of the court."
+    )
+    result: str = Field(
+        ..., 
+        description="The final order or ruling delivered by the court."
+    )
+    ai_summary: str = Field(
+        ..., 
+        description="AI-generated narrative summary of the case."
+    )
+    ai_keywords: List[str] = Field(
+        ..., 
+        description="List of AI-generated keywords relevant to the case."
+    )

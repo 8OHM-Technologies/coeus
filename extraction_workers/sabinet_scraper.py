@@ -512,7 +512,6 @@ async def run_extraction(pipeline_name: str):
                             if url and url in existing_urls:
                                 # Already have this record – skip silently
                                 continue
-                            item_data["index_scraped"] = True
                             item_data["index_scraped_at"] = datetime.now().isoformat()
                             extracted_data.append(item_data)
                             if url:
@@ -651,7 +650,7 @@ async def run_detail_extraction(pipeline_name: str):
         if not url:
             continue
         # Skip entries that have already been successfully detail-scraped
-        if case.get("details_scraped"):
+        if case.get("details_scraped_at"):
             continue
         pending_indices.append(idx)
 
@@ -819,7 +818,6 @@ async def run_detail_extraction(pipeline_name: str):
                     metadata = detail_info.get("metadata", {})
                     for key, value in metadata.items():
                         cases[case_idx][key] = value
-                    cases[case_idx]["details_scraped"] = True
                     cases[case_idx]["details_scraped_at"] = datetime.now().isoformat()
 
                     count += 1

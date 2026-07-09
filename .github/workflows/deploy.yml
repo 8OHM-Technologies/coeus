@@ -24,7 +24,7 @@ jobs:
             -d "chat_id=${{ secrets.TELEGRAM_TO }}" \
             -d "parse_mode=HTML" \
             -d "text=🧨 STARTED ${{github.workflow}} 🧨 %0A------------------------------------------------------------------------%0A%0A Repo: <a href='${{ github.server_url }}/${{ github.repository }}'>${{ github.repository }}</a>  %0A Run: <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>${{ github.run_id }}</a>")
-          
+
           MSG_ID=$(echo "$RESPONSE" | jq '.result.message_id')
           echo "msg_id=$MSG_ID" >> $GITHUB_OUTPUT
 
@@ -71,7 +71,6 @@ jobs:
               - 'dagster/pipes/extractor_entrypoint.py'
               - 'docker-compose*.yml'
               - '.github/workflows/deploy.yml'
-
 
   # 2. Build and Push only images with detected changes
   build-and-push:
@@ -215,7 +214,7 @@ jobs:
       - name: Deploy via Git Pull on VPS
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 10
+          timeout_minutes: 20
           max_attempts: 3
           retry_wait_seconds: 10
           command: |

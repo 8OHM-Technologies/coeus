@@ -18,17 +18,12 @@ class LLMEngine(models.TextChoices):
 
 
 class ScraperType(models.TextChoices):
-    CCMA = "ccma_playwright", "CCMA (Playwright)"
-    JUDICIARY = "judiciary", "Judiciary (Playwright)"
     LOTTO = "lotto", "National Lottery (Playwright)"
-    SEDARPLUS = "sedarplus", "SEDAR+ (Playwright + Solver)"
+    SEDARPLUS = "sedarplus", "SEDAR+ (Playwright + Misstcha)"
     MANTECH = "mantech", "Mantech (Playwright)"
     LIVESTAINABLE = "livestainable", "Livestainable (Playwright)"
-    SABINET = "sabinet", "Sabinet (Playwright)"
-    SABINET_DETAILS = "sabinet_detail", "Sabinet Details (Playwright)"
-    SAFLII = "saflii", "SAFLII (Basic)"
-    NEW_SAFLII = "new_saflii", "New SAFLII"
-
+    SABINET = "sabinet", "Sabinet (Playwright + Misstcha)"
+    SAFLII = "new_saflii", "SAFLII (BeautifulSoup + AI)"
 
 class PipelineConfiguration(models.Model):
     """

@@ -10,13 +10,14 @@ from datetime import datetime
 import time
 
 import requests
+from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
-from utils.utils import fetch_pipeline_config, resolve_data_dir
-from misstcha import TurnstileSolver
-from utils.gdrive_helper import GDriveBackupManager
-from utils.utils import take_screenshot
-from utils.debug_helper import log_browser_proxy_ip
-from utils.browser_helper import (
+from .utils.utils import fetch_pipeline_config, resolve_data_dir, save_json
+from ..misstcha import TurnstileSolver
+from .utils.gdrive_helper import GDriveBackupManager
+from .utils.utils import take_screenshot
+from .utils.debug_helper import log_browser_proxy_ip
+from .utils.browser_helper import (
     setup_logger,
     launch_browser_cdp,
     close_browser_cdp,
@@ -231,13 +232,24 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     os.makedirs(screenshots_dir, exist_ok=True)
     logger.info(f"Screenshots directory: {os.path.abspath(screenshots_dir)}")
 
+    # Single JSON output file (like sabinet_scraper)
+    output_file = os.path.join(output_dir, f"{pipeline_name}.json")
+
+    # Load previously scraped data and build a URL-based deduplication set
+    existing_data: list[dict] = []
+    existing_urls: set[str] = set()
+    if os.path.exists(output_file):
+        try:
+            with open(output_file, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+            for item in existing_data:
+                if item.get("url"):
+                    existing_urls.add(item["url"])
+            logger.info(f"Loaded {len(existing_data)} existing records. {len(existing_urls)} unique URLs tracked.")
+        except Exception as read_err:
+            logger.warning(f"Could not load existing data from {output_file}: {read_err}. Performing full scrape.")
+
     gdrive_mgr = GDriveBackupManager.from_config(extraction_params)
-    existing_files = set()
-    if gdrive_mgr:
-        existing_files = gdrive_mgr.load_existing_files(output_dir)
-    else:
-        logger.info("Google Drive integration not enabled. Checking local output directory...")
-        existing_files = GDriveBackupManager._list_local(output_dir)
 
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser via CDP (headless={headless})...")
@@ -456,14 +468,15 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
         case_urls = sorted(list(set(case_urls)))
         logger.info(f"Total unique case URLs to process: {len(case_urls)}")
 
+        extracted_data: list[dict] = []
+        total_new = 0
+
         for idx, case_url in enumerate(case_urls, start=1):
             c_court, c_year, c_id = parse_case_url(case_url)
-            file_name = f"{c_court}_{c_year}_{c_id}.html"
-            file_path = os.path.join(output_dir, file_name)
 
-            if file_name in existing_files:
+            if case_url in existing_urls:
                 logger.info(
-                    f"[{idx}/{len(case_urls)}] Skipping (exists in storage): {file_name}"
+                    f"[{idx}/{len(case_urls)}] Skipping (already scraped): {case_url}"
                 )
                 continue
 
@@ -527,15 +540,35 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
 
                     html_content = await page.content()
 
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(html_content)
-                    logger.info(f"  [+] Saved HTML locally: {file_name}")
+                    # Parse and extract targeted content from div#center
+                    soup = BeautifulSoup(html_content, "html.parser")
+                    center_div = soup.find("div", id="center")
+                    center_html = str(center_div) if center_div else ""
 
-                    if gdrive_mgr:
-                        if gdrive_mgr.upload_file(file_path):
-                            existing_files.add(file_name)
-                    else:
-                        existing_files.add(file_name)
+                    # Extract the page title (h2 inside center contains the case title)
+                    h2_el = center_div.find("h2") if center_div else None
+                    title = h2_el.get_text(strip=True) if h2_el else c_title
+
+                    record = {
+                        "court": c_court,
+                        "year": c_year,
+                        "case_id": c_id,
+                        "title": title,
+                        "url": case_url,
+                        "center_content": center_html,
+                        "scraped_at": datetime.now().isoformat(),
+                    }
+
+                    extracted_data.append(record)
+                    existing_urls.add(case_url)
+                    total_new += 1
+                    logger.info(f"  [+] Extracted record: {c_court}_{c_year}_{c_id}")
+
+                    # Incremental save every 50 new records
+                    if total_new % 50 == 0:
+                        combined = extracted_data + existing_data
+                        save_json(output_file, combined)
+                        logger.info(f"  💾 Incremental save: {len(combined)} total records.")
 
                     success = True
                     break
@@ -562,6 +595,18 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
 
             if success:
                 await asyncio.sleep(cooldown_seconds)
+
+        # Final save – merge new records with existing data
+        combined_data = extracted_data + existing_data
+        save_json(output_file, combined_data)
+        logger.info(
+            f"✅ Extraction completed. Saved {len(combined_data)} total records "
+            f"({total_new} new) to {output_file}."
+        )
+
+        # Google Drive backup of the output file
+        if gdrive_mgr:
+            gdrive_mgr.backup_files([output_file])
 
         await close_browser_cdp(browser, chrome_proc)
 
