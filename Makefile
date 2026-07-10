@@ -1,5 +1,8 @@
 # Define phony targets so Make doesn't look for actual files with these names
-.PHONY: up down status logs dagster stop-dagster
+.PHONY: up down status logs dagster stop-dagster publish
+
+# Default tag for Docker images built and published locally
+TAG ?= latest
 
 # -----------------------------------------------------------------------------
 # GLOBAL COMMANDS
@@ -25,6 +28,10 @@ status:
 # Tail logs for all services
 logs:
 	docker compose logs -f
+
+# Build, tag, and push all custom Docker images to GHCR from local machine
+publish:
+	./publish_images.sh $(TAG)
 
 # -----------------------------------------------------------------------------
 # GROUP COMMANDS (Dagster Stack)
