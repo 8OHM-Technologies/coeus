@@ -158,12 +158,21 @@ def _build_container_env() -> dict[str, str]:
         "DAGSTER_POSTGRES_USER",
         "DAGSTER_POSTGRES_PASSWORD",
         "DAGSTER_POSTGRES_DB",
+        "POSTGRES_HOST",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_DB",
         "COEUS_API_URL",
         "USE_PROXY",
         "GOOGLE_APPLICATION_CREDENTIALS",
-        "DAGSTER_PIPES_DEBUG"
+        "DAGSTER_PIPES_DEBUG",
+        "OLLAMA_BASE_URL",
+        "OPENAI_API_KEY",
+        "HF_TOKEN",
+        "HF_HOME",
     ]
     return {k: os.environ[k] for k in forwarded if k in os.environ}
+
 
 # ---------------------------------------------------------------------------
 # PartitionConfigs

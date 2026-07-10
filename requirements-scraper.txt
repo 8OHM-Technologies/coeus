@@ -10,5 +10,6 @@ pdfplumber>=0.11
 google-api-python-client>=2.197.0
 google-auth>=2.55.0
 dagster-pipes
+python-dotenv
 requests
 PyGithub>=2.9.1
