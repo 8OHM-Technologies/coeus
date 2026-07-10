@@ -29,6 +29,17 @@ run_launcher:
       - COEUS_API_URL
       - GITHUB_ACCESS_TOKEN
       - GITHUB_REPO
+      # Postgres coordinates & credentials
+      - POSTGRES_HOST
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+      - USE_PROXY
+      # External AI / APIs
+      - OLLAMA_BASE_URL
+      - OPENAI_API_KEY
+      - HF_TOKEN
+      - HF_HOME
     network: 8ohm-network
     container_kwargs:
       volumes:
