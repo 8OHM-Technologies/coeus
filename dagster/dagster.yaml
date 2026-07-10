@@ -34,10 +34,7 @@ run_launcher:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
       - POSTGRES_DB
-      - USE_PROXY
       # External AI / APIs
-      - OLLAMA_BASE_URL
-      - OPENAI_API_KEY
       - HF_TOKEN
       - HF_HOME
     network: 8ohm-network
