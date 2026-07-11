@@ -7,6 +7,7 @@ from typing import Optional
 
 import dagster as dg
 from dagster_docker import PipesDockerClient
+from dagster_apprise import apprise_notifications, AppriseNotificationsConfig
 from github import Github
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,13 @@ EXTRACTOR_IMAGE = os.getenv(
 HOST_DATA_DIR = os.getenv("COEUS_HOST_DATA_DIR", "/var/shared_scraping_data")
 CONTAINER_DATA_DIR = "/app/data"
 DOCKER_NETWORK = os.getenv("COEUS_DOCKER_NETWORK", "8ohm-network")
+APPRISE_CONN_STRING = os.getenv("APPRISE_CONN_STRING")
 
+notification_config = AppriseNotificationsConfig(
+    urls=[APPRISE_CONN_STRING],
+    events=["FAILURE"],
+    include_jobs=["*"]
+)
 
 # ---------------------------------------------------------------------------
 # Blueprint fetching (used only at sensor/schedule evaluation time)
@@ -419,4 +426,5 @@ defs = dg.Definitions(
         "pipes_docker": PipesDockerClient(),
         "github_api": github_pat_resource,
     },
+    **apprise_notifications(notification_config).to_dict()
 )
