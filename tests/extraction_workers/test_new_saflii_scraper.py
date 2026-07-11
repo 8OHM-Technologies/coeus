@@ -4,10 +4,15 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 import requests
 
-# Ensure extraction_workers is importable
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../extraction_workers")))
+# Ensure parent of project root is in path so package-level relative imports work
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
-from new_saflii_scraper import check_page_state, parse_case_url, wait_for_page_load
+from coeus.extraction_workers.new_saflii_scraper import (
+    check_page_state,
+    parse_case_url,
+    wait_for_page_load,
+    extract_case_number_from_text,
+)
 
 
 def test_check_page_state():
@@ -123,3 +128,11 @@ def test_basic_scraper_connectivity():
         print(f"\n[Connectivity Test] Successfully connected to {target_url} (status: {response.status_code})!")
     except Exception as e:
         pytest.fail(f"Connectivity check failed for {target_url}: {e}")
+
+
+def test_extract_case_number_from_text():
+    assert extract_case_number_from_text("S v Zuma (1/2026)") == "1/2026"
+    assert extract_case_number_from_text("A v B (JR2672/2021) [2026] ZALC 1") == "JR2672/2021"
+    assert extract_case_number_from_text("Smith v State (123/15) (15 January 2026)") == "123/15"
+    assert extract_case_number_from_text("No case number in here") is None
+    assert extract_case_number_from_text("Date in paren (15 January 2026)") is None

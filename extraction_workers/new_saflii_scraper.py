@@ -33,6 +33,16 @@ class BlockedException(Exception):
     pass
 
 
+def extract_case_number_from_text(text: str) -> str | None:
+    """Extract case reference/number from a text snippet, usually in parentheses.
+    E.g. "S v Zuma (1/2026)" -> "1/2026"
+    """
+    matches = re.findall(r'\(([^()]+/[^()]+)\)', text)
+    if matches:
+        return matches[0].strip()
+    return None
+
+
 def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
     """
     Determine the logical state of the page.
@@ -245,6 +255,9 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     existing_urls = await db_storage.get_existing_urls(conn, pipeline_name)
     logger.info(f"Loaded {len(existing_urls)} unique URLs from database.")
 
+    existing_case_numbers = await db_storage.get_existing_case_numbers(conn, pipeline_name)
+    logger.info(f"Loaded {len(existing_case_numbers)} unique case numbers from database.")
+
     async with async_playwright() as p:
         logger.info(f"Launching Playwright browser via CDP (headless={headless})...")
         browser, chrome_proc, _ = await launch_browser_cdp(p, headless=headless)
@@ -348,6 +361,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
 
         # Step 2: Collecting Case Links from Each Year URL
         case_urls = []
+        url_to_case_number = {}
         for year, year_url in year_links:
             logger.info(f"Navigating to year {year} URL: {year_url}")
             await log_browser_proxy_ip(page, f"Year {year}", use_proxy)
@@ -428,6 +442,10 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                                         "toc-" in filename
                                         or filename == "index.html"
                                     ):
+                                        text = await y_anchor.inner_text()
+                                        case_no = extract_case_number_from_text(text)
+                                        if case_no:
+                                            url_to_case_number[abs_url] = case_no
                                         year_case_urls.append(abs_url)
 
                     year_case_urls = list(set(year_case_urls))
@@ -466,8 +484,15 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
 
         for idx, case_url in enumerate(case_urls, start=1):
             c_court, c_year, c_id = parse_case_url(case_url)
+            case_no = url_to_case_number.get(case_url)
 
+            is_existing = False
             if case_url in existing_urls:
+                is_existing = True
+            elif case_no and case_no in existing_case_numbers:
+                is_existing = True
+
+            if is_existing:
                 logger.info(
                     f"[{idx}/{len(case_urls)}] Skipping (already scraped): {case_url}"
                 )
@@ -542,6 +567,17 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                     h2_el = center_div.find("h2") if center_div else None
                     title = h2_el.get_text(strip=True) if h2_el else c_title
 
+                    # Attempt to extract case number from title if not already known
+                    if not case_no:
+                        case_no = extract_case_number_from_text(title)
+
+                    if case_no and case_no in existing_case_numbers:
+                        logger.info(
+                            f"  [~] Skipping (case number {case_no} already scraped): {case_url}"
+                        )
+                        success = True
+                        break
+
                     record = {
                         "court": c_court,
                         "year": c_year,
@@ -562,6 +598,8 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                         conn, target_id, pipeline_name, case_url, record, doc_date
                     )
                     existing_urls.add(case_url)
+                    if case_no:
+                        existing_case_numbers.add(case_no)
                     total_new += 1
                     logger.info(f"  [+] Extracted record: {c_court}_{c_year}_{c_id}")
 
