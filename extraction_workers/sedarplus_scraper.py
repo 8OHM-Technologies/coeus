@@ -39,7 +39,7 @@ async def run_extraction(pipeline_name: str):
         browser = await p.chromium.launch(headless=True, slow_mo=150)
 
         context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
+            viewport={"width": 1280, "height": 720},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             ignore_https_errors=config.get("allow_insecure_https", False),
         )

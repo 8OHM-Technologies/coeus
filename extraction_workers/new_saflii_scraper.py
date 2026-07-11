@@ -534,7 +534,7 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
                     html_content = await page.content()
 
                     # Parse and extract targeted content from div#center
-                    soup = BeautifulSoup(html_content, "html.parser")
+                    soup = BeautifulSoup(html_content, "lxml")
                     center_div = soup.find("div", id="center")
                     center_html = str(center_div) if center_div else ""
 

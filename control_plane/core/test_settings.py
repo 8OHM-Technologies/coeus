@@ -7,3 +7,6 @@ DATABASES = {
         "NAME": ":memory:",
     }
 }
+
+SECRET_KEY = "django-insecure-test-secret-key"
+

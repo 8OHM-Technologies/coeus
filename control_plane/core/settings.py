@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     "pipelines.apps.PipelinesConfig",
     "extracted_data.apps.ExtractedDataConfig",
     "django_apscheduler",
+    "oauth2_provider",
+    "rest_framework",
 ]
 
 MIDDLEWARE = [
@@ -142,3 +144,20 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     }
 }
+
+# Django REST Framework Configuration
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "oauth2_provider.contrib.rest_framework.TokenHasReadWriteScope",
+    ),
+}
+
+# Authentication Backends
+AUTHENTICATION_BACKENDS = (
+    "oauth2_provider.backends.OAuth2Backend",
+    "django.contrib.auth.backends.ModelBackend",
+)
+

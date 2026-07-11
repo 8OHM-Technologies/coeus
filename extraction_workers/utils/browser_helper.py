@@ -31,7 +31,7 @@ DEFAULT_USER_AGENT = (
     "Chrome/124.0.0.0 Safari/537.36"
 )
 
-DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
+DEFAULT_VIEWPORT = {"width": 1280, "height": 720}
 
 # Default selectors tried (in order) when dismissing cookie consent banners.
 DEFAULT_COOKIE_SELECTORS = [
@@ -97,10 +97,11 @@ async def launch_browser_cdp(
         "--disable-background-networking",
         "--disable-gcm",
         "--disable-default-apps",
+        "--disable-extensions",
         "--disable-component-update",
         "--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC",
         "--disable-peer-connection-encryption",
-        "--window-size=1920,1080",
+        "--window-size=1280,720",
     ]
 
     if extra_args:
@@ -190,7 +191,7 @@ async def create_browser_context(
                 masked += f":{parsed_proxy.port}"
         logger.info(f"Using proxy for browser context: {masked}")
 
-    context = await browser.new_context(**context_kwargs)
+    context = await browser.new_context(viewport={"width": 1280, "height": 720},**context_kwargs)
 
     if anti_webdriver:
         await context.add_init_script(

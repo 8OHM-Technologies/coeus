@@ -96,6 +96,7 @@ async def run_extraction(
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
+            viewport={"width": 1280, "height": 720},
             ignore_https_errors=config.get("allow_insecure_https", False)
         )
         page = await context.new_page()

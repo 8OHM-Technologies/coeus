@@ -17,11 +17,25 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
-from .views import send_website_enquiry
+from rest_framework.routers import DefaultRouter
+from .views import (
+    send_website_enquiry,
+    EntityViewSet,
+    TargetViewSet,
+    ExtractedRecordViewSet,
+)
+
+router = DefaultRouter()
+router.register(r"entities", EntityViewSet, basename="entity")
+router.register(r"targets", TargetViewSet, basename="target")
+router.register(r"extracted-records", ExtractedRecordViewSet, basename="extractedrecord")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
+    path("api/v1/", include(router.urls)),
     path("api/pipelines/", include("pipelines.urls")),
 
     path("api/send-website-enquiry", send_website_enquiry, name="send_website_enquiry"),
 ]
+

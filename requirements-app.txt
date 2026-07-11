@@ -1,4 +1,6 @@
 Django>=6.0.3,<7.0
+djangorestframework>=3.17.1
+django-oauth-toolkit>=3.0.0
 psycopg2-binary>=2.9
 requests>=2.31
 django-apscheduler>=0.7.0

@@ -110,6 +110,56 @@ Supported `scraper_type` values are defined in `control_plane/pipelines/models.p
 
 ---
 
+## 🔌 Extracted Data REST API
+
+The Control Plane exposes a REST API powered by **Django REST Framework** with **OAuth2 token authentication** (`django-oauth-toolkit`). This API exposes the extracted data models (`Entity`, `Target`, and `ExtractedRecord`) to external consumers.
+
+### **Authentication Flow**
+
+The API uses the standard OAuth2 **Client Credentials** grant type for secure machine-to-machine communication:
+
+1. **Create an OAuth2 Application**:
+   Register a client application via the Django Admin panel at `http://localhost:8001/admin/oauth2_provider/application/` or the endpoint `http://control-plane.localhost:81/admin/oauth2_provider/application/`.
+   - **Client Type**: Confidential
+   - **Authorization Grant Type**: Client credentials
+   - **User**: Select your admin or API user
+
+2. **Obtain an Access Token**:
+   Send a `POST` request to `/o/token/` with Basic Authentication using the client's `client_id` and `client_secret`:
+   ```bash
+   curl -X POST http://localhost:8001/o/token/ \
+     -u "client_id:client_secret" \
+     -d "grant_type=client_credentials"
+   ```
+   This returns the access token:
+   ```json
+   {
+     "access_token": "your_access_token",
+     "expires_in": 36000,
+     "token_type": "Bearer",
+     "scope": "read write"
+   }
+   ```
+
+3. **Access Protected API Endpoints**:
+   Pass the token in the `Authorization` header as a Bearer token:
+   ```bash
+   curl -X GET http://localhost:8001/api/v1/entities/ \
+     -H "Authorization: Bearer your_access_token"
+   ```
+
+### **API Endpoints**
+
+| Endpoint | HTTP Methods | Description |
+| :--- | :--- | :--- |
+| `/api/v1/entities/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Manage monitored organizations and companies. |
+| `/api/v1/targets/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Manage projects, locations, or assets belonging to an Entity. |
+| `/api/v1/extracted-records/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Manage structured data records extracted from documents. |
+
+*Note: Access to these endpoints requires the token to have `read` scope (for `GET` requests) or `write` scope (for `POST`, `PUT`, `PATCH`, `DELETE` requests).*
+
+---
+
 ## 🚀 Quick Start (Local Development)
 
 The stack is fully containerized. You need a `.env` file at the repo root with Cloud SQL proxy settings (`INSTANCE_CONNECTION_NAME`, `AIRFLOW_SQL_ALCHEMY_CONN`, `COEUS_API_URL`, database credentials, etc.) and GCP credentials mounted for the proxy (see `docker-compose.yml`).

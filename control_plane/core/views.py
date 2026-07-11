@@ -77,3 +77,24 @@ def send_website_enquiry(request):
 
     response["Access-Control-Allow-Origin"] = "*"
     return response
+
+
+from rest_framework import viewsets
+from extracted_data.models import Entity, Target, ExtractedRecord
+from .serializers import EntitySerializer, TargetSerializer, ExtractedRecordSerializer
+
+
+class EntityViewSet(viewsets.ModelViewSet):
+    queryset = Entity.objects.all()
+    serializer_class = EntitySerializer
+
+
+class TargetViewSet(viewsets.ModelViewSet):
+    queryset = Target.objects.all()
+    serializer_class = TargetSerializer
+
+
+class ExtractedRecordViewSet(viewsets.ModelViewSet):
+    queryset = ExtractedRecord.objects.all()
+    serializer_class = ExtractedRecordSerializer
+
