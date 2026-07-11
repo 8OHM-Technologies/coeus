@@ -89,7 +89,22 @@ async def get_existing_urls(
         """,
         record_type,
     )
-    return {row["source_url"] for row in rows}
+    return {row["source_url"] for row in rows if row["source_url"] is not None}
+
+
+async def get_existing_case_numbers(
+    conn: asyncpg.Connection,
+    record_type: str,
+) -> set[str]:
+    """Return the set of ``case_number`` values already stored in the ``data`` column for *record_type*."""
+    rows = await conn.fetch(
+        """
+        SELECT data->>'case_number' AS case_number FROM extracted_records
+        WHERE record_type = $1 AND (data->>'case_number') IS NOT NULL
+        """,
+        record_type,
+    )
+    return {row["case_number"] for row in rows if row["case_number"] is not None}
 
 
 # ---------------------------------------------------------------------------

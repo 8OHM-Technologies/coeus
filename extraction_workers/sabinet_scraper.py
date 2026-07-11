@@ -232,6 +232,9 @@ async def run_extraction(pipeline_name: str):
     existing_urls = await db_storage.get_existing_urls(conn, pipeline_name)
     logger.info(f"Loaded {len(existing_urls)} unique URLs from database.")
 
+    existing_case_numbers = await db_storage.get_existing_case_numbers(conn, pipeline_name)
+    logger.info(f"Loaded {len(existing_case_numbers)} unique case numbers from database.")
+
     progress_state = await db_storage.load_pipeline_state(conn, pipeline_name)
     logger.info(f"Loaded progress state: {progress_state}")
 
@@ -489,13 +492,24 @@ async def run_extraction(pipeline_name: str):
                         new_items = []
                         for item_data in page_items:
                             url = item_data.get("detail_url")
+                            case_no = item_data.get("case_number")
+
+                            is_existing = False
                             if url and url in existing_urls:
+                                is_existing = True
+                            elif case_no and case_no in existing_case_numbers:
+                                is_existing = True
+
+                            if is_existing:
                                 # Already have this record – skip silently
                                 continue
+
                             item_data["index_scraped_at"] = datetime.now().isoformat()
                             new_items.append(item_data)
                             if url:
                                 existing_urls.add(url)
+                            if case_no:
+                                existing_case_numbers.add(case_no)
                             window_new += 1
 
                         if new_items:
