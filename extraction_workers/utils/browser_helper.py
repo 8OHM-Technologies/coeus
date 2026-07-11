@@ -191,7 +191,7 @@ async def create_browser_context(
                 masked += f":{parsed_proxy.port}"
         logger.info(f"Using proxy for browser context: {masked}")
 
-    context = await browser.new_context(viewport={"width": 1280, "height": 720},**context_kwargs)
+    context = await browser.new_context(**context_kwargs)
 
     if anti_webdriver:
         await context.add_init_script(
