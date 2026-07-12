@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     dagster \
     dagster-postgres \
     dagster-docker \
+    dagster-apprise \
     requests \
     PyGithub
 
