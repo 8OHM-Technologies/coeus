@@ -1,5 +1,6 @@
 # Extractor image dependencies
 dagster-pipes
+dagster-apprise
 requests
 pydantic>=2.6
 psycopg2-binary>=2.9
