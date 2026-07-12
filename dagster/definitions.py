@@ -7,7 +7,11 @@ from typing import Optional
 
 import dagster as dg
 from dagster_docker import PipesDockerClient
-from dagster_apprise import apprise_notifications, AppriseNotificationsConfig
+try:
+    from dagster_apprise import apprise_notifications, AppriseNotificationsConfig
+    HAS_APPRISE = True
+except ImportError:
+    HAS_APPRISE = False
 from github import Github
 
 logger = logging.getLogger(__name__)
@@ -34,11 +38,17 @@ CONTAINER_DATA_DIR = "/app/data"
 DOCKER_NETWORK = os.getenv("COEUS_DOCKER_NETWORK", "8ohm-network")
 APPRISE_CONN_STRING = os.getenv("APPRISE_CONN_STRING")
 
-notification_config = AppriseNotificationsConfig(
-    urls=[APPRISE_CONN_STRING],
-    events=["FAILURE"],
-    include_jobs=["*"]
-)
+apprise_dict = {}
+if HAS_APPRISE and APPRISE_CONN_STRING:
+    try:
+        notification_config = AppriseNotificationsConfig(
+            urls=[APPRISE_CONN_STRING],
+            events=["FAILURE"],
+            include_jobs=["*"]
+        )
+        apprise_dict = apprise_notifications(notification_config).to_dict()
+    except Exception as e:
+        logger.warning(f"Failed to configure Apprise notifications: {e}")
 
 # ---------------------------------------------------------------------------
 # Blueprint fetching (used only at sensor/schedule evaluation time)
@@ -426,5 +436,5 @@ defs = dg.Definitions(
         "pipes_docker": PipesDockerClient(),
         "github_api": github_pat_resource,
     },
-    **apprise_notifications(notification_config).to_dict()
+    **apprise_dict
 )

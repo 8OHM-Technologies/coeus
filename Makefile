@@ -22,7 +22,7 @@ up-no-build:
 	docker compose up -d
 
 # Check the status of all running services
-status:
+ps:
 	docker compose ps
 
 # Tail logs for all services
@@ -65,9 +65,19 @@ stop-coeus:
 # Catch-all target: Spin up any individual container by its service name
 # Example: 'make web' or 'make redis'
 %:
-	@docker compose up -d $@
+	@docker compose up -d --build $@
 
 # Dynamic target: Stop any individual container by prefixing 'stop-'
 # Example: 'make stop-web' or 'make stop-redis'
 stop-%:
+	@docker compose stop $*
+
+# Catch-all target (PROD): Spin up any individual container by its service name
+# Example: 'make prod-web' or 'make prod-redis'
+prod-%:
+	@docker compose up -d --build $@
+
+# Dynamic target (PROD): Stop any individual container by prefixing 'prod-stop-'
+# Example: 'make prod-stop-web' or 'make prod-stop-redis'
+prod-stop-%:
 	@docker compose stop $*
