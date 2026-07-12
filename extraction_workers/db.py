@@ -21,8 +21,12 @@ def clean_env_var(value: str | None) -> str | None:
         if closing_idx != -1:
             return value[1:closing_idx]
 
-    # Otherwise split on the first # to remove comments
-    value = value.split("#")[0]
+    # Otherwise split on the first # to remove comments, only if it is preceded by a space or tab
+    # to avoid splitting password characters like '#'
+    for sep in (" #", "\t#"):
+        if sep in value:
+            value = value.split(sep, 1)[0]
+            break
     return value.strip().strip("'\"")
 
 async def get_db_connection() -> asyncpg.Connection:
