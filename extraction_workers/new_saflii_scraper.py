@@ -19,9 +19,7 @@ from ..misstcha import TurnstileSolver
 from .utils.debug_helper import log_browser_proxy_ip
 from .utils.browser_helper import (
     setup_logger,
-    launch_browser_cdp,
-    close_browser_cdp,
-    create_browser_context,
+    BrowserManager,
 )
 
 logger = setup_logger(__name__)
@@ -258,15 +256,17 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
     existing_case_numbers = await db_storage.get_existing_case_numbers(conn, pipeline_name)
     logger.info(f"Loaded {len(existing_case_numbers)} unique case numbers from database.")
 
-    async with async_playwright() as p:
-        logger.info(f"Launching Playwright browser via CDP (headless={headless})...")
-        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=headless)
-        context, page = await create_browser_context(
-            browser,
-            ignore_https_errors=allow_insecure_requests,
-            proxy_url=proxy_url,
-            viewport={"width": 1280, "height": 720}
-        )
+    p = await async_playwright().start()
+    logger.info(f"Launching Playwright browser via CDP (headless={headless})...")
+    manager = BrowserManager(
+        p,
+        headless=headless,
+        ignore_https_errors=allow_insecure_requests,
+        proxy_url=proxy_url,
+        viewport={"width": 1280, "height": 720},
+    )
+    try:
+        page = await manager.start()
 
         await log_browser_proxy_ip(page, "Startup", use_proxy)
 
@@ -633,7 +633,9 @@ async def run_extraction(pipeline_name: str, headless: bool = False):
             f"✅ Extraction completed. Saved {total_new} new records directly to database."
         )
 
-        await close_browser_cdp(browser, chrome_proc)
+    finally:
+        await manager.close()
+        await p.stop()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coeus New SAFLII Scraper")

@@ -12,11 +12,9 @@ from .db import get_db_connection
 from . import db_storage
 from .utils.browser_helper import (
     setup_logger,
-    launch_browser_cdp,
-    close_browser_cdp,
-    create_browser_context,
     dismiss_cookie_consent,
     resolve_storage_state,
+    BrowserManager,
 )
 
 logger = setup_logger(__name__)
@@ -54,68 +52,68 @@ async def generate_state():
 
     async with async_playwright() as p:
         logger.info("[INFO] Launching Chromium browser for automated authentication...")
-        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=False)
-        context, page = await create_browser_context(
-            browser,
+        manager = BrowserManager(
+            p,
+            headless=False,
             viewport={"width": 1280, "height": 800},
         )
+        async with manager:
+            page = manager.page
+            context = manager.context
 
-        # ------------------------------------------------------------------
-        # Step 1: Navigate to the scrape URL
-        # ------------------------------------------------------------------
-        logger.info(f"💡 Navigating to: {scrape_url}")
-        await page.goto(scrape_url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_load_state("networkidle")
+            # ------------------------------------------------------------------
+            # Step 1: Navigate to the scrape URL
+            # ------------------------------------------------------------------
+            logger.info(f"💡 Navigating to: {scrape_url}")
+            await page.goto(scrape_url, wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_load_state("networkidle")
 
-        # ------------------------------------------------------------------
-        # Step 2: Dismiss cookie consent banner (if present)
-        # ------------------------------------------------------------------
-        await dismiss_cookie_consent(page)
+            # ------------------------------------------------------------------
+            # Step 2: Dismiss cookie consent banner (if present)
+            # ------------------------------------------------------------------
+            await dismiss_cookie_consent(page)
 
-        # ------------------------------------------------------------------
-        # Step 3: Click the "Sign in" button in the top-right header
-        # ------------------------------------------------------------------
-        logger.info("🔐 Clicking 'Sign in' button...")
-        sign_in_btn = page.get_by_role("button", name="Sign in login")
-        await sign_in_btn.wait_for(state="visible", timeout=15000)
-        await sign_in_btn.click()
-        await asyncio.sleep(1)
+            # ------------------------------------------------------------------
+            # Step 3: Click the "Sign in" button in the top-right header
+            # ------------------------------------------------------------------
+            logger.info("🔐 Clicking 'Sign in' button...")
+            sign_in_btn = page.get_by_role("button", name="Sign in login")
+            await sign_in_btn.wait_for(state="visible", timeout=15000)
+            await sign_in_btn.click()
+            await asyncio.sleep(1)
 
-        # ------------------------------------------------------------------
-        # Step 4: Fill in credentials in the sidebar drawer
-        # ------------------------------------------------------------------
-        logger.info("✏️  Entering credentials...")
-        username_input = page.get_by_role("textbox", name="* Username")
-        await username_input.wait_for(state="visible", timeout=10000)
-        await username_input.fill(username)
+            # ------------------------------------------------------------------
+            # Step 4: Fill in credentials in the sidebar drawer
+            # ------------------------------------------------------------------
+            logger.info("✏️  Entering credentials...")
+            username_input = page.get_by_role("textbox", name="* Username")
+            await username_input.wait_for(state="visible", timeout=10000)
+            await username_input.fill(username)
 
-        password_input = page.get_by_role("textbox", name="* Password")
-        await password_input.fill(password)
+            password_input = page.get_by_role("textbox", name="* Password")
+            await password_input.fill(password)
 
-        # ------------------------------------------------------------------
-        # Step 5: Submit and wait for authenticated state
-        # ------------------------------------------------------------------
-        logger.info("🚀 Submitting login form...")
-        await page.get_by_role("button", name="Sign into Account").click()
+            # ------------------------------------------------------------------
+            # Step 5: Submit and wait for authenticated state
+            # ------------------------------------------------------------------
+            logger.info("🚀 Submitting login form...")
+            await page.get_by_role("button", name="Sign into Account").click()
 
-        # Wait until the "myDiscover" user menu appears – confirms auth success
-        logger.info("⏳ Waiting for authentication to complete...")
-        await page.get_by_role("button", name="user myDiscover down").wait_for(
-            state="visible", timeout=30000
-        )
-        logger.info("✅ Authentication successful!")
+            # Wait until the "myDiscover" user menu appears – confirms auth success
+            logger.info("⏳ Waiting for authentication to complete...")
+            await page.get_by_role("button", name="user myDiscover down").wait_for(
+                state="visible", timeout=30000
+            )
+            logger.info("✅ Authentication successful!")
 
-        # ------------------------------------------------------------------
-        # Persist the session state to both paths
-        # ------------------------------------------------------------------
-        await context.storage_state(path=save_path_root)
-        await context.storage_state(path=save_path_ccma)
-        logger.info("\n✅ Session state saved to:")
-        logger.info(f"   - {save_path_root}")
-        logger.info(f"   - {save_path_ccma}")
-
-        await close_browser_cdp(browser, chrome_proc)
-        logger.info("Browser closed.")
+            # ------------------------------------------------------------------
+            # Persist the session state to both paths
+            # ------------------------------------------------------------------
+            await context.storage_state(path=save_path_root)
+            await context.storage_state(path=save_path_ccma)
+            logger.info("\n✅ Session state saved to:")
+            logger.info(f"   - {save_path_root}")
+            logger.info(f"   - {save_path_ccma}")
 
 # -----------------------------------------------------------------------------
 # Index Scraper – extracts the list of awards using 1-month rolling windows
@@ -256,65 +254,65 @@ async def run_extraction(pipeline_name: str):
             resume_month = 1
             resume_year += 1
 
-    async with async_playwright() as p:
-        # Resolve storage state (cookies)
-        storage_state_path = resolve_storage_state(
-            os.path.join(output_dir, "state.json"),
-            "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
-        )
+    p = await async_playwright().start()
+    # Resolve storage state (cookies)
+    storage_state_path = resolve_storage_state(
+        os.path.join(output_dir, "state.json"),
+        "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
+    )
 
-        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=True)
-        context, page = await create_browser_context(
-            browser,
-            ignore_https_errors=config.get("allow_insecure_https", False),
-            storage_state=storage_state_path,
-        )
+    manager = BrowserManager(
+        p,
+        headless=True,
+        ignore_https_errors=config.get("allow_insecure_https", False),
+        storage_state=storage_state_path,
+    )
 
+    async def setup_search_page(page):
+        logger.info(f"Navigating to {start_url}...")
+        await page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_load_state("networkidle")
+
+        # Dismiss cookie consent if present
+        await dismiss_cookie_consent(page)
+
+        # ------------------------------------------------------------------
+        # Set pagination to 100 items per page
+        # ------------------------------------------------------------------
         try:
-            # ------------------------------------------------------------------
-            # 1. Initial page load
-            # ------------------------------------------------------------------
-            logger.info(f"Navigating to {start_url}...")
-            await page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_load_state("networkidle")
+            logger.info("Configuring pagination to 100 items per page...")
+            dropdown = page.locator('div.ant-select[aria-label="How many results to show in list"]').first
+            if await dropdown.count() > 0:
+                await dropdown.click()
+                await page.wait_for_load_state("networkidle")
+                await asyncio.sleep(1)
 
-            # Dismiss cookie consent if present
-            await dismiss_cookie_consent(page)
-
-            # ------------------------------------------------------------------
-            # 2. Set pagination to 100 items per page
-            # ------------------------------------------------------------------
-            try:
-                logger.info("Configuring pagination to 100 items per page...")
-                dropdown = page.locator('div.ant-select[aria-label="How many results to show in list"]').first
-                if await dropdown.count() > 0:
-                    await dropdown.click()
+                option = page.locator('.ant-select-item-option-content:has-text("100 per page")').first
+                if await option.count() == 0:
+                    option = page.locator('.ant-select-item-option:has-text("100 per page")').first
+                if await option.count() == 0:
+                    option = page.locator('[title="100 per page"]').first
+                if await option.count() > 0:
+                    await option.click()
+                    logger.info("Successfully selected '100 per page' option.")
                     await page.wait_for_load_state("networkidle")
-                    await asyncio.sleep(1)
-
-                    option = page.locator('.ant-select-item-option-content:has-text("100 per page")').first
-                    if await option.count() == 0:
-                        option = page.locator('.ant-select-item-option:has-text("100 per page")').first
-                    if await option.count() == 0:
-                        option = page.locator('[title="100 per page"]').first
-                    if await option.count() > 0:
-                        await option.click()
-                        logger.info("Successfully selected '100 per page' option.")
-                        await page.wait_for_load_state("networkidle")
-                        await asyncio.sleep(2)
-                    else:
-                        logger.warning("Could not find '100 per page' option in the dropdown list.")
+                    await asyncio.sleep(2)
                 else:
-                    logger.warning("Could not locate the pagination dropdown on the page.")
-            except Exception as pag_err:
-                logger.warning(f"Could not configure pagination: {pag_err}. Proceeding with default pagination.")
+                    logger.warning("Could not find '100 per page' option in the dropdown list.")
+            else:
+                logger.warning("Could not locate the pagination dropdown on the page.")
+        except Exception as pag_err:
+            logger.warning(f"Could not configure pagination: {pag_err}. Proceeding with default pagination.")
+
+    page = await manager.start()
+    try:
+            # ------------------------------------------------------------------
+            # 1. Initial page load and setup
+            # ------------------------------------------------------------------
+            await setup_search_page(page)
 
             # ------------------------------------------------------------------
             # 3. Discover available years from the Publication Year sidebar
-            #
-            # The sidebar shows every year with a non-zero entry count; we use
-            # these counts only for informational logging – the actual scraping
-            # is driven by month windows regardless of year count.
             # ------------------------------------------------------------------
             logger.info("Discovering available years from the Publication Year sidebar...")
             year_entries: list[tuple[int, int]] = []
@@ -380,6 +378,12 @@ async def run_extraction(pipeline_name: str):
 
                     # Mark this window as in-progress before we start
                     await save_progress(year, month, completed=False)
+
+                    # Recycle browser to prevent memory leaks / OOM
+                    logger.info(f"Recycling browser for month {year}-{month:02d}...")
+                    await manager.recycle()
+                    await setup_search_page(manager.page)
+                    page = manager.page  # Update local reference to the new page
 
                     # --------------------------------------------------------
                     # 4a. Open Advanced Search panel and apply the date filter
@@ -575,12 +579,12 @@ async def run_extraction(pipeline_name: str):
             progress_state["completed_at"] = datetime.now().isoformat()
             await db_storage.save_pipeline_state(conn, pipeline_name, progress_state)
 
-        except Exception as e:
-            logger.error(f"❌ Playwright extraction failed: {str(e)}")
-            sys.exit(1)
-        finally:
-            await close_browser_cdp(browser, chrome_proc)
-            logger.info("Browser closed. Run complete.")
+    except Exception as e:
+        logger.error(f"❌ Playwright extraction failed: {str(e)}")
+        sys.exit(1)
+    finally:
+        await manager.close()
+        await p.stop()
 
 # -----------------------------------------------------------------------------
 # Detail Scraper – enriches each record with full page content
@@ -717,23 +721,31 @@ async def run_detail_extraction(pipeline_name: str):
     # Resolve output directory for finding state.json
     output_dir = resolve_data_dir(index_pipeline_name, doc_type)
 
-    async with async_playwright() as p:
-        # Resolve storage state for auth
-        storage_state_path = resolve_storage_state(
-            os.path.join(output_dir, "state.json"),
-            "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
-        )
+    p = await async_playwright().start()
+    # Resolve storage state for auth
+    storage_state_path = resolve_storage_state(
+        os.path.join(output_dir, "state.json"),
+        "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
+    )
 
-        browser, chrome_proc, _ = await launch_browser_cdp(p, headless=True)
-        context, page = await create_browser_context(
-            browser,
-            ignore_https_errors=config.get("allow_insecure_https", False),
-            storage_state=storage_state_path,
-        )
+    manager = BrowserManager(
+        p,
+        headless=True,
+        ignore_https_errors=config.get("allow_insecure_https", False),
+        storage_state=storage_state_path,
+    )
+    page = await manager.start()
 
-        try:
+    try:
             count = 0
             for progress_idx, case_item in enumerate(cases):
+                # Recycle browser every 100 pages to avoid memory leaks / OOM
+                if progress_idx > 0 and progress_idx % 100 == 0:
+                    logger.info("Recycling browser to free memory...")
+                    await manager.recycle()
+
+                page = manager.page  # Update local reference to the new page
+
                 record_id = case_item["id"]
                 url = case_item["source_url"]
                 data_payload = case_item["data"]
@@ -792,12 +804,12 @@ async def run_detail_extraction(pipeline_name: str):
                     await asyncio.sleep(5)
 
             logger.info(f"✅ Finished! Enriched {count} case records directly in Postgres.")
-        except Exception as e:
-            logger.error(f"❌ Detail scraper failed: {str(e)}")
-            sys.exit(1)
-        finally:
-            await close_browser_cdp(browser, chrome_proc)
-            logger.info("Browser closed. Run complete.")
+    except Exception as e:
+        logger.error(f"❌ Detail scraper failed: {str(e)}")
+        sys.exit(1)
+    finally:
+        await manager.close()
+        await p.stop()
 
 # -----------------------------------------------------------------------------
 # CLI entry point – supports sub‑commands for each stage

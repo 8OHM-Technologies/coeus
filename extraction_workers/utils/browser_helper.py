@@ -249,3 +249,96 @@ def resolve_storage_state(*search_paths: str) -> Optional[str]:
         if path and os.path.exists(path):
             return path
     return None
+
+
+# ---------------------------------------------------------------------------
+# Browser lifecycle and recycling manager
+# ---------------------------------------------------------------------------
+class BrowserManager:
+    """Manages the lifetime and recycling of a Playwright browser instance.
+
+    Automatically handles the deletion of Chromium temporary profile/user-data
+    directories upon shutdown or recycling, preventing disk leaks.
+    """
+
+    def __init__(
+        self,
+        playwright: Playwright,
+        *,
+        headless: bool = True,
+        ignore_https_errors: bool = False,
+        storage_state: Optional[str] = None,
+        proxy_url: Optional[str] = None,
+        user_agent: str = DEFAULT_USER_AGENT,
+        viewport: Optional[dict] = None,
+        anti_webdriver: bool = True,
+    ):
+        self.playwright = playwright
+        self.headless = headless
+        self.ignore_https_errors = ignore_https_errors
+        self.storage_state = storage_state
+        self.proxy_url = proxy_url
+        self.user_agent = user_agent
+        self.viewport = viewport or DEFAULT_VIEWPORT
+        self.anti_webdriver = anti_webdriver
+
+        self.browser: Optional[Browser] = None
+        self.chrome_proc: Optional[subprocess.Popen] = None
+        self.user_data_dir: Optional[str] = None
+        self.context: Optional[BrowserContext] = None
+        self.page: Optional[Page] = None
+
+    async def start(self) -> Page:
+        """Launch browser and set up context/page if not already running."""
+        if not self.browser:
+            self.browser, self.chrome_proc, self.user_data_dir = await launch_browser_cdp(
+                self.playwright,
+                headless=self.headless,
+            )
+            self.context, self.page = await create_browser_context(
+                self.browser,
+                ignore_https_errors=self.ignore_https_errors,
+                storage_state=self.storage_state,
+                proxy_url=self.proxy_url,
+                user_agent=self.user_agent,
+                viewport=self.viewport,
+                anti_webdriver=self.anti_webdriver,
+            )
+        return self.page
+
+    async def recycle(self) -> Page:
+        """Gracefully close current browser context/process, clean up, and start fresh."""
+        logger.info("Recycling browser context to clear memory...")
+        await self.close()
+        return await self.start()
+
+    async def close(self) -> None:
+        """Shut down the browser and cleanly remove the temporary user profile dir."""
+        if self.browser:
+            try:
+                await close_browser_cdp(self.browser, self.chrome_proc)
+            except Exception as e:
+                logger.warning(f"Error during close_browser_cdp in BrowserManager: {e}")
+            finally:
+                self.browser = None
+                self.chrome_proc = None
+                self.context = None
+                self.page = None
+
+        if self.user_data_dir and os.path.exists(self.user_data_dir):
+            try:
+                import shutil
+                shutil.rmtree(self.user_data_dir, ignore_errors=True)
+                logger.info(f"Cleaned up temporary user data directory: {self.user_data_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to remove user data dir {self.user_data_dir}: {e}")
+            finally:
+                self.user_data_dir = None
+
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
