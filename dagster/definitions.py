@@ -43,7 +43,7 @@ if HAS_APPRISE and APPRISE_CONN_STRING:
     try:
         notification_config = AppriseNotificationsConfig(
             urls=[APPRISE_CONN_STRING],
-            events=["FAILURE"],
+            events=["STEP_FAILURE","RUN_FAILURE"],
             include_jobs=["*"]
         )
         apprise_dict = apprise_notifications(notification_config).to_dict()

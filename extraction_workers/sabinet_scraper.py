@@ -22,7 +22,7 @@ logger = setup_logger(__name__)
 # -----------------------------------------------------------------------------
 # Authentication / Session State Generation
 # -----------------------------------------------------------------------------
-async def generate_state():
+async def generate_state(headless: bool = False):
     """Automatically log in to Sabinet and persist the browser session state.
 
     Uses Playwright to perform a fully automated login flow:
@@ -54,7 +54,7 @@ async def generate_state():
         logger.info("[INFO] Launching Chromium browser for automated authentication...")
         manager = BrowserManager(
             p,
-            headless=False,
+            headless=headless,
             viewport={"width": 1280, "height": 800},
         )
         async with manager:
@@ -772,12 +772,44 @@ async def run_detail_extraction(pipeline_name: str):
 
                     # ---- Auth expiry check ----
                     if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
-                        logger.error(
-                            "🔒 Authentication has expired! The detail page has "
-                            "'item-content-loaded' but is missing 'paywall-content'. "
-                            "Please re-run the 'auth' stage to refresh the session."
+                        logger.warning(
+                            "🔒 Authentication has expired! Attempting to automatically refresh the session..."
                         )
-                        sys.exit(1)
+                        # Run the auth stage in headless mode to refresh the session
+                        await generate_state(headless=True)
+
+                        # Re-resolve the storage state path
+                        storage_state_path = resolve_storage_state(
+                            os.path.join(output_dir, "state.json"),
+                            "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
+                        )
+                        manager.storage_state = storage_state_path
+
+                        # Recycle browser to load the new session state
+                        logger.info("Recycling browser to apply new authentication state...")
+                        await manager.recycle()
+                        page = manager.page  # Update local page reference
+
+                        # Retry loading the detail page
+                        logger.info(f"Retrying detail page: {url}")
+                        await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                        await page.wait_for_load_state("networkidle")
+
+                        try:
+                            await page.wait_for_selector(
+                                'div.item-content-loaded', timeout=15000
+                            )
+                        except Exception:
+                            logger.warning(f"  Content div did not appear on retry for {url}. Skipping.")
+                            continue
+
+                        detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
+                        if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
+                            logger.error(
+                                "🔒 Authentication is still expired after automatic refresh! "
+                                "Detail page is missing 'paywall-content'. Exiting."
+                            )
+                            sys.exit(1)
 
                     if not detail_info.get("content_loaded"):
                         logger.warning(f"  No content div found on {url}. Skipping.")
