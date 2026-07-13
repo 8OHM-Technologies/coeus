@@ -476,6 +476,78 @@ async def run_extraction(pipeline_name: str):
                         continue
 
                     # --------------------------------------------------------
+                    # Check if the last entry in this window is already complete in DB
+                    # --------------------------------------------------------
+                    is_complete = False
+                    last_page_num = 1
+                    try:
+                        last_page_locator = page.locator('li.ant-pagination-item').last
+                        if await last_page_locator.count() > 0:
+                            last_page_text = await last_page_locator.inner_text()
+                            try:
+                                last_page_num = int(last_page_text.strip())
+                            except ValueError:
+                                last_page_num = 1
+
+                            if last_page_num > 1:
+                                logger.info(f"    Multiple pages ({last_page_num}) detected. Checking the last page for completion...")
+                                await last_page_locator.click()
+                                await page.wait_for_load_state("networkidle")
+                                await asyncio.sleep(2)
+
+                        current_page_items: list[dict] = await page.evaluate(_EXTRACT_ITEMS_JS)
+                        if current_page_items:
+                            last_item = current_page_items[-1]
+                            last_url = last_item.get("detail_url")
+                            last_case_no = last_item.get("case_number")
+
+                            is_complete = await db_storage.is_record_complete(
+                                conn, pipeline_name, last_url, last_case_no
+                            )
+                    except Exception as last_check_err:
+                        logger.warning(f"    Failed last entry check: {last_check_err}. Proceeding with normal scrape.")
+
+                    if is_complete:
+                        logger.info(f"    ✅ Last entry is already complete. Skipping window {date_from}→{date_to}.")
+                        await save_progress(year, month, completed=True)
+                        continue
+                    else:
+                        # If we navigated to the last page and it's not complete, go back to Page 1
+                        if last_page_num > 1:
+                            try:
+                                logger.info("    Navigating back to Page 1...")
+                                jumped_back = False
+                                first_page_locator = page.locator('li.ant-pagination-item-1, li.ant-pagination-item').first
+                                if await first_page_locator.count() > 0:
+                                    await first_page_locator.click()
+                                    await page.wait_for_load_state("networkidle")
+                                    await asyncio.sleep(2)
+                                    jumped_back = True
+                                
+                                if not jumped_back:
+                                    logger.info("    Could not click page 1 button, re-submitting search to reset to Page 1...")
+                                    await page.evaluate("""
+                                        () => {
+                                            const btn = [...document.querySelectorAll('.btn-search')].find(el => {
+                                                const style = window.getComputedStyle(el);
+                                                const rect = el.getBoundingClientRect();
+                                                return (
+                                                    style.display !== 'none' &&
+                                                    style.visibility !== 'hidden' &&
+                                                    parseFloat(style.opacity) > 0 &&
+                                                    rect.width > 0 && rect.height > 0
+                                                );
+                                            });
+                                            if (btn) btn.click();
+                                        }
+                                    """)
+                                    await page.wait_for_load_state("networkidle")
+                                    await asyncio.sleep(2)
+                            except Exception as reset_err:
+                                logger.warning(f"    Failed to reset pagination to Page 1: {reset_err}. Proceeding anyway.")
+
+
+                    # --------------------------------------------------------
                     # 4c. Paginate through all pages within this window
                     # --------------------------------------------------------
                     current_page = 1

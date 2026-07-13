@@ -249,7 +249,60 @@ async def update_record_data(
     )
 
 
-# ---------------------------------------------------------------------------
+async def is_record_complete(
+    conn: asyncpg.Connection,
+    record_type: str,
+    source_url: str | None,
+    case_number: str | None = None,
+) -> bool:
+    """Check if a record exists and has details scraped (details_scraped_at is not null)."""
+    if not source_url and not case_number:
+        return False
+
+    if source_url and case_number:
+        row = await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM extracted_records
+                WHERE record_type = $1
+                  AND (source_url = $2 OR data->>'case_number' = $3)
+                  AND (data->>'details_scraped_at') IS NOT NULL
+            )
+            """,
+            record_type,
+            source_url,
+            case_number,
+        )
+    elif source_url:
+        row = await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM extracted_records
+                WHERE record_type = $1
+                  AND source_url = $2
+                  AND (data->>'details_scraped_at') IS NOT NULL
+            )
+            """,
+            record_type,
+            source_url,
+        )
+    else:
+        row = await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM extracted_records
+                WHERE record_type = $1
+                  AND data->>'case_number' = $2
+                  AND (data->>'details_scraped_at') IS NOT NULL
+            )
+            """,
+            record_type,
+            case_number,
+        )
+    return bool(row)
+
+
+# -----------------------------------------------------------------------------------------------------------
 # Pipeline state (progress tracking)
 # ---------------------------------------------------------------------------
 
