@@ -111,7 +111,11 @@ async def launch_browser_cdp(
         chrome_args.append("--headless=new")
 
     logger.info(f"Starting Chrome with CDP on port {cdp_port}...")
-    chrome_proc = subprocess.Popen(chrome_args)
+    chrome_proc = subprocess.Popen(
+        chrome_args,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
     # Give Chrome a moment to bind the debug port
     await asyncio.sleep(3)
@@ -145,7 +149,7 @@ async def create_browser_context(
     browser: Browser,
     *,
     ignore_https_errors: bool = False,
-    storage_state: Optional[str] = None,
+    storage_state: Optional[str | dict] = None,
     proxy_url: Optional[str] = None,
     user_agent: str = DEFAULT_USER_AGENT,
     viewport: dict | None = None,
@@ -162,9 +166,13 @@ async def create_browser_context(
         "ignore_https_errors": ignore_https_errors,
     }
 
-    if storage_state and os.path.exists(storage_state):
-        context_kwargs["storage_state"] = storage_state
-        logger.info(f"🔑 Loading browser session state from: {storage_state}")
+    if storage_state:
+        if isinstance(storage_state, dict):
+            context_kwargs["storage_state"] = storage_state
+            logger.info("🔑 Loading browser session state from database dict.")
+        elif isinstance(storage_state, str) and os.path.exists(storage_state):
+            context_kwargs["storage_state"] = storage_state
+            logger.info(f"🔑 Loading browser session state from: {storage_state}")
 
     if proxy_url:
         parsed_proxy = urllib.parse.urlparse(proxy_url)
@@ -267,7 +275,7 @@ class BrowserManager:
         *,
         headless: bool = True,
         ignore_https_errors: bool = False,
-        storage_state: Optional[str] = None,
+        storage_state: Optional[str | dict] = None,
         proxy_url: Optional[str] = None,
         user_agent: str = DEFAULT_USER_AGENT,
         viewport: Optional[dict] = None,

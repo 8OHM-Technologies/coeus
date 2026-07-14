@@ -319,6 +319,7 @@ async def load_pipeline_state(
         SELECT pipeline_state
         FROM pipelines_pipelineconfiguration
         WHERE name = $1
+           OR LOWER(REPLACE(REPLACE(name, ' ', '_'), '-', '_')) = LOWER(REPLACE(REPLACE($1, ' ', '_'), '-', '_'))
         """,
         pipeline_name,
     )
@@ -340,7 +341,9 @@ async def save_pipeline_state(
         UPDATE pipelines_pipelineconfiguration
         SET pipeline_state = $1
         WHERE name = $2
+           OR LOWER(REPLACE(REPLACE(name, ' ', '_'), '-', '_')) = LOWER(REPLACE(REPLACE($2, ' ', '_'), '-', '_'))
         """,
         json.dumps(state, ensure_ascii=False),
         pipeline_name,
     )
+

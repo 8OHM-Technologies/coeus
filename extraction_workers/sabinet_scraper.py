@@ -13,7 +13,6 @@ from . import db_storage
 from .utils.browser_helper import (
     setup_logger,
     dismiss_cookie_consent,
-    resolve_storage_state,
     BrowserManager,
 )
 
@@ -22,8 +21,8 @@ logger = setup_logger(__name__)
 # -----------------------------------------------------------------------------
 # Authentication / Session State Generation
 # -----------------------------------------------------------------------------
-async def generate_state(headless: bool = False):
-    """Automatically log in to Sabinet and persist the browser session state.
+async def generate_state(pipeline_name: str = "sabinet_ccma", headless: bool = False):
+    """Automatically log in to Sabinet and persist the browser session state to the database.
 
     Uses Playwright to perform a fully automated login flow:
     1. Navigate to the CCMA Awards search page.
@@ -32,9 +31,7 @@ async def generate_state(headless: bool = False):
     4. Fill in the username and password in the sidebar drawer.
     5. Click "Sign into Account" and wait for successful authentication.
 
-    The function saves two copies of the storage state JSON:
-    - ``data/state.json`` – a generic location used by the other scrapers.
-    - ``data/sabinet_ccma/html/state.json`` – retained for backward‑compatibility.
+    The function saves the storage state JSON directly to the database.
     """
     scrape_url = (
         "https://discover.sabinet.co.za/search?"
@@ -43,12 +40,6 @@ async def generate_state(headless: bool = False):
     )
     username = "TiaanF"
     password = "G7fR7Bzv4$@ea5!"
-
-    # Target file paths
-    save_path_root = os.path.join("data", "state.json")
-    save_path_ccma = os.path.join("data", "sabinet_ccma", "html", "state.json")
-
-    os.makedirs(os.path.join("data", "sabinet_ccma", "html"), exist_ok=True)
 
     async with async_playwright() as p:
         logger.info("[INFO] Launching Chromium browser for automated authentication...")
@@ -107,13 +98,17 @@ async def generate_state(headless: bool = False):
             logger.info("✅ Authentication successful!")
 
             # ------------------------------------------------------------------
-            # Persist the session state to both paths
+            # Persist the session state to the database
             # ------------------------------------------------------------------
-            await context.storage_state(path=save_path_root)
-            await context.storage_state(path=save_path_ccma)
-            logger.info("\n✅ Session state saved to:")
-            logger.info(f"   - {save_path_root}")
-            logger.info(f"   - {save_path_ccma}")
+            state_dict = await context.storage_state()
+            conn = await get_db_connection()
+            try:
+                progress_state = await db_storage.load_pipeline_state(conn, pipeline_name)
+                progress_state["storage_state"] = state_dict
+                await db_storage.save_pipeline_state(conn, pipeline_name, progress_state)
+                logger.info(f"✅ Session state saved to database for pipeline '{pipeline_name}'.")
+            finally:
+                await conn.close()
 
 # -----------------------------------------------------------------------------
 # Index Scraper – extracts the list of awards using 1-month rolling windows
@@ -236,6 +231,10 @@ async def run_extraction(pipeline_name: str):
     progress_state = await db_storage.load_pipeline_state(conn, pipeline_name)
     logger.info(f"Loaded progress state: {progress_state}")
 
+    if progress_state.get("fully_complete"):
+        logger.info("✅ Index stage was already marked as fully complete. Skipping index stage.")
+        return
+
     async def save_progress(year: int, month: int, completed: bool = False) -> None:
         progress_state["last_year"] = year
         progress_state["last_month"] = month
@@ -255,17 +254,13 @@ async def run_extraction(pipeline_name: str):
             resume_year += 1
 
     p = await async_playwright().start()
-    # Resolve storage state (cookies)
-    storage_state_path = resolve_storage_state(
-        os.path.join(output_dir, "state.json"),
-        "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
-    )
+    db_storage_state = progress_state.get("storage_state")
 
     manager = BrowserManager(
         p,
         headless=True,
         ignore_https_errors=config.get("allow_insecure_https", False),
-        storage_state=storage_state_path,
+        storage_state=db_storage_state,
     )
 
     async def setup_search_page(page):
@@ -684,12 +679,35 @@ async def run_detail_extraction(pipeline_name: str):
     logger.info("==================================================")
 
     conn = await get_db_connection()
+
+    # Get total and completed counts for logging progress
+    total_count = await conn.fetchval(
+        """
+        SELECT COUNT(*) FROM extracted_records
+        WHERE record_type = $1 AND source_url IS NOT NULL
+        """,
+        index_pipeline_name
+    )
+    completed_count = await conn.fetchval(
+        """
+        SELECT COUNT(*) FROM extracted_records
+        WHERE record_type = $1 AND source_url IS NOT NULL AND (data->>'details_scraped_at') IS NOT NULL
+        """,
+        index_pipeline_name
+    )
+
     cases = await db_storage.load_records_needing_detail(conn, index_pipeline_name)
-    logger.info(f"Loaded {len(cases)} pending cases from database.")
+    logger.info(
+        f"Loaded {len(cases)} pending cases from database "
+        f"(total: {total_count}, completed: {completed_count})."
+    )
 
     if not cases:
         logger.info("✅ No cases with detail URLs to enrich. Exiting.")
         return
+
+    # Load progress state to retrieve the storage state
+    progress_state = await db_storage.load_pipeline_state(conn, index_pipeline_name)
 
     # JS snippet that extracts structured metadata from the paywall-content div.
     # Returns an object with:
@@ -790,21 +808,14 @@ async def run_detail_extraction(pipeline_name: str):
         }
     '''
 
-    # Resolve output directory for finding state.json
-    output_dir = resolve_data_dir(index_pipeline_name, doc_type)
-
     p = await async_playwright().start()
-    # Resolve storage state for auth
-    storage_state_path = resolve_storage_state(
-        os.path.join(output_dir, "state.json"),
-        "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
-    )
+    db_storage_state = progress_state.get("storage_state")
 
     manager = BrowserManager(
         p,
         headless=True,
         ignore_https_errors=config.get("allow_insecure_https", False),
-        storage_state=storage_state_path,
+        storage_state=db_storage_state,
     )
     page = await manager.start()
 
@@ -822,7 +833,7 @@ async def run_detail_extraction(pipeline_name: str):
                 url = case_item["source_url"]
                 data_payload = case_item["data"]
 
-                logger.info(f"[{progress_idx + 1}/{len(cases)}] Scraping details from: {url}")
+                logger.info(f"[{completed_count + progress_idx + 1}/{total_count}] Scraping details from: {url}")
                 try:
                     await page.goto(url, wait_until="domcontentloaded", timeout=45000)
                     await page.wait_for_load_state("networkidle")
@@ -848,14 +859,12 @@ async def run_detail_extraction(pipeline_name: str):
                             "🔒 Authentication has expired! Attempting to automatically refresh the session..."
                         )
                         # Run the auth stage in headless mode to refresh the session
-                        await generate_state(headless=True)
+                        await generate_state(pipeline_name=index_pipeline_name, headless=True)
 
-                        # Re-resolve the storage state path
-                        storage_state_path = resolve_storage_state(
-                            os.path.join(output_dir, "state.json"),
-                            "/app/data/state.json" if os.path.exists("/app/data") else "data/state.json",
-                        )
-                        manager.storage_state = storage_state_path
+                        # Re-load the progress state from the database
+                        progress_state = await db_storage.load_pipeline_state(conn, index_pipeline_name)
+                        db_storage_state = progress_state.get("storage_state")
+                        manager.storage_state = db_storage_state
 
                         # Recycle browser to load the new session state
                         logger.info("Recycling browser to apply new authentication state...")
@@ -944,7 +953,8 @@ if __name__ == "__main__":
         logger.info(f"Auto-detected stage '{stage}' from pipeline name '{pipeline_name}'")
 
     if stage == "auth":
-        asyncio.run(generate_state())
+        pipeline_name = args.pipeline_name or "sabinet_ccma"
+        asyncio.run(generate_state(pipeline_name=pipeline_name))
     elif stage == "index":
         if not args.pipeline_name:
             logger.error("--pipeline_name is required for the index stage.")
