@@ -71,6 +71,8 @@ class ExtractedRecord(models.Model):
     review_reason = models.TextField(blank=True, null=True)
     source_url = models.TextField(blank=True, null=True, unique=True)
     extracted_at = models.DateTimeField(auto_now_add=True)
+    cleaned_at = models.DateTimeField(auto_now_add=False, null=True)
+    processed_at = models.DateTimeField(auto_now_add=False, null=True)
 
     class Meta:
         managed = False
