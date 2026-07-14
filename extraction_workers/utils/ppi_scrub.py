@@ -41,8 +41,60 @@ class Scrub:
         nlp_doc = nlp(text)
         final_text = text
 
+        org_keywords = [
+            "ltd", "limited", "pty", "proprietary", "inc", "incorporated", "corp", "corporation",
+            "gmbh", "plc", "llc", "llp", "holdings", "group", "industries", "services", "enterprises",
+            "ventures", "partners", "trust", "bank", "co", "company", "companies",
+            "union", "unions", "association", "associations", "federation", "society", "council",
+            "committee", "chamber", "coalition", "alliance", "congress", "amcu", "numsa", "num",
+            "cosatu", "satawu", "popcru", "nehawu", "denosa", "solidarity", "solidariteit",
+            "minister", "mec", "department", "registrar", "commissioner", "director", "magistrate",
+            "judge", "judges", "justice", "justices",
+            "state", "government", "president", "governor", "premier", "mayor", "municipality",
+            "municipal", "city of", "province", "provincial", "national", "board", "agency",
+            "authority", "commission", "office", "bureau", "administration", "protector", "police",
+            "sheriff", "school", "university", "college", "clinic", "hospital", "church", "foundation",
+            "charity", "club", "institute", "center", "centre", "vs", "versus"
+        ]
+
+        initial_keywords = {"j", "aj", "ja", "djp", "jp", "cj", "dcj"}
+
         for name in nlp_doc.ents:
             if name.label_ == "PERSON":
+                # Check if it looks like an organization or company name to avoid false positives
+                normalized = name.text.lower()
+                is_org = False
+                for keyword in org_keywords:
+                    if re.search(r"\b" + re.escape(keyword) + r"\b", normalized):
+                        is_org = True
+                        break
+                if is_org:
+                    continue
+
+                # Check if it is a judge name based on surrounding context/initials
+                is_judge = False
+                
+                # Check preceding tokens
+                preceding_tokens = nlp_doc[max(0, name.start - 3) : name.start]
+                for token in preceding_tokens:
+                    if token.text.lower() in {"judge", "justice", "magistrate"}:
+                        is_judge = True
+                        break
+                
+                # Check last token of entity or immediately following token for initials (like J, AJ, etc.)
+                if not is_judge:
+                    if name.end > name.start:
+                        last_token = nlp_doc[name.end - 1].text.strip(".").lower()
+                        if last_token in initial_keywords:
+                            is_judge = True
+                    if not is_judge and name.end < len(nlp_doc):
+                        next_token = nlp_doc[name.end].text.strip(".").lower()
+                        if next_token in initial_keywords:
+                            is_judge = True
+                            
+                if is_judge:
+                    continue
+
                 final_text = re.sub(re.escape(name.text), "[REDACTED]", final_text)
         return final_text
 
@@ -73,7 +125,7 @@ class Scrub:
                 data[key] = self.scrub_dict(value)
             elif isinstance(value, list):
                 data[key] = [
-                    self.scrub_dict(item) if isinstance(item, dict) else item
+                    self.scrub_dict(item) if isinstance(item, dict) else (self.scrub_text(item) if isinstance(item, str) else item)
                     for item in value
                 ]
             elif isinstance(value, str):

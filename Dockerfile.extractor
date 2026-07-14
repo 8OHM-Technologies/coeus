@@ -24,6 +24,7 @@ COPY extraction_workers/utils/           /app/extraction_workers/utils/
 
 # Copy the Dagster Pipes entrypoint
 COPY dagster/pipes/extractor_entrypoint.py /app/main.py
+COPY dagster/pipes/scrub_entrypoint.py /app/scrub_entrypoint.py
 
 # Ensure the shared data directory mount point exists
 RUN mkdir -p /app/scraping_data

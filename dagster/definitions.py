@@ -337,6 +337,36 @@ def extracted_structured_data(
     return result.get_materialize_result()
 
 
+@dg.asset(
+    name="scrubbed_extracted_records",
+    partitions_def=pipeline_partitions,
+    deps=[extracted_structured_data],
+)
+def scrubbed_extracted_records(
+    context: dg.AssetExecutionContext,
+    pipes_docker: PipesDockerClient,
+) -> dg.MaterializeResult:
+    """Spawns an external container to scrub PII from extracted structured data."""
+    blueprint = get_blueprint_for_partition(context.partition_key)
+    if not blueprint:
+        raise ValueError(f"No active pipeline blueprint found for partition key: {context.partition_key}")
+
+    result = pipes_docker.run(
+        context=context,
+        image=EXTRACTOR_IMAGE,
+        env=_build_container_env(),
+        extras={
+            "partition_key": context.partition_key,
+        },
+        container_kwargs={
+            "network": DOCKER_NETWORK,
+            "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+            "command": ["python", "/app/scrub_entrypoint.py"],
+        }
+    )
+    return result.get_materialize_result()
+
+
 def cron_field_matches(field_val: str, current_val: int) -> bool:
     if field_val == "*":
         return True
@@ -427,7 +457,8 @@ defs = dg.Definitions(
     assets=[
         fetch_github_repo_info,
         raw_scraped_pages,
-        extracted_structured_data
+        extracted_structured_data,
+        scrubbed_extracted_records
     ],
     sensors=[
         coeus_blueprint_sensor
