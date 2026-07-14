@@ -351,10 +351,36 @@ async def run_extraction(pipeline_name: str):
             total_new = 0
 
             for year, year_count in year_entries:
-                # Skip years we have already fully processed
+                # Skip years we have already fully processed according to progress_state
                 if year < resume_year:
                     logger.info(f"Skipping year {year} (already processed per progress state).")
                     continue
+
+                # Database-backed check to see if the year is already indexed
+                try:
+                    db_count = await conn.fetchval(
+                        """
+                        SELECT COUNT(*) FROM extracted_records
+                        WHERE record_type = $1
+                          AND LEFT(COALESCE(data->>'award_date', data->>'date', data->>'publication_date', data->>'document_date'), 4) = $2
+                        """,
+                        pipeline_name,
+                        str(year),
+                    )
+                    is_fully_indexed = False
+                    if db_count >= year_count:
+                        is_fully_indexed = True
+                    elif year_count > 10 and db_count >= year_count * 0.99:
+                        is_fully_indexed = True
+                    elif year_count <= 10 and db_count >= year_count - 1:
+                        is_fully_indexed = True
+
+                    if is_fully_indexed:
+                        logger.info(f"Skipping year {year} (already fully indexed in DB: {db_count}/{year_count} records).")
+                        await save_progress(year, 12, completed=True)
+                        continue
+                except Exception as db_cnt_err:
+                    logger.warning(f"Failed to check DB record count for year {year}: {db_cnt_err}")
 
                 logger.info(f"📅 Processing year {year} (~{year_count} entries)...")
 

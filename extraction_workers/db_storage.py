@@ -127,7 +127,7 @@ async def upsert_scraped_record(
     if not document_date:
         # Try to resolve a date from the dictionary
         parsed_date = None
-        for key in ("document_date", "date", "publication_date"):
+        for key in ("document_date", "date", "publication_date", "award_date"):
             val = data_dict.get(key)
             if val:
                 try:
