@@ -112,3 +112,20 @@ def test_fetch_blueprints_fallback_to_expired_cache(tmp_path, monkeypatch, mocke
 
     res = fetch_blueprints()
     assert res == blueprints_data
+
+
+def test_scrubbed_extracted_records_asset_exists():
+    from definitions import defs
+    
+    # Get all asset keys from the definitions
+    asset_graph = defs.resolve_asset_graph()
+    asset_keys = {key.to_string() for key in asset_graph.get_all_asset_keys()}
+    
+    # Assert the new asset is registered
+    assert '["scrubbed_extracted_records"]' in asset_keys
+    
+    # Check dependency relation: scrubbed_extracted_records depends on extracted_structured_data
+    scrub_key = [key for key in asset_graph.get_all_asset_keys() if key.to_string() == '["scrubbed_extracted_records"]'][0]
+    parent_keys = {parent.to_string() for parent in asset_graph.get(scrub_key).parent_keys}
+    
+    assert '["extracted_structured_data"]' in parent_keys
