@@ -453,6 +453,34 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
         dynamic_partitions_requests=dynamic_partitions_requests
     )
 
+downstream_extraction_scrubbing_job = dg.define_asset_job(
+    name="downstream_extraction_scrubbing_job",
+    selection=dg.AssetSelection.keys("extracted_structured_data", "scrubbed_extracted_records"),
+    partitions_def=pipeline_partitions,
+)
+
+
+@dg.asset_sensor(
+    name="raw_scraped_pages_sensor",
+    asset_key=dg.AssetKey("raw_scraped_pages"),
+    job=downstream_extraction_scrubbing_job,
+    default_status=dg.DefaultSensorStatus.RUNNING,
+)
+def raw_scraped_pages_sensor(
+    context: dg.SensorEvaluationContext,
+    asset_event: dg.EventLogEntry,
+):
+    partition_key = asset_event.dagster_event.partition
+    context.log.info(
+        f"raw_scraped_pages materialized for partition '{partition_key}'. "
+        f"Triggering downstream extraction and scrubbing job."
+    )
+    return dg.RunRequest(
+        run_key=f"downstream_{context.cursor}_{partition_key}",
+        partition_key=partition_key,
+    )
+
+
 defs = dg.Definitions(
     assets=[
         fetch_github_repo_info,
@@ -460,8 +488,12 @@ defs = dg.Definitions(
         extracted_structured_data,
         scrubbed_extracted_records
     ],
+    jobs=[
+        downstream_extraction_scrubbing_job
+    ],
     sensors=[
-        coeus_blueprint_sensor
+        coeus_blueprint_sensor,
+        raw_scraped_pages_sensor
     ],
     resources={
         "pipes_docker": PipesDockerClient(),
@@ -469,3 +501,4 @@ defs = dg.Definitions(
     },
     **apprise_dict
 )
+

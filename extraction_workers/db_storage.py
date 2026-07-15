@@ -118,6 +118,7 @@ async def upsert_scraped_record(
     source_url: str,
     data_dict: dict[str, Any],
     document_date: date | None = None,
+    status: str = "indexed",
 ) -> None:
     """Upsert a single scraped record into ``extracted_records``.
 
@@ -154,9 +155,9 @@ async def upsert_scraped_record(
         """
         INSERT INTO extracted_records (
             id, target_id, document_date, record_type,
-            data, source_url
+            data, source_url, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (source_url)
         DO UPDATE SET
             data        = EXCLUDED.data,
@@ -168,6 +169,7 @@ async def upsert_scraped_record(
         record_type,
         json.dumps(data_dict, ensure_ascii=False),
         source_url,
+        status,
     )
 
 
@@ -177,6 +179,7 @@ async def upsert_scraped_records_batch(
     record_type: str,
     records: list[dict[str, Any]],
     url_key: str = "detail_url",
+    status: str = "indexed",
 ) -> int:
     """Batch-upsert a list of scraped record dicts.
 
@@ -189,7 +192,7 @@ async def upsert_scraped_records_batch(
         if not source_url:
             continue
         await upsert_scraped_record(
-            conn, target_id, record_type, source_url, record,
+            conn, target_id, record_type, source_url, record, status=status,
         )
         count += 1
     return count
@@ -205,8 +208,8 @@ async def load_records_needing_detail(
 ) -> list[dict]:
     """Return records that have a ``source_url`` but haven't been detail-scraped yet.
 
-    A record is considered "not detail-scraped" if its ``data`` JSONB does NOT
-    contain a ``details_scraped_at`` key.
+    A record is considered "not detail-scraped" if its ``status`` is 'indexed'
+    or if it is a legacy record where ``status`` is NULL and it doesn't have ``details_scraped_at``.
     """
     rows = await conn.fetch(
         """
@@ -214,7 +217,7 @@ async def load_records_needing_detail(
         FROM extracted_records
         WHERE record_type = $1
           AND source_url IS NOT NULL
-          AND (data->>'details_scraped_at') IS NULL
+          AND (status = 'indexed' OR (status IS NULL AND (data->>'details_scraped_at') IS NULL))
         ORDER BY extracted_at ASC
         """,
         record_type,
@@ -236,17 +239,30 @@ async def update_record_data(
     conn: asyncpg.Connection,
     record_id: uuid.UUID,
     merged_data: dict[str, Any],
+    status: str | None = None,
 ) -> None:
-    """Replace the ``data`` JSONB column for a specific record."""
-    await conn.execute(
-        """
-        UPDATE extracted_records
-        SET data = $1
-        WHERE id = $2
-        """,
-        json.dumps(merged_data, ensure_ascii=False),
-        record_id,
-    )
+    """Replace the ``data`` JSONB column and optionally update the ``status`` for a specific record."""
+    if status is not None:
+        await conn.execute(
+            """
+            UPDATE extracted_records
+            SET data = $1, status = $2
+            WHERE id = $3
+            """,
+            json.dumps(merged_data, ensure_ascii=False),
+            status,
+            record_id,
+        )
+    else:
+        await conn.execute(
+            """
+            UPDATE extracted_records
+            SET data = $1
+            WHERE id = $2
+            """,
+            json.dumps(merged_data, ensure_ascii=False),
+            record_id,
+        )
 
 
 async def is_record_complete(

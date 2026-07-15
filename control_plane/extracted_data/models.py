@@ -2,6 +2,9 @@ import uuid
 
 from django.db import models
 
+class Statusses(models.TextChoices):
+    INDEXED = "indexed", "Indexed"
+    DETAILED = "detailed", "Detailed"
 
 class Entity(models.Model):
     """
@@ -73,6 +76,12 @@ class ExtractedRecord(models.Model):
     extracted_at = models.DateTimeField(auto_now_add=True)
     cleaned_at = models.DateTimeField(auto_now_add=False, null=True)
     processed_at = models.DateTimeField(auto_now_add=False, null=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Statusses.choices,
+        default=Statusses.INDEXED,
+        help_text="The status of the scraping workflow.",
+    )
 
     class Meta:
         managed = False

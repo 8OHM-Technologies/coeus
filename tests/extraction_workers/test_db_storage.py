@@ -10,6 +10,10 @@ from extraction_workers.db_storage import (
     get_existing_urls,
     get_existing_case_numbers,
     is_record_complete,
+    upsert_scraped_record,
+    upsert_scraped_records_batch,
+    load_records_needing_detail,
+    update_record_data,
 )
 
 
@@ -85,4 +89,90 @@ async def test_is_record_complete():
     query = mock_conn.fetchval.call_args[0][0]
     assert "data->>'case_number' = $2" in query
     assert "source_url" not in query
+
+
+@pytest.mark.asyncio
+async def test_upsert_scraped_record(mocker):
+    mock_conn = AsyncMock()
+    import uuid
+    from datetime import date
+    target_uuid = uuid.uuid4()
+    
+    # Test upsert with default status
+    await upsert_scraped_record(
+        mock_conn, target_uuid, "test_pipeline", "https://example.com/doc", {"title": "Doc"}, date(2026, 1, 1)
+    )
+    
+    mock_conn.execute.assert_called_once()
+    query = mock_conn.execute.call_args[0][0]
+    params = mock_conn.execute.call_args[0][1:]
+    assert "INSERT INTO extracted_records" in query
+    assert "status" in query
+    # Check that status 'indexed' is passed
+    assert params[-1] == "indexed"
+
+
+@pytest.mark.asyncio
+async def test_upsert_scraped_records_batch():
+    mock_conn = AsyncMock()
+    import uuid
+    target_uuid = uuid.uuid4()
+    
+    # We mock the single upsert function so we can test the batch wrapper
+    with pytest.MonkeyPatch.context() as mp:
+        mock_upsert = AsyncMock()
+        mp.setattr("extraction_workers.db_storage.upsert_scraped_record", mock_upsert)
+        
+        records = [
+            {"detail_url": "https://example.com/1", "title": "1"},
+            {"detail_url": "https://example.com/2", "title": "2"},
+        ]
+        
+        await upsert_scraped_records_batch(
+            mock_conn, target_uuid, "test_pipeline", records, url_key="detail_url", status="indexed"
+        )
+        
+        assert mock_upsert.call_count == 2
+        # Check first call arguments
+        call_args = mock_upsert.call_args_list[0][1]
+        assert call_args["status"] == "indexed"
+
+
+@pytest.mark.asyncio
+async def test_load_records_needing_detail():
+    mock_conn = AsyncMock()
+    mock_conn.fetch.return_value = [
+        {"id": "uuid-1", "source_url": "https://example.com/1", "data": '{"title": "1"}'},
+    ]
+    
+    res = await load_records_needing_detail(mock_conn, "test_pipeline")
+    
+    mock_conn.fetch.assert_called_once()
+    query = mock_conn.fetch.call_args[0][0]
+    assert "status = 'indexed'" in query
+    assert "status IS NULL" in query
+    assert len(res) == 1
+    assert res[0]["id"] == "uuid-1"
+
+
+@pytest.mark.asyncio
+async def test_update_record_data():
+    mock_conn = AsyncMock()
+    import uuid
+    record_uuid = uuid.uuid4()
+    
+    # Test update with status provided
+    await update_record_data(mock_conn, record_uuid, {"title": "updated"}, status="detailed")
+    mock_conn.execute.assert_called_once()
+    query = mock_conn.execute.call_args[0][0]
+    assert "SET data = $1, status = $2" in query
+    
+    # Test update without status
+    mock_conn.execute.reset_mock()
+    await update_record_data(mock_conn, record_uuid, {"title": "updated"})
+    mock_conn.execute.assert_called_once()
+    query = mock_conn.execute.call_args[0][0]
+    assert "SET data = $1" in query
+    assert "status" not in query
+
 

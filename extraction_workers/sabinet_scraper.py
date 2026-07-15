@@ -611,7 +611,7 @@ async def run_extraction(pipeline_name: str):
 
                         if new_items:
                             await db_storage.upsert_scraped_records_batch(
-                                conn, target_id, pipeline_name, new_items, "detail_url"
+                                conn, target_id, pipeline_name, new_items, "detail_url", status="indexed"
                             )
                             logger.info(f"    Saved {len(new_items)} new items to database.")
 
@@ -717,7 +717,9 @@ async def run_detail_extraction(pipeline_name: str):
     completed_count = await conn.fetchval(
         """
         SELECT COUNT(*) FROM extracted_records
-        WHERE record_type = $1 AND source_url IS NOT NULL AND (data->>'details_scraped_at') IS NOT NULL
+        WHERE record_type = $1
+          AND source_url IS NOT NULL
+          AND (status = 'detailed' OR (status IS NULL AND (data->>'details_scraped_at') IS NOT NULL))
         """,
         index_pipeline_name
     )
@@ -929,7 +931,7 @@ async def run_detail_extraction(pipeline_name: str):
                     data_payload["details_scraped_at"] = datetime.now().isoformat()
 
                     # Save update in-place in Postgres
-                    await db_storage.update_record_data(conn, record_id, data_payload)
+                    await db_storage.update_record_data(conn, record_id, data_payload, status="detailed")
 
                     count += 1
                     logger.info(f"  ✅ Enriched with {len(metadata)} fields.")
