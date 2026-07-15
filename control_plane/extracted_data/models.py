@@ -70,7 +70,7 @@ class ExtractedRecord(models.Model):
     # The flexible payload
     data = models.JSONField(help_text="Data extracted by the LLM.")
 
-    requires_human_review = models.BooleanField(default=False)
+    requires_human_review = models.BooleanField(default=False, null=True)
     review_reason = models.TextField(blank=True, null=True)
     source_url = models.TextField(blank=True, null=True, unique=True)
     extracted_at = models.DateTimeField(auto_now_add=True)
