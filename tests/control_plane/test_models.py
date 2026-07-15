@@ -47,7 +47,7 @@ def test_pipeline_configuration_clean_validation():
 def test_to_blueprint_serialization():
     config = PipelineConfiguration.objects.create(
         name="Test-Pipeline Ingestion",
-        scraper_type=ScraperType.NEW_SAFLII,
+        scraper_type=ScraperType.SAFLII,
         industry="Legal",
         document_type=DocumentType.PDF,
         is_active=False,
@@ -68,7 +68,7 @@ def test_to_blueprint_serialization():
 
     assert blueprint["pipeline_id"] == "test_pipeline_ingestion"
     assert blueprint["name"] == "Test-Pipeline Ingestion"
-    assert blueprint["scraper_type"] == ScraperType.NEW_SAFLII
+    assert blueprint["scraper_type"] == ScraperType.SAFLII
     assert blueprint["is_active"] is False
     assert blueprint["schedule"] == "0 12 * * *"
     
