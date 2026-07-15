@@ -364,11 +364,11 @@ async def run_extraction(pipeline_name: str):
             for year, year_count in year_entries:
                 # Skip years we have already fully processed according to progress_state
                 if reverse_direction:
-                    if year > resume_year:
+                    if resume_year > 0 and year > resume_year:
                         logger.info(f"Skipping year {year} (already processed per progress state).")
                         continue
                 else:
-                    if year < resume_year:
+                    if resume_year > 0 and year < resume_year:
                         logger.info(f"Skipping year {year} (already processed per progress state).")
                         continue
 

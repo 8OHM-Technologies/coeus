@@ -254,3 +254,72 @@ async def test_run_detail_extraction_reverse_and_skip(mocker):
     # page.goto should be called once with case2 url
     assert mock_page.goto.call_count == 1
     mock_page.goto.assert_called_once_with("https://example.com/case2", wait_until="domcontentloaded", timeout=45000)
+
+
+@pytest.mark.asyncio
+async def test_run_extraction_reverse_fresh_run(monkeypatch, mocker):
+    """Verify that a fresh run in reverse direction (empty progress state) processes years without skipping."""
+    mock_config = {
+        "start_url": "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards",
+        "document_type": "awards",
+        "extraction_params": {
+            "shared_record_type": "sabinet_ccma_shared",
+            "reverse_direction": True
+        }
+    }
+
+    mock_fetch_config = AsyncMock(return_value=mock_config)
+    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+
+    mock_conn = AsyncMock()
+    mock_conn.fetchval = AsyncMock(return_value=0)
+    mock_get_db = AsyncMock(return_value=mock_conn)
+    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+
+    mocker.patch("extraction_workers.db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
+    mocker.patch("extraction_workers.db_storage.get_existing_urls", AsyncMock(return_value=set()))
+    mocker.patch("extraction_workers.db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+
+    # Mock progress state: empty for a fresh run
+    mock_load_state = AsyncMock(return_value={})
+    mocker.patch("extraction_workers.db_storage.load_pipeline_state", mock_load_state)
+
+    saved_states = []
+    async def capture_save(conn, pipeline_name, state):
+        saved_states.append(dict(state))
+    mock_save_state = AsyncMock(side_effect=capture_save)
+    mocker.patch("extraction_workers.db_storage.save_pipeline_state", mock_save_state)
+
+    # Mock Playwright browser interactions
+    mock_page = AsyncMock()
+    mock_page.evaluate = AsyncMock(return_value=[[2020, 100], [2021, 50], [2022, 10]])
+    mock_page.locator = MagicMock()
+    mock_page.locator.count = AsyncMock(return_value=0)
+
+    mock_manager = MagicMock()
+    mock_manager.start = AsyncMock(return_value=mock_page)
+    mock_manager.page = mock_page
+    mock_manager.close = AsyncMock()
+    mock_manager.recycle = AsyncMock()
+
+    mocker.patch("extraction_workers.sabinet_scraper.BrowserManager", return_value=mock_manager)
+
+    mock_pw = MagicMock()
+    mock_pw.stop = AsyncMock()
+    mock_pw_start = AsyncMock(return_value=mock_pw)
+    mocker.patch("extraction_workers.sabinet_scraper.async_playwright", return_value=MagicMock(start=mock_pw_start))
+
+    mocker.patch("sys.exit")
+
+    # Stop the loop at first iteration of month search
+    mock_page.locator("input[placeholder=\"Date From\"]").first.is_visible = AsyncMock(side_effect=Exception("StopLoop"))
+
+    await run_extraction("sabinet_ccma_test")
+
+    # The first processed year should be 2022 (newest) and first month 12
+    # Verify save_progress was called to save the first state
+    assert len(saved_states) > 0
+    assert saved_states[0].get("last_year") == 2022
+    assert saved_states[0].get("last_month") == 12
+    assert saved_states[0].get("last_completed") is False
+
