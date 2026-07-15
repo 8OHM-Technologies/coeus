@@ -250,8 +250,8 @@ async def upsert_record(
         # 1. Upsert entity -------------------------------------------------------
         entity_id = await conn.fetchval(
             """
-            INSERT INTO entities (id, name)
-            VALUES ($1, $2)
+            INSERT INTO entities (id, name, created_at)
+            VALUES ($1, $2, NOW())
             ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
             RETURNING id
             """,
@@ -262,8 +262,8 @@ async def upsert_record(
         # 2. Upsert target -------------------------------------------------------
         target_id = await conn.fetchval(
             """
-            INSERT INTO targets (id, entity_id, target_name)
-            VALUES ($1, $2, $3)
+            INSERT INTO targets (id, entity_id, target_name, created_at)
+            VALUES ($1, $2, $3, NOW())
             ON CONFLICT (entity_id, target_name) DO UPDATE SET target_name = EXCLUDED.target_name
             RETURNING id
             """,
@@ -277,9 +277,9 @@ async def upsert_record(
             """
             INSERT INTO extracted_records (
                 id, target_id, document_date, record_type,
-                data, requires_human_review, review_reason, source_url
+                data, requires_human_review, review_reason, source_url, extracted_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             ON CONFLICT (target_id, document_date, record_type)
             DO UPDATE SET
                 data                  = EXCLUDED.data,

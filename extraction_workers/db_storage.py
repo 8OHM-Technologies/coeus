@@ -46,8 +46,8 @@ async def resolve_target_id(
     # 1. Upsert entity
     entity_id = await conn.fetchval(
         """
-        INSERT INTO entities (id, name)
-        VALUES ($1, $2)
+        INSERT INTO entities (id, name, created_at)
+        VALUES ($1, $2, NOW())
         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
         RETURNING id
         """,
@@ -58,8 +58,8 @@ async def resolve_target_id(
     # 2. Upsert target
     target_id = await conn.fetchval(
         """
-        INSERT INTO targets (id, entity_id, target_name, location)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO targets (id, entity_id, target_name, location, created_at)
+        VALUES ($1, $2, $3, $4, NOW())
         ON CONFLICT (entity_id, target_name)
         DO UPDATE SET location = COALESCE(EXCLUDED.location, targets.location)
         RETURNING id
@@ -155,9 +155,9 @@ async def upsert_scraped_record(
         """
         INSERT INTO extracted_records (
             id, target_id, document_date, record_type,
-            data, source_url, status
+            data, source_url, status, extracted_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         ON CONFLICT (source_url)
         DO UPDATE SET
             data        = EXCLUDED.data,
