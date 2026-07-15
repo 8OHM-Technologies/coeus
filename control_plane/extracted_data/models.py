@@ -23,7 +23,7 @@ class Entity(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = "entities"
         verbose_name_plural = "Entities"
 
@@ -44,7 +44,7 @@ class Target(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = "targets"
         unique_together = (("entity", "target_name"),)
 
@@ -84,7 +84,7 @@ class ExtractedRecord(models.Model):
     )
 
     class Meta:
-        managed = False
+        managed = True
         db_table = "extracted_records"
 
     def __str__(self) -> str:

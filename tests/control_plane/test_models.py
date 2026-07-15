@@ -10,8 +10,8 @@ def test_pipeline_configuration_creation_and_defaults():
     )
     
     assert config.name == "Test Pipeline"
-    assert config.scraper_type == ScraperType.SEDARPLUS
-    assert config.document_type == DocumentType.PDF
+    assert config.scraper_type == ScraperType.SAFLII
+    assert config.document_type == DocumentType.JSON
     assert config.llm_engine == LLMEngine.LOCAL
     assert config.is_active is True
     assert config.schedule_cron == "0 0 * * *"
