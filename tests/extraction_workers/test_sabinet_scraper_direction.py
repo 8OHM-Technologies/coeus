@@ -166,3 +166,91 @@ async def test_run_extraction_reverse_setup(monkeypatch, mocker):
         s.get("last_year") == 2021 and s.get("last_month") == 4 and s.get("last_completed") is False
         for s in saved_states
     )
+
+
+from extraction_workers.db_storage import load_records_needing_detail
+from extraction_workers.sabinet_scraper import run_detail_extraction
+
+@pytest.mark.asyncio
+async def test_load_records_needing_detail_sorting():
+    """Verify that load_records_needing_detail passes the correct ordering command in SQL."""
+    mock_conn = AsyncMock()
+    mock_conn.fetch.return_value = []
+
+    # 1. Forward mode (ASC)
+    await load_records_needing_detail(mock_conn, "test_pipeline", sort_desc=False)
+    mock_conn.fetch.assert_called_once()
+    query = mock_conn.fetch.call_args[0][0]
+    assert "ORDER BY extracted_at ASC" in query
+
+    # 2. Reverse mode (DESC)
+    mock_conn.fetch.reset_mock()
+    await load_records_needing_detail(mock_conn, "test_pipeline", sort_desc=True)
+    mock_conn.fetch.assert_called_once()
+    query = mock_conn.fetch.call_args[0][0]
+    assert "ORDER BY extracted_at DESC" in query
+
+
+@pytest.mark.asyncio
+async def test_run_detail_extraction_reverse_and_skip(mocker):
+    """Verify that run_detail_extraction sorts descending in reverse mode and skips already detailed cases."""
+    mock_config = {
+        "start_url": "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards",
+        "document_type": "awards",
+        "extraction_params": {
+            "index_pipeline_name": "sabinet_ccma_shared",
+            "reverse_direction": True
+        }
+    }
+
+    mock_fetch_config = AsyncMock(return_value=mock_config)
+    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+
+    mock_conn = AsyncMock()
+    
+    # conn.fetchval is called for total_count, completed_count, and then status checks in the loop
+    # We return total_count=2, completed_count=0, then status="detailed" (skip), then status="indexed" (process)
+    mock_conn.fetchval.side_effect = [2, 0, "detailed", "indexed"]
+    
+    mock_get_db = AsyncMock(return_value=mock_conn)
+    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+
+    # Mock cases to load: Case 1 (already detailed) and Case 2 (indexed)
+    mock_cases = [
+        {"id": "uuid-1", "source_url": "https://example.com/case1", "data": {}},
+        {"id": "uuid-2", "source_url": "https://example.com/case2", "data": {}}
+    ]
+    mock_load_cases = AsyncMock(return_value=mock_cases)
+    mocker.patch("extraction_workers.db_storage.load_records_needing_detail", mock_load_cases)
+    mocker.patch("extraction_workers.db_storage.load_pipeline_state", AsyncMock(return_value={}))
+    mocker.patch("extraction_workers.db_storage.update_record_data", AsyncMock())
+
+    # Mock Playwright page and browser
+    mock_page = AsyncMock()
+    # Mock evaluate to return details paywall content info (auth ok, content loaded, empty metadata)
+    mock_page.evaluate = AsyncMock(return_value={"content_loaded": True, "auth_ok": True, "metadata": {"test": "val"}})
+    
+    mock_manager = MagicMock()
+    mock_manager.start = AsyncMock(return_value=mock_page)
+    mock_manager.page = mock_page
+    mock_manager.close = AsyncMock()
+    
+    mocker.patch("extraction_workers.sabinet_scraper.BrowserManager", return_value=mock_manager)
+
+    mock_pw = MagicMock()
+    mock_pw.stop = AsyncMock()
+    mock_pw_start = AsyncMock(return_value=mock_pw)
+    mocker.patch("extraction_workers.sabinet_scraper.async_playwright", return_value=MagicMock(start=mock_pw_start))
+
+    mocker.patch("sys.exit")
+
+    await run_detail_extraction("sabinet_ccma_test_details")
+
+    # 1. Verify load_records_needing_detail was called with sort_desc=True
+    mock_load_cases.assert_called_once_with(mock_conn, "sabinet_ccma_shared", sort_desc=True)
+
+    # 2. Verify page.goto was called ONLY for case2, not case1 (since case1 status was "detailed")
+    # case1 should be skipped, so page.goto was never called with case1 url
+    # page.goto should be called once with case2 url
+    assert mock_page.goto.call_count == 1
+    mock_page.goto.assert_called_once_with("https://example.com/case2", wait_until="domcontentloaded", timeout=45000)

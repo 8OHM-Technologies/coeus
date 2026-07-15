@@ -720,6 +720,7 @@ async def run_detail_extraction(pipeline_name: str):
     # Identify the index pipeline name (defaults to current name without _details suffix)
     import re
     extraction_params = config.get("extraction_params") or {}
+    reverse_direction = extraction_params.get("reverse_direction", False)
     index_pipeline_name = extraction_params.get("index_pipeline_name") or re.sub(r'_(details?)$', '', pipeline_name)
 
     logger.info("==================================================")
@@ -747,7 +748,9 @@ async def run_detail_extraction(pipeline_name: str):
         index_pipeline_name
     )
 
-    cases = await db_storage.load_records_needing_detail(conn, index_pipeline_name)
+    cases = await db_storage.load_records_needing_detail(
+        conn, index_pipeline_name, sort_desc=reverse_direction
+    )
     logger.info(
         f"Loaded {len(cases)} pending cases from database "
         f"(total: {total_count}, completed: {completed_count})."
@@ -883,6 +886,14 @@ async def run_detail_extraction(pipeline_name: str):
                 record_id = case_item["id"]
                 url = case_item["source_url"]
                 data_payload = case_item["data"]
+
+                # Quick DB check to see if this record was already enriched by the other worker in the meantime
+                current_status = await conn.fetchval(
+                    "SELECT status FROM extracted_records WHERE id = $1", record_id
+                )
+                if current_status == "detailed":
+                    logger.info(f"  [-] Skipping (already enriched by another scraper instance): {url}")
+                    continue
 
                 logger.info(f"[{completed_count + progress_idx + 1}/{total_count}] Scraping details from: {url}")
                 try:

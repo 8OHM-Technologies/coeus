@@ -205,20 +205,22 @@ async def upsert_scraped_records_batch(
 async def load_records_needing_detail(
     conn: asyncpg.Connection,
     record_type: str,
+    sort_desc: bool = False,
 ) -> list[dict]:
     """Return records that have a ``source_url`` but haven't been detail-scraped yet.
 
     A record is considered "not detail-scraped" if its ``status`` is 'indexed'
     or if it is a legacy record where ``status`` is NULL and it doesn't have ``details_scraped_at``.
     """
+    order = "DESC" if sort_desc else "ASC"
     rows = await conn.fetch(
-        """
+        f"""
         SELECT id, source_url, data
         FROM extracted_records
         WHERE record_type = $1
           AND source_url IS NOT NULL
           AND (status = 'indexed' OR (status IS NULL AND (data->>'details_scraped_at') IS NULL))
-        ORDER BY extracted_at ASC
+        ORDER BY extracted_at {order}
         """,
         record_type,
     )
