@@ -28,8 +28,6 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy only what the gRPC code-server needs
 COPY dagster/definitions.py .
 
-COPY misstcha/ /app/misstcha/
-
 EXPOSE 4000
 
 HEALTHCHECK --timeout=10s --start-period=30s --interval=10s --retries=3 \
