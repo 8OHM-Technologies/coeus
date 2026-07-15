@@ -155,9 +155,9 @@ async def upsert_scraped_record(
         """
         INSERT INTO extracted_records (
             id, target_id, document_date, record_type,
-            data, source_url, status, extracted_at
+            data, source_url, status, requires_human_review, extracted_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW())
         ON CONFLICT (source_url)
         DO UPDATE SET
             data        = EXCLUDED.data,
