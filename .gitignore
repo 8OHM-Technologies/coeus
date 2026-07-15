@@ -229,5 +229,4 @@ control_plane/storage/
 data/lotto_results/historical_lotto_results.csv
 .playwright-cli/
 ohmbot-telegram/
-misstcha/
 ohmbase/bookstack_db_data/log/mysql/mariadb-bin.index
