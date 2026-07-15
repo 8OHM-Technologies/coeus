@@ -3,6 +3,21 @@
 from django.db import migrations, models
 
 
+def create_tables_if_missing(apps, schema_editor):
+    db_tables = schema_editor.connection.introspection.table_names()
+    db_tables = [t.lower() for t in db_tables]
+    
+    if 'entities' not in db_tables:
+        Entity = apps.get_model('extracted_data', 'Entity')
+        schema_editor.create_model(Entity)
+    if 'targets' not in db_tables:
+        Target = apps.get_model('extracted_data', 'Target')
+        schema_editor.create_model(Target)
+    if 'extracted_records' not in db_tables:
+        ExtractedRecord = apps.get_model('extracted_data', 'ExtractedRecord')
+        schema_editor.create_model(ExtractedRecord)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -22,6 +37,7 @@ class Migration(migrations.Migration):
             name='target',
             options={'managed': True},
         ),
+        migrations.RunPython(create_tables_if_missing, reverse_code=migrations.RunPython.noop),
         migrations.AddField(
             model_name='extractedrecord',
             name='cleaned_at',
