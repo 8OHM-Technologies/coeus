@@ -455,8 +455,7 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
 
 downstream_extraction_scrubbing_job = dg.define_asset_job(
     name="downstream_extraction_scrubbing_job",
-    selection=dg.AssetSelection.keys("extracted_structured_data", "scrubbed_extracted_records"),
-    partitions_def=pipeline_partitions,
+    selection=dg.AssetSelection.assets("extracted_structured_data", "scrubbed_extracted_records"),
 )
 
 
