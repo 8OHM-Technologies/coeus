@@ -210,6 +210,11 @@ async def run_extraction(pipeline_name: str):
     logger.info(f"Target URL: {start_url}")
     logger.info("==================================================")
 
+    # Extract custom parameters from extraction_params
+    extraction_params = config.get("extraction_params") or {}
+    reverse_direction = extraction_params.get("reverse_direction", False)
+    db_record_type = extraction_params.get("shared_record_type") or pipeline_name
+
     # -------------------------------------------------------------------------
     # Establish DB Connection and Resolve target/deduplication URLs/progress
     # -------------------------------------------------------------------------
@@ -222,10 +227,10 @@ async def run_extraction(pipeline_name: str):
         conn, entity_name, target_name, start_url
     )
 
-    existing_urls = await db_storage.get_existing_urls(conn, pipeline_name)
+    existing_urls = await db_storage.get_existing_urls(conn, db_record_type)
     logger.info(f"Loaded {len(existing_urls)} unique URLs from database.")
 
-    existing_case_numbers = await db_storage.get_existing_case_numbers(conn, pipeline_name)
+    existing_case_numbers = await db_storage.get_existing_case_numbers(conn, db_record_type)
     logger.info(f"Loaded {len(existing_case_numbers)} unique case numbers from database.")
 
     progress_state = await db_storage.load_pipeline_state(conn, pipeline_name)
@@ -248,10 +253,16 @@ async def run_extraction(pipeline_name: str):
 
     # If the last window completed cleanly, advance past it
     if last_completed and resume_year > 0:
-        resume_month += 1
-        if resume_month > 12:
-            resume_month = 1
-            resume_year += 1
+        if reverse_direction:
+            resume_month -= 1
+            if resume_month < 1:
+                resume_month = 12
+                resume_year -= 1
+        else:
+            resume_month += 1
+            if resume_month > 12:
+                resume_month = 1
+                resume_year += 1
 
     p = await async_playwright().start()
     db_storage_state = progress_state.get("storage_state")
@@ -336,7 +347,7 @@ async def run_extraction(pipeline_name: str):
                     }
                 """)
                 year_entries = [(int(y), int(c)) for y, c in raw_years]
-                year_entries.sort(key=lambda x: x[0])  # oldest first
+                year_entries.sort(key=lambda x: x[0], reverse=reverse_direction)  # chronological direction
                 logger.info(
                     f"Found {len(year_entries)} years with data: "
                     + ", ".join(f"{y}({c})" for y, c in year_entries)
@@ -352,9 +363,14 @@ async def run_extraction(pipeline_name: str):
 
             for year, year_count in year_entries:
                 # Skip years we have already fully processed according to progress_state
-                if year < resume_year:
-                    logger.info(f"Skipping year {year} (already processed per progress state).")
-                    continue
+                if reverse_direction:
+                    if year > resume_year:
+                        logger.info(f"Skipping year {year} (already processed per progress state).")
+                        continue
+                else:
+                    if year < resume_year:
+                        logger.info(f"Skipping year {year} (already processed per progress state).")
+                        continue
 
                 # Database-backed check to see if the year is already indexed
                 try:
@@ -364,7 +380,7 @@ async def run_extraction(pipeline_name: str):
                         WHERE record_type = $1
                           AND LEFT(COALESCE(data->>'award_date', data->>'date', data->>'publication_date', data->>'document_date'), 4) = $2
                         """,
-                        pipeline_name,
+                        db_record_type,
                         str(year),
                     )
                     is_fully_indexed = False
@@ -377,18 +393,25 @@ async def run_extraction(pipeline_name: str):
 
                     if is_fully_indexed:
                         logger.info(f"Skipping year {year} (already fully indexed in DB: {db_count}/{year_count} records).")
-                        await save_progress(year, 12, completed=True)
+                        await save_progress(year, 1 if reverse_direction else 12, completed=True)
                         continue
                 except Exception as db_cnt_err:
                     logger.warning(f"Failed to check DB record count for year {year}: {db_cnt_err}")
 
                 logger.info(f"📅 Processing year {year} (~{year_count} entries)...")
 
-                for month in range(1, 13):
-                    # Skip months before the resume point within the first resumed year
-                    if year == resume_year and month < resume_month:
-                        logger.info(f"  Skipping {year}-{month:02d} (already processed).")
-                        continue
+                months = list(range(12, 0, -1)) if reverse_direction else list(range(1, 13))
+                for month in months:
+                    # Skip months before/after the resume point within the first resumed year
+                    if year == resume_year:
+                        if reverse_direction:
+                            if month > resume_month:
+                                logger.info(f"  Skipping {year}-{month:02d} (already processed).")
+                                continue
+                        else:
+                            if month < resume_month:
+                                logger.info(f"  Skipping {year}-{month:02d} (already processed).")
+                                continue
 
                     # Compute date boundaries for this calendar month
                     last_day = calendar.monthrange(year, month)[1]
@@ -523,7 +546,7 @@ async def run_extraction(pipeline_name: str):
                             last_case_no = last_item.get("case_number")
 
                             is_complete = await db_storage.is_record_complete(
-                                conn, pipeline_name, last_url, last_case_no
+                                conn, db_record_type, last_url, last_case_no
                             )
                     except Exception as last_check_err:
                         logger.warning(f"    Failed last entry check: {last_check_err}. Proceeding with normal scrape.")
@@ -611,7 +634,7 @@ async def run_extraction(pipeline_name: str):
 
                         if new_items:
                             await db_storage.upsert_scraped_records_batch(
-                                conn, target_id, pipeline_name, new_items, "detail_url", status="indexed"
+                                conn, target_id, db_record_type, new_items, "detail_url", status="indexed"
                             )
                             logger.info(f"    Saved {len(new_items)} new items to database.")
 
