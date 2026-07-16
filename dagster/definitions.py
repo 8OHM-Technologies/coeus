@@ -353,13 +353,21 @@ def scrubbed_extracted_records(
     if not blueprint:
         raise ValueError(f"No active pipeline blueprint found for partition key: {context.partition_key}")
 
+    phase2 = blueprint.get("phase_2_extraction", {})
+    extraction_params = phase2.get("extraction_params", {})
+    shared_record_type = extraction_params.get("shared_record_type")
+
+    extras = {
+        "partition_key": context.partition_key,
+    }
+    if shared_record_type:
+        extras["shared_record_type"] = shared_record_type
+
     result = pipes_docker.run(
         context=context,
         image=EXTRACTOR_IMAGE,
         env=_build_container_env(),
-        extras={
-            "partition_key": context.partition_key,
-        },
+        extras=extras,
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
@@ -422,7 +430,7 @@ def is_cron_active(cron_str: str, timestamp: float) -> bool:
 @dg.sensor(
     name="coeus_blueprint_sensor",
     minimum_interval_seconds=60,
-    target=dg.AssetSelection.all(),
+    target=dg.AssetSelection.assets("raw_scraped_pages"),
     default_status=dg.DefaultSensorStatus.RUNNING,
 )
 def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
@@ -461,6 +469,11 @@ downstream_extraction_scrubbing_job = dg.define_asset_job(
     selection=dg.AssetSelection.assets("extracted_structured_data", "scrubbed_extracted_records"),
 )
 
+sabinet_scrubbing_job = dg.define_asset_job(
+    name="sabinet_scrubbing_job",
+    selection=dg.AssetSelection.assets("scrubbed_extracted_records"),
+)
+
 
 @dg.asset_sensor(
     name="raw_scraped_pages_sensor",
@@ -473,6 +486,13 @@ def raw_scraped_pages_sensor(
     asset_event: dg.EventLogEntry,
 ):
     partition_key = asset_event.dagster_event.partition
+    
+    # Check if this partition is Sabinet
+    blueprint = get_blueprint_for_partition(partition_key)
+    if blueprint and blueprint.get("scraper_type") == "sabinet":
+        context.log.info(f"Skipping default downstream trigger for Sabinet partition '{partition_key}'.")
+        return
+
     context.log.info(
         f"raw_scraped_pages materialized for partition '{partition_key}'. "
         f"Triggering downstream extraction and scrubbing job."
@@ -483,6 +503,125 @@ def raw_scraped_pages_sensor(
     )
 
 
+@dg.sensor(
+    name="sabinet_sync_sensor",
+    minimum_interval_seconds=60,
+    default_status=dg.DefaultSensorStatus.RUNNING,
+)
+def sabinet_sync_sensor(context: dg.SensorEvaluationContext):
+    """Monitors both Sabinet scrapers (oldest & newest first) and triggers scrubbing after both complete successfully."""
+    blueprints = fetch_blueprints()
+    if not blueprints:
+        return
+
+    oldest_pid = None
+    newest_pid = None
+    for bp in blueprints:
+        if bp.get("scraper_type") == "sabinet":
+            params = bp.get("extraction_params") or {}
+            is_reverse = to_bool(params.get("reverse_direction"))
+            pid = str(bp.get("pipeline_id"))
+            if is_reverse:
+                newest_pid = pid
+            else:
+                oldest_pid = pid
+
+    if not oldest_pid or not newest_pid:
+        context.log.warning("Could not resolve both Sabinet oldest and newest pipeline partition keys from blueprints.")
+        return
+
+    instance = context.instance
+    
+    # Query latest materialization for oldest_pid
+    oldest_records = instance.get_event_records(
+        dg.EventRecordsFilter(
+            event_type=dg.DagsterEventType.ASSET_MATERIALIZATION,
+            asset_key=dg.AssetKey("raw_scraped_pages"),
+            partition_key=oldest_pid,
+        ),
+        limit=1,
+    )
+    
+    # Query latest materialization for newest_pid
+    newest_records = instance.get_event_records(
+        dg.EventRecordsFilter(
+            event_type=dg.DagsterEventType.ASSET_MATERIALIZATION,
+            asset_key=dg.AssetKey("raw_scraped_pages"),
+            partition_key=newest_pid,
+        ),
+        limit=1,
+    )
+    
+    if not oldest_records or not newest_records:
+        context.log.info("One or both Sabinet scrapers have not materialized yet. Skipping sync sensor.")
+        return
+
+    oldest_ts = oldest_records[0].event_log_entry.timestamp
+    newest_ts = newest_records[0].event_log_entry.timestamp
+
+    # Parse cursor
+    cursor_data = {}
+    if context.cursor:
+        try:
+            cursor_data = json.loads(context.cursor)
+        except Exception:
+            pass
+
+    last_oldest_ts = cursor_data.get("last_oldest_ts", 0.0)
+    last_newest_ts = cursor_data.get("last_newest_ts", 0.0)
+
+    # Initialize cursor on first execution to current timestamps to prevent immediate scrub on startup
+    if not context.cursor:
+        context.log.info(f"Initializing Sabinet sync sensor cursor to oldest={oldest_ts}, newest={newest_ts}")
+        return dg.SensorResult(
+            cursor=json.dumps({
+                "last_oldest_ts": oldest_ts,
+                "last_newest_ts": newest_ts,
+            })
+        )
+
+    if oldest_ts > last_oldest_ts and newest_ts > last_newest_ts:
+        context.log.info(
+            f"New Sabinet scraper runs detected (oldest materialized at {oldest_ts}, "
+            f"newest materialized at {newest_ts}). Triggering scrubbing job."
+        )
+        new_cursor = json.dumps({
+            "last_oldest_ts": oldest_ts,
+            "last_newest_ts": newest_ts,
+        })
+        return dg.SensorResult(
+            run_requests=[
+                dg.RunRequest(
+                    run_key=f"sabinet_scrub_{oldest_ts}_{newest_ts}",
+                    partition_key=oldest_pid,
+                )
+            ],
+            cursor=new_cursor,
+        )
+
+
+@dg.asset_sensor(
+    name="sabinet_scrubbed_sensor",
+    asset_key=dg.AssetKey("scrubbed_extracted_records"),
+    default_status=dg.DefaultSensorStatus.RUNNING,
+)
+def sabinet_scrubbed_sensor(
+    context: dg.SensorEvaluationContext,
+    asset_event: dg.EventLogEntry,
+):
+    partition_key = asset_event.dagster_event.partition
+    
+    # Check if this partition is Sabinet
+    blueprint = get_blueprint_for_partition(partition_key)
+    if blueprint and blueprint.get("scraper_type") == "sabinet":
+        context.log.info(
+            f"scrubbed_extracted_records materialized for Sabinet partition '{partition_key}'. "
+            f"Placeholder: This will trigger the downstream run (yet to be built)."
+        )
+        # TODO: Trigger the downstream job when it is built
+        # return dg.RunRequest(...)
+
+
 defs = dg.Definitions(
     assets=[
         fetch_github_repo_info,
@@ -491,11 +630,14 @@ defs = dg.Definitions(
         scrubbed_extracted_records
     ],
     jobs=[
-        downstream_extraction_scrubbing_job
+        downstream_extraction_scrubbing_job,
+        sabinet_scrubbing_job
     ],
     sensors=[
         coeus_blueprint_sensor,
-        raw_scraped_pages_sensor
+        raw_scraped_pages_sensor,
+        sabinet_sync_sensor,
+        sabinet_scrubbed_sensor
     ],
     resources={
         "pipes_docker": PipesDockerClient(),

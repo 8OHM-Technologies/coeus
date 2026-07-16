@@ -129,3 +129,11 @@ def test_scrubbed_extracted_records_asset_exists():
     parent_keys = {parent.to_string() for parent in asset_graph.get(scrub_key).parent_keys}
     
     assert '["extracted_structured_data"]' in parent_keys
+
+
+def test_sabinet_job_and_sensors_exist():
+    from definitions import defs
+    
+    assert defs.get_job_def("sabinet_scrubbing_job").name == "sabinet_scrubbing_job"
+    assert defs.get_sensor_def("sabinet_sync_sensor").name == "sabinet_sync_sensor"
+    assert defs.get_sensor_def("sabinet_scrubbed_sensor").name == "sabinet_scrubbed_sensor"

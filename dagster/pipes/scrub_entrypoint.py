@@ -32,8 +32,10 @@ async def run_scrub(pipes: PipesContext) -> None:
     """Main scrubbing logic."""
     context = PipesContext.get()
     partition_key: str = context.get_extra("partition_key")
+    shared_record_type: str = context.get_extra("shared_record_type")
+    record_type_to_scrub = shared_record_type or partition_key
 
-    logger.info(f"Starting PII scrubbing for partition/pipeline: '{partition_key}'")
+    logger.info(f"Starting PII scrubbing for partition/pipeline: '{partition_key}' (record type: '{record_type_to_scrub}')")
 
     # Connect to PostgreSQL
     conn = None
@@ -48,19 +50,19 @@ async def run_scrub(pipes: PipesContext) -> None:
         # Get total records for this pipeline
         total_records = await conn.fetchval(
             "SELECT COUNT(*) FROM extracted_records WHERE record_type = $1",
-            partition_key
+            record_type_to_scrub
         )
 
         # Get count of already scrubbed records
         already_scrubbed = await conn.fetchval(
             "SELECT COUNT(*) FROM extracted_records WHERE record_type = $1 AND cleaned_at IS NOT NULL",
-            partition_key
+            record_type_to_scrub
         )
 
         # Fetch records that need scrubbing
         records_to_scrub = await conn.fetch(
             "SELECT id, data FROM extracted_records WHERE record_type = $1 AND cleaned_at IS NULL ORDER BY extracted_at ASC",
-            partition_key
+            record_type_to_scrub
         )
 
         logger.info(f"Total records in DB: {total_records}")
