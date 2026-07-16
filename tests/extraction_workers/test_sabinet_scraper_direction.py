@@ -323,3 +323,58 @@ async def test_run_extraction_reverse_fresh_run(monkeypatch, mocker):
     assert saved_states[0].get("last_month") == 12
     assert saved_states[0].get("last_completed") is False
 
+
+@pytest.mark.asyncio
+async def test_run_detail_extraction_shared_record_type(mocker):
+    """Verify that run_detail_extraction uses shared_record_type when loading and counting records needing detail."""
+    mock_config = {
+        "start_url": "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards",
+        "document_type": "awards",
+        "extraction_params": {
+            "shared_record_type": "sabinet_ccma_shared",
+            "reverse_direction": False
+        }
+    }
+
+    mock_fetch_config = AsyncMock(return_value=mock_config)
+    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+
+    mock_conn = AsyncMock()
+    mock_conn.fetchval.side_effect = [2, 0, "indexed", "indexed"]
+    
+    mock_get_db = AsyncMock(return_value=mock_conn)
+    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+
+    mock_cases = [
+        {"id": "uuid-1", "source_url": "https://example.com/case1", "data": {}},
+        {"id": "uuid-2", "source_url": "https://example.com/case2", "data": {}}
+    ]
+    mock_load_cases = AsyncMock(return_value=mock_cases)
+    mocker.patch("extraction_workers.db_storage.load_records_needing_detail", mock_load_cases)
+    mocker.patch("extraction_workers.db_storage.load_pipeline_state", AsyncMock(return_value={}))
+    mocker.patch("extraction_workers.db_storage.update_record_data", AsyncMock())
+
+    # Mock Playwright page and browser
+    mock_page = AsyncMock()
+    mock_page.evaluate = AsyncMock(return_value={"content_loaded": True, "auth_ok": True, "metadata": {"test": "val"}})
+    
+    mock_manager = MagicMock()
+    mock_manager.start = AsyncMock(return_value=mock_page)
+    mock_manager.page = mock_page
+    mock_manager.close = AsyncMock()
+    
+    mocker.patch("extraction_workers.sabinet_scraper.BrowserManager", return_value=mock_manager)
+
+    mock_pw = MagicMock()
+    mock_pw.stop = AsyncMock()
+    mock_pw_start = AsyncMock(return_value=mock_pw)
+    mocker.patch("extraction_workers.sabinet_scraper.async_playwright", return_value=MagicMock(start=mock_pw_start))
+
+    mocker.patch("sys.exit")
+
+    await run_detail_extraction("sabinet_ccma___oldest_first")
+
+    # Verify load_records_needing_detail was called with the shared_record_type
+    mock_load_cases.assert_called_once_with(mock_conn, "sabinet_ccma_shared", sort_desc=False)
+
+

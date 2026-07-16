@@ -722,10 +722,13 @@ async def run_detail_extraction(pipeline_name: str):
     extraction_params = config.get("extraction_params") or {}
     reverse_direction = extraction_params.get("reverse_direction", False)
     index_pipeline_name = extraction_params.get("index_pipeline_name") or re.sub(r'_(details?)$', '', pipeline_name)
+    db_record_type = extraction_params.get("shared_record_type") or index_pipeline_name
 
     logger.info("==================================================")
     logger.info(f"🚀 SABINET DETAIL SCRAPER INITIALIZED (PIPELINE: {pipeline_name})")
     logger.info(f"Index Pipeline Source: {index_pipeline_name}")
+    if db_record_type != index_pipeline_name:
+        logger.info(f"Shared Record Type: {db_record_type}")
     logger.info("==================================================")
 
     conn = await get_db_connection()
@@ -736,7 +739,7 @@ async def run_detail_extraction(pipeline_name: str):
         SELECT COUNT(*) FROM extracted_records
         WHERE record_type = $1 AND source_url IS NOT NULL
         """,
-        index_pipeline_name
+        db_record_type
     )
     completed_count = await conn.fetchval(
         """
@@ -745,11 +748,11 @@ async def run_detail_extraction(pipeline_name: str):
           AND source_url IS NOT NULL
           AND (status = 'detailed' OR (status IS NULL AND (data->>'details_scraped_at') IS NOT NULL))
         """,
-        index_pipeline_name
+        db_record_type
     )
 
     cases = await db_storage.load_records_needing_detail(
-        conn, index_pipeline_name, sort_desc=reverse_direction
+        conn, db_record_type, sort_desc=reverse_direction
     )
     logger.info(
         f"Loaded {len(cases)} pending cases from database "
