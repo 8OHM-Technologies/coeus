@@ -274,7 +274,10 @@ def raw_scraped_pages(
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
-            "user": "root", 
+            "user": "root",
+            "mem_limit": "1g",
+            "memswap_limit": "1g",
+            "nano_cpus": 2000000000,
         }
     )
     return result.get_materialize_result()
@@ -332,6 +335,9 @@ def extracted_structured_data(
         container_kwargs={
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+            "mem_limit": "1g",
+            "memswap_limit": "1g",
+            "nano_cpus": 2000000000,
         }
     )
     return result.get_materialize_result()
@@ -362,6 +368,9 @@ def scrubbed_extracted_records(
             "network": DOCKER_NETWORK,
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
             "command": ["python", "/app/scrub_entrypoint.py"],
+            "mem_limit": "1g",
+            "memswap_limit": "1g",
+            "nano_cpus": 2000000000,
         }
     )
     return result.get_materialize_result()
