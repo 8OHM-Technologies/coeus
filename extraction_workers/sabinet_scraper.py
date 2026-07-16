@@ -754,9 +754,20 @@ async def run_detail_extraction(pipeline_name: str):
     cases = await db_storage.load_records_needing_detail(
         conn, db_record_type, sort_desc=reverse_direction
     )
+
+    # Apply batch/safety limit to prevent running indefinitely and leaking memory
+    max_records = extraction_params.get("max_records") or 1000
+    try:
+        limit_val = int(max_records)
+        if len(cases) > limit_val:
+            logger.info(f"Limiting detail extraction run to the first {limit_val} cases (out of {len(cases)} pending).")
+            cases = cases[:limit_val]
+    except (ValueError, TypeError):
+        pass
+
     logger.info(
-        f"Loaded {len(cases)} pending cases from database "
-        f"(total: {total_count}, completed: {completed_count})."
+        f"Loaded {len(cases)} pending cases to process "
+        f"(total database pending: {total_count}, completed: {completed_count})."
     )
 
     if not cases:

@@ -39,6 +39,7 @@ run_launcher:
       - HF_HOME
     network: 8ohm-network
     container_kwargs:
+      auto_remove: true
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - /tmp/io_manager_storage:/tmp/io_manager_storage
