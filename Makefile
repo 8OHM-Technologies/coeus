@@ -50,11 +50,11 @@ stop-dagster:
 # GROUP COMMANDS (Control Plane Stack)
 # -----------------------------------------------------------------------------
 
-# Spin up the 3 specific Dagster containers together
+# Spin up the 3 specific Coeus containers together
 coeus:
 	docker compose up -d --build traefik control-plane postgres
 
-# Spin down just the Dagster stack
+# Spin down just the Coeus stack
 stop-coeus:
 	docker compose stop control-plane postgres
 

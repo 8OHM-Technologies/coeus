@@ -55,6 +55,8 @@ services:
       - ./init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
     networks:
       - 8ohm-network
+    ports:
+      - 5433:5432
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.postgres.rule=Host(`postgres.localhost`)"
@@ -88,9 +90,6 @@ services:
       - postgres
     env_file:
       - .env
-    environment:
-      POSTGRES_HOST: postgres
-      DEBUG: "True"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./control_plane:/app/control_plane
@@ -209,6 +208,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.scraper
+    env_file:
+      - .env
     profiles:
       - build-only
 
@@ -217,57 +218,59 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.extractor
+    env_file:
+      - .env
     profiles:
       - build-only
 
   # ---------------------------------------------------------
   # 5.1 ohmbase Application (BookStack)
   # ---------------------------------------------------------
-  ohmbase:
-    image: ghcr.io/linuxserver/bookstack:latest
-    container_name: ohmbase
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Africa/Johannesburg
-      - APP_URL=http://ohmbase.localhost
-      - APP_KEY=base64:3qjlIoUX4Tw6fUQgZcxMbz6lb8+dAzqpvItqHvahW1c=
+  # ohmbase:
+  #   image: ghcr.io/linuxserver/bookstack:latest
+  #   container_name: ohmbase
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Africa/Johannesburg
+  #     - APP_URL=http://ohmbase.localhost
+  #     - APP_KEY=base64:3qjlIoUX4Tw6fUQgZcxMbz6lb8+dAzqpvItqHvahW1c=
 
-      - DB_HOST=ohmbase-mariadb
-      - DB_PORT=${DB_PORT}
-      - DB_DATABASE=bookstack
-      - DB_USERNAME=${DB_USERNAME}
-      - DB_PASSWORD=${DB_PASSWORD}
-    volumes:
-      - ./ohmbase/bookstack_app_data:/config
-    networks:
-      - 8ohm-network
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.ohmbase.rule=Host(`ohmbase.localhost`)"
-      - "traefik.http.services.ohmbase.loadbalancer.server.port=80"
-      - "traefik.docker.network=8ohm-network"
+  #     - DB_HOST=ohmbase-mariadb
+  #     - DB_PORT=${DB_PORT}
+  #     - DB_DATABASE=bookstack
+  #     - DB_USERNAME=${DB_USERNAME}
+  #     - DB_PASSWORD=${DB_PASSWORD}
+  #   volumes:
+  #     - ./ohmbase/bookstack_app_data:/config
+  #   networks:
+  #     - 8ohm-network
+  #   restart: unless-stopped
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.ohmbase.rule=Host(`ohmbase.localhost`)"
+  #     - "traefik.http.services.ohmbase.loadbalancer.server.port=80"
+  #     - "traefik.docker.network=8ohm-network"
 
   # ---------------------------------------------------------
   # 5.2 ohmbase MariaDB
   # ---------------------------------------------------------
-  ohmbase-mariadb:
-    image: ghcr.io/linuxserver/mariadb:latest
-    container_name: ohmbase-mariadb
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Africa/Johannesburg
-      - MYSQL_ROOT_PASSWORD=mysupersecretrootpassword
-      - MYSQL_DATABASE=bookstack
-      - MYSQL_USER=bookstack
-      - MYSQL_PASSWORD=bookstack8432
-    volumes:
-      - ./ohmbase/bookstack_db_data:/config
-    networks:
-      - 8ohm-network
-    restart: unless-stopped
+  # ohmbase-mariadb:
+  #   image: ghcr.io/linuxserver/mariadb:latest
+  #   container_name: ohmbase-mariadb
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Africa/Johannesburg
+  #     - MYSQL_ROOT_PASSWORD=mysupersecretrootpassword
+  #     - MYSQL_DATABASE=bookstack
+  #     - MYSQL_USER=bookstack
+  #     - MYSQL_PASSWORD=bookstack8432
+  #   volumes:
+  #     - ./ohmbase/bookstack_db_data:/config
+  #   networks:
+  #     - 8ohm-network
+  #   restart: unless-stopped
 
 volumes:
   static_assets:

@@ -17,7 +17,7 @@ from typing import Any
 
 import asyncpg
 
-from .db import get_db_connection
+from db import get_db_connection
 
 logging.basicConfig(
     level=logging.INFO,

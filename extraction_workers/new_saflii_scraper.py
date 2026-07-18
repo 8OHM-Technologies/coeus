@@ -10,14 +10,15 @@ from datetime import datetime
 import time
 
 import requests
+import db_storage
+
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
-from .utils.utils import fetch_pipeline_config, resolve_data_dir, take_screenshot
-from .db import get_db_connection
-from . import db_storage
-from ..misstcha import TurnstileSolver
-from .utils.debug_helper import log_browser_proxy_ip
-from .utils.browser_helper import (
+from utils.utils import fetch_pipeline_config, resolve_data_dir, take_screenshot
+from db import get_db_connection
+from misstcha import TurnstileSolver
+from utils.debug_helper import log_browser_proxy_ip
+from utils.browser_helper import (
     setup_logger,
     BrowserManager,
 )
