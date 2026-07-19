@@ -145,9 +145,29 @@ class SafliiScraper(BaseScraper):
 
         if state == "BLOCKED":
             logger.info(f"⚠️ Captcha challenge detected during execution space [{attempt_prefix}]. Invoking Solver...")
-            await turnstile_solver.solve(page)   
+            result = await turnstile_solver.solve(page)
+
+            # Wait for Cloudflare to verify the token and reload/redirect the page.
+            # The solver clicks the checkbox but the redirect happens asynchronously.
+            max_wait = 15
+            poll_interval = 1.0
+            elapsed = 0.0
+            while elapsed < max_wait:
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=2000)
+                except Exception:
+                    pass
+                state = check_page_state(await page.content())
+                if state != "BLOCKED":
+                    logger.info(f"✅ Cloudflare clearance confirmed after {elapsed:.1f}s for [{attempt_prefix}].")
+                    return state
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+            # If we get here, the challenge was not cleared despite the solve attempt
+            logger.warning(f"Turnstile solve attempt did not clear challenge within {max_wait}s for [{attempt_prefix}].")
             state = check_page_state(await page.content())
-            
+
         return state
 
     async def indexing(self) -> None:

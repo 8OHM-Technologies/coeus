@@ -540,7 +540,21 @@ class SabinetScraper(BaseScraper):
         Fetches pending document rows from Postgres, checks for auth status, expands layouts,
         and saves complete detail structures directly back into the operational rows.
         """
-        from utils.browser_helper import dismiss_cookie_consent
+        from utils.browser_helper import dismiss_cookie_consent, BrowserManager
+
+        # Bootstrap browser if indexing was skipped (e.g. fully_complete state)
+        if not self.browser_manager:
+            if not self.playwright_instance:
+                self.playwright_instance = await async_playwright().start()
+            db_storage_state = self.progress_state.get("storage_state")
+            self.browser_manager = BrowserManager(
+                self.playwright_instance,
+                headless=True,
+                ignore_https_errors=self.config.get("allow_insecure_https", False),
+                storage_state=db_storage_state,
+            )
+            await self.browser_manager.start()
+
         extraction_params = self.config.get("extraction_params") or {}
         reverse_direction = extraction_params.get("reverse_direction", False)
         index_pipeline_name = extraction_params.get("index_pipeline_name") or re.sub(r'_(details?)$', '', self.pipeline_name)
