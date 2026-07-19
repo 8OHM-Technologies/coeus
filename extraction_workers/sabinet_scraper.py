@@ -529,7 +529,7 @@ class SabinetScraper(BaseScraper):
                 await self.save_progress(year, month, completed=True)
                 await asyncio.sleep(3)
 
-        logger.info(f"✅ Indexing complete. Staped index updates total: {total_new}")
+        logger.info(f"✅ Indexing complete. Scraped index updates total: {total_new}")
         self.progress_state["fully_complete"] = True
         self.progress_state["completed_at"] = datetime.now().isoformat()
         await db_storage.save_pipeline_state(self.conn, self.pipeline_name, self.progress_state)
