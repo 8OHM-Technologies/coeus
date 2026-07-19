@@ -2,7 +2,6 @@ import os
 import asyncio
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Set
-from playwright.async_api import async_playwright, Page
 
 import db_storage
 from utils.utils import fetch_pipeline_config, resolve_data_dir
@@ -73,7 +72,7 @@ class BaseScraper(ABC):
     async def cleanup(self) -> None:
         """Ensures connections and browser resources break down cleanly."""
         if self.browser_manager:
-            await self.browser_manager.recycle()
+            await self.browser_manager.close()
         if self.playwright_instance:
             await self.playwright_instance.stop()
         if self.conn:

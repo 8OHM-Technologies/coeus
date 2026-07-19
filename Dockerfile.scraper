@@ -28,7 +28,7 @@ COPY extraction_workers/ /app/extraction_workers/
 
 COPY dagster/pipes/scraper_entrypoint.py /app/main.py
 
-COPY misstcha/ /app/extraction_workers/misstcha/
+COPY misstcha/ /app/misstcha/
 
 RUN mkdir -p /app/scraping_data
 

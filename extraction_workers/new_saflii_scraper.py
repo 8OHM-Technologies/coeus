@@ -29,29 +29,28 @@ class BlockedException(Exception):
 
 def check_page_state(page_content: str) -> str:
     """Determine the logical state of the page to detect blocks or dead links."""
-
     if (
-        "just a moment" in page_content
-        or "cloudflare" in page_content
-        or "security verification" in page_content
-        or "verify you are human" in page_content
-        or "turnstile" in page_content
+        "just a moment" in page_content.lower()
+        or "cloudflare" in page_content.lower()
+        or "security verification" in page_content.lower()
+        or "verify you are human" in page_content.lower()
+        or "turnstile" in page_content.lower()
     ):
         return "BLOCKED"
 
     if (
-        "not found" in page_content
-        or "page not found" in page_content
-        or "404 not found" in page_content
-        or "404 - not found" in page_content
-        or "404 error" in page_content
-        or "403 forbidden" in page_content
-        or "forbidden" in page_content
-        or "you don't have permission to access this resource" in page_content
+        "not found" in page_content.lower()
+        or "page not found" in page_content.lower()
+        or "404 not found" in page_content.lower()
+        or "404 - not found" in page_content.lower()
+        or "404 error" in page_content.lower()
+        or "403 forbidden" in page_content.lower()
+        or "forbidden" in page_content.lower()
+        or "you don't have permission to access this resource" in page_content.lower()
     ):
         return "NOT_FOUND"
     
-    if ("judgment" in page_content):
+    if "judgment" in page_content.lower():
         return "OK"
 
     return "OK"
@@ -66,6 +65,22 @@ def parse_case_url(case_url: str, default_court: str = "SAFLII") -> tuple[str, s
             if parts[i].isdigit() and len(parts[i]) == 4:
                 return parts[i - 1], parts[i], os.path.splitext(parts[i + 1])[0]
     return default_court, "unknown", "unknown"
+
+
+def extract_case_number_from_text(text: str) -> str | None:
+    """Extracts standard SAFLII case numbers or formal citations from strings."""
+    if not text:
+        return None
+    # Matches common legal formats: (123/2025) or [2026] ZACC 4
+    match = re.search(r'\((?:\w+\s+)?\d+/\d+\)|\[\d{4}\]\s+\w+\s+\d+', text)
+    if match:
+        return match.group(0).strip()
+    
+    # Simple fallback check for standard number/year slashes
+    fallback_match = re.search(r'\b\d+/\d+\b', text)
+    if fallback_match:
+        return fallback_match.group(0).strip()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +108,8 @@ class SafliiScraper(BaseScraper):
         self.url_to_case_number: dict[str, str] = {}
 
     async def initialize(self) -> None:
-        """Hydrate runtime variables and directory structures."""
+        """Hydrate runtime variables, baseline tracking sets, and directory structures."""
+        # Hydrates self.conn, self.target_id, self.existing_urls, self.existing_case_numbers, and self.progress_state
         await super().initialize()
         
         self.start_url = self.config.get("start_url")
@@ -110,7 +126,10 @@ class SafliiScraper(BaseScraper):
         self.screenshots_dir = os.path.join(os.path.dirname(self.output_dir), "screenshots")
         os.makedirs(self.screenshots_dir, exist_ok=True)
         
-        # Structure logging indicators
+        # Hydrate internal proxies if present in config maps
+        self.use_proxy = self.config.get("use_proxy", False)
+        self.proxy_url = self.config.get("proxy_url")
+        
         logger.info("==================================================")
         logger.info(f"🚀 COEUS NEW SAFLII WORKER RUNNING ({self.pipeline_name})")
         logger.info(f"Target Year Context Range Bounds: {self.start_year} - {self.end_year}")
@@ -307,7 +326,7 @@ class SafliiScraper(BaseScraper):
 
                     # Push safely formatted record via centralized db interface helper
                     await db_storage.upsert_scraped_record(
-                        self.conn, self.target_id, self.pipeline_name, case_url, record, doc_date
+                        self.conn, self.target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
                     )
                     
                     self.existing_urls.add(case_url)
@@ -342,8 +361,17 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Coeus New SAFLII Scraper Refactored Instance")
-    parser.add_argument("--pipeline_name", required=True, help="Target pipeline setup configuration key matching environment presets")
-    parser.add_argument("--headless", default="false", help="Orchestrate worker browser processes via headless virtual framing parameters (true/false)")
+    parser.add_argument(
+        "--pipeline", "--pipeline_name", 
+        required=True, 
+        dest="pipeline_name",
+        help="Target pipeline setup configuration key matching environment presets"
+    )
+    parser.add_argument(
+        "--headless", 
+        default="false", 
+        help="Orchestrate worker browser processes via headless virtual framing parameters (true/false)"
+    )
     args = parser.parse_args()
 
     headless_value = args.headless.lower() == "true"
