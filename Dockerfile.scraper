@@ -12,7 +12,6 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 ENV PYTHONPATH="${PYTHONPATH}:/app"
-ENV PYTHONPATH="${PYTHONPATH}:/app/misstcha"
 
 COPY requirements-scraper.txt .
 RUN pip install --no-cache-dir --upgrade pip \
@@ -29,7 +28,7 @@ COPY extraction_workers/ /app/extraction_workers/
 
 COPY dagster/pipes/scraper_entrypoint.py /app/main.py
 
-COPY misstcha/ /app/misstcha/
+COPY misstcha/ /app/extraction_workers/misstcha/
 
 RUN mkdir -p /app/scraping_data
 
