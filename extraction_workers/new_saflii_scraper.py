@@ -158,7 +158,7 @@ class SafliiScraper(BaseScraper):
                 if self.take_debug_screenshots:
                     await take_screenshot(page, self.screenshots_dir, f"start_url_attempt_{attempt}_navigated")
 
-                state = await self.handle_turnstile_challenge(page, "start", f"start_url_attempt_{attempt}")
+                state = await self.handle_turnstile_challenge(page, f"start_url_attempt_{attempt}")
                 if state == "BLOCKED":
                     raise BlockedException("Cloudflare clearance execution timed out at index node context.")
                 elif state == "NOT_FOUND":
@@ -202,7 +202,7 @@ class SafliiScraper(BaseScraper):
                     if self.take_debug_screenshots:
                         await take_screenshot(page, self.screenshots_dir, f"year_{year}_attempt_{attempt}_navigated")
 
-                    state = await self.handle_turnstile_challenge(page, "year", f"year_{year}_attempt_{attempt}")
+                    state = await self.handle_turnstile_challenge(page, f"year_{year}_attempt_{attempt}")
                     if state == "BLOCKED":
                         raise BlockedException(f"Resource locks applied on year directory {year}.")
                     elif state == "NOT_FOUND":
@@ -266,7 +266,7 @@ class SafliiScraper(BaseScraper):
                     if self.take_debug_screenshots:
                         await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_navigated")
 
-                    state = await self.handle_turnstile_challenge(page, "case", f"case_{c_id}_attempt_{attempt}")
+                    state = await self.handle_turnstile_challenge(page, f"case_{c_id}_attempt_{attempt}")
                     if state == "BLOCKED":
                         raise BlockedException(f"Challenge wall containment failure active on asset element: {c_id}")
                     elif state == "NOT_FOUND":

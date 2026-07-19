@@ -1,3 +1,6 @@
+-include .env
+export
+
 # Define phony targets so Make doesn't look for actual files with these names
 .PHONY: up down status logs dagster stop-dagster publish
 
@@ -7,6 +10,11 @@ TAG ?= latest
 # -----------------------------------------------------------------------------
 # GLOBAL COMMANDS
 # -----------------------------------------------------------------------------
+
+pull:
+	echo $(GITHUB_ACCESS_TOKEN) | docker login ghcr.io -u 8ohm-tiaanf --password-stdin
+	docker pull ghcr.io/8ohm-technologies/coeus-scraper:latest
+	docker pull ghcr.io/8ohm-technologies/coeus-extractor:latest
 
 # Spin up all containers in the background
 up:
