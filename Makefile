@@ -17,6 +17,14 @@ up:
 down:
 	docker compose down
 
+prod-up:
+	docker compose -f docker-compose.prod.yml up -d --build
+	docker compose -f docker-compose.prod.yml build coeus-scraper coeus-extractor
+
+# Tear down all containers, networks, and volumes
+prod-down:
+	docker compose -f docker-compose.prod.yml down
+
 # Spin up all containers in the background no build
 up-no-build:
 	docker compose up -d
