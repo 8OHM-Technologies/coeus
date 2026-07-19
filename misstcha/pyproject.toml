@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ---------------------------------------------------------------------------
+# Project metadata  (PEP 621)
+# ---------------------------------------------------------------------------
+[project]
+name = "misstcha"
+version = "0.1.0"
+description = "Automated captcha solver (hCaptcha, Cloudflare Turnstile) via Playwright and vision AI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["captcha", "hcaptcha", "turnstile", "cloudflare", "playwright", "automation", "vision"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+
+# Core runtime: only Playwright.  Turnstile works with this alone.
+dependencies = [
+    "playwright>=1.40.0",
+]
+
+# ---------------------------------------------------------------------------
+# Optional dependency groups
+# ---------------------------------------------------------------------------
+[project.optional-dependencies]
+# Full hCaptcha solver: vision model + LLM prompt translator
+hcaptcha = [
+    "Pillow>=10.0.0",
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+]
+# Convenience alias: install everything
+all = ["misstcha[hcaptcha]"]
+# Development toolchain
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+    "mypy>=1.9.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+]
+
+# ---------------------------------------------------------------------------
+# Package discovery
+# pyproject.toml lives inside misstcha/ — map the package name to "."
+# so pip install -e ./misstcha works from the coeus root.
+# dist/, build/, *.egg-info/ are created inside misstcha/, not at repo root.
+# ---------------------------------------------------------------------------
+[tool.setuptools]
+package-dir = {"misstcha" = "."}
+packages = ["misstcha"]
+zip-safe = false
+
+[tool.setuptools.package-data]
+misstcha = ["py.typed"]
+
+# ---------------------------------------------------------------------------
+# Tool configuration
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP"]
+ignore = ["N803", "N806"]  # allow mixed-case variable names common in ML code
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+# Ignore missing stubs for heavy optional deps
+[[tool.mypy.overrides]]
+module = ["torch.*", "transformers.*", "PIL.*", "playwright.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["misstcha"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+]
