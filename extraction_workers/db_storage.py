@@ -10,21 +10,43 @@ old JSON-file + Google-Drive backup workflow.
 
 import json
 import logging
-import sys
 import uuid
 from datetime import date
 from typing import Any
 
 import asyncpg
 
-from db import get_db_connection
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Internal Utilities
+# ---------------------------------------------------------------------------
+
+def _extract_document_date(data_dict: dict[str, Any]) -> date:
+    """Fallback extraction chain to resolve a baseline record date from raw data."""
+    # 1. Attempt standard target keys
+    for key in ("document_date", "date", "publication_date", "award_date"):
+        val = data_dict.get(key)
+        if not val:
+            continue
+        if isinstance(val, date):
+            return val
+        if isinstance(val, str):
+            try:
+                return date.fromisoformat(val[:10])
+            except ValueError:
+                pass
+
+    # 2. Try target year fallback
+    year_val = data_dict.get("year")
+    if year_val:
+        try:
+            return date(int(year_val), 1, 1)
+        except (ValueError, TypeError):
+            pass
+
+    # 3. Default to current execution day
+    return date.today()
 
 
 # ---------------------------------------------------------------------------
@@ -89,9 +111,9 @@ async def get_existing_urls(
         """,
         record_type,
     )
-    return {row["source_url"] for row in rows if row["source_url"] is not None}
+    return {row["source_url"] for row in rows}
 
-
+# TODO FIX THIS - USE URLS INSTEAD (NO CASE NUMBERS YET)
 async def get_existing_case_numbers(
     conn: asyncpg.Connection,
     record_type: str,
@@ -104,7 +126,7 @@ async def get_existing_case_numbers(
         """,
         record_type,
     )
-    return {row["case_number"] for row in rows if row["case_number"] is not None}
+    return {row["case_number"] for row in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -125,31 +147,7 @@ async def upsert_scraped_record(
     Conflict is resolved on ``source_url``; on conflict the ``data`` JSONB
     payload is updated (merged) and ``record_type`` is refreshed.
     """
-    if not document_date:
-        # Try to resolve a date from the dictionary
-        parsed_date = None
-        for key in ("document_date", "date", "publication_date", "award_date"):
-            val = data_dict.get(key)
-            if val:
-                try:
-                    if isinstance(val, date):
-                        parsed_date = val
-                        break
-                    elif isinstance(val, str):
-                        # Try standard ISO formats
-                        parsed_date = date.fromisoformat(val[:10])
-                        break
-                except Exception:
-                    pass
-        if not parsed_date:
-            # Try year
-            yr = data_dict.get("year")
-            if yr:
-                try:
-                    parsed_date = date(int(yr), 1, 1)
-                except Exception:
-                    pass
-        document_date = parsed_date or date.today()
+    resolved_date = document_date or _extract_document_date(data_dict)
 
     await conn.execute(
         """
@@ -165,7 +163,7 @@ async def upsert_scraped_record(
         """,
         uuid.uuid4(),
         target_id,
-        document_date,
+        resolved_date,
         record_type,
         json.dumps(data_dict, ensure_ascii=False),
         source_url,
@@ -181,21 +179,48 @@ async def upsert_scraped_records_batch(
     url_key: str = "detail_url",
     status: str = "indexed",
 ) -> int:
-    """Batch-upsert a list of scraped record dicts.
+    """Batch-upsert a list of scraped record dicts using an efficient single roundtrip connection.
 
     Each dict must contain a key identified by *url_key* which is used as the
-    ``source_url``.  Returns the number of records upserted.
+    ``source_url``. Returns the number of records successfully prepared and upserted.
     """
-    count = 0
+    if not records:
+        return 0
+
+    batch_args = []
     for record in records:
         source_url = record.get(url_key)
         if not source_url:
             continue
-        await upsert_scraped_record(
-            conn, target_id, record_type, source_url, record, status=status,
+        
+        resolved_date = _extract_document_date(record)
+        batch_args.append((
+            uuid.uuid4(),
+            target_id,
+            resolved_date,
+            record_type,
+            json.dumps(record, ensure_ascii=False),
+            source_url,
+            status,
+        ))
+
+    if batch_args:
+        await conn.executemany(
+            """
+            INSERT INTO extracted_records (
+                id, target_id, document_date, record_type,
+                data, source_url, status, extracted_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT (source_url)
+            DO UPDATE SET
+                data        = EXCLUDED.data,
+                record_type = EXCLUDED.record_type
+            """,
+            batch_args,
         )
-        count += 1
-    return count
+
+    return len(batch_args)
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +231,7 @@ async def load_records_needing_detail(
     conn: asyncpg.Connection,
     record_type: str,
     sort_desc: bool = False,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Return records that have a ``source_url`` but haven't been detail-scraped yet.
 
     A record is considered "not detail-scraped" if its ``status`` is 'indexed'
@@ -224,6 +249,7 @@ async def load_records_needing_detail(
         """,
         record_type,
     )
+    
     results = []
     for row in rows:
         data = row["data"]
@@ -277,57 +303,33 @@ async def is_record_complete(
     if not source_url and not case_number:
         return False
 
-    if source_url and case_number:
-        row = await conn.fetchval(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM extracted_records
-                WHERE record_type = $1
-                  AND (source_url = $2 OR data->>'case_number' = $3)
-                  AND (data->>'details_scraped_at') IS NOT NULL
-            )
-            """,
-            record_type,
-            source_url,
-            case_number,
+    is_complete = await conn.fetchval(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM extracted_records
+            WHERE record_type = $1
+              AND (
+                ($2::text IS NOT NULL AND source_url = $2)
+                OR ($3::text IS NOT NULL AND data->>'case_number' = $3)
+              )
+              AND (data->>'details_scraped_at') IS NOT NULL
         )
-    elif source_url:
-        row = await conn.fetchval(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM extracted_records
-                WHERE record_type = $1
-                  AND source_url = $2
-                  AND (data->>'details_scraped_at') IS NOT NULL
-            )
-            """,
-            record_type,
-            source_url,
-        )
-    else:
-        row = await conn.fetchval(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM extracted_records
-                WHERE record_type = $1
-                  AND data->>'case_number' = $2
-                  AND (data->>'details_scraped_at') IS NOT NULL
-            )
-            """,
-            record_type,
-            case_number,
-        )
-    return bool(row)
+        """,
+        record_type,
+        source_url,
+        case_number,
+    )
+    return bool(is_complete)
 
 
-# -----------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Pipeline state (progress tracking)
 # ---------------------------------------------------------------------------
 
 async def load_pipeline_state(
     conn: asyncpg.Connection,
     pipeline_name: str,
-) -> dict:
+) -> dict[str, Any]:
     """Load the ``pipeline_state`` JSONB from ``pipelines_pipelineconfiguration``.
 
     Returns an empty dict if the pipeline doesn't exist or the state is null.
@@ -345,13 +347,13 @@ async def load_pipeline_state(
         return {}
     if isinstance(row, str):
         return json.loads(row)
-    return dict(row) if row else {}
+    return dict(row)
 
 
 async def save_pipeline_state(
     conn: asyncpg.Connection,
     pipeline_name: str,
-    state: dict,
+    state: dict[str, Any],
 ) -> None:
     """Persist scraper progress into the ``pipeline_state`` JSONB column."""
     await conn.execute(
@@ -364,4 +366,3 @@ async def save_pipeline_state(
         json.dumps(state, ensure_ascii=False),
         pipeline_name,
     )
-
