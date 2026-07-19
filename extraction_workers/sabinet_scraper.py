@@ -480,7 +480,14 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Coeus Sabinet Scraper Refactored Model Engine")
-    parser.add_argument("--pipeline", type=str, default="sabinet_ccma", help="Pipeline configurations parameters key mapping identifier")
+    
+    parser.add_argument(
+        "--pipeline", "--pipeline_name",
+        type=str, 
+        dest="pipeline",
+        default="sabinet_ccma", 
+        help="Pipeline configurations parameters key mapping identifier"
+    )
     parser.add_argument("--auth-only", action="store_true", help="Execute authentication workflows passes only")
     parser.add_argument("--headless", action="store_true", help="Orchestrate processes inside hidden graphical frame views")
     args = parser.parse_args()
