@@ -10,7 +10,7 @@ from playwright.async_api import async_playwright, Page
 
 from base_scraper import BaseScraper, setup_logger
 import db_storage
-from misstcha.turnstile import TurnstileSolver
+from ..misstcha.turnstile import TurnstileSolver
 from utils.debug_helper import log_browser_proxy_ip
 from utils.utils import take_screenshot
 
