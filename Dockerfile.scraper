@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 ENV PYTHONPATH="${PYTHONPATH}:/app"
+ENV PYTHONPATH="${PYTHONPATH}:/app/misstcha"
 
 COPY requirements-scraper.txt .
 RUN pip install --no-cache-dir --upgrade pip \
