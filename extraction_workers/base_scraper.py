@@ -4,10 +4,10 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Set
 from playwright.async_api import async_playwright, Page
 
-from .utils.utils import fetch_pipeline_config, resolve_data_dir
-from .db import get_db_connection
-from . import db_storage
-from .utils.browser_helper import setup_logger, BrowserManager
+import db_storage
+from utils.utils import fetch_pipeline_config, resolve_data_dir
+from db import get_db_connection
+from utils.browser_helper import setup_logger, BrowserManager
 
 logger = setup_logger(__name__)
 
