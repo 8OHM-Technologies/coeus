@@ -8,6 +8,7 @@ jobs:
   # 1. Detect which Docker images actually need rebuilding
   detect-changes:
     runs-on: ubuntu-latest
+    environment: vps-prod
     outputs:
       any_image_changed: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.worker == 'true' || steps.filter.outputs.dagster == 'true' || steps.filter.outputs.scraper == 'true' || steps.filter.outputs.extractor == 'true' }}
       app_changed: ${{ steps.filter.outputs.app }}
@@ -77,6 +78,7 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.any_image_changed == 'true' }}
     runs-on: ubuntu-latest
+    environment: vps-prod
     permissions:
       contents: read
       packages: write
@@ -181,6 +183,7 @@ jobs:
     needs: [detect-changes, build-and-push]
     if: always() && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
     runs-on: ubuntu-latest
+    environment: vps-prod
     steps:
       - name: Notify on Start
         run: |
@@ -213,6 +216,9 @@ jobs:
 
       - name: Deploy via Git Pull on VPS
         uses: nick-fields/retry@v3
+        env:
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         with:
           timeout_minutes: 20
           max_attempts: 3
