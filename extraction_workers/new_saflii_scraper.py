@@ -8,11 +8,11 @@ from datetime import datetime, date as dt_date
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright, Page
 
-from .base_scraper import BaseScraper, setup_logger
-from . import db_storage
+from base_scraper import BaseScraper, setup_logger
+import db_storage
 from misstcha import TurnstileSolver
-from utils.debug_helper import log_browser_proxy_ip
-from utils.utils import take_screenshot
+from debug_helper import log_browser_proxy_ip
+from utils import take_screenshot
 
 logger = setup_logger(__name__)
 turnstile_solver = TurnstileSolver()
