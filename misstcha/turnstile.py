@@ -18,13 +18,12 @@ class TurnstileSolver(BaseSolver):
         self.solve_delay = solve_delay
 
     async def _take_screenshot(self, page: Page, screenshot_dir: str, name: str):
-        """Save a timestamped diagnostic screenshot if screenshot_dir is set."""
+        """Save a diagnostic screenshot if screenshot_dir is set."""
         if not screenshot_dir:
             return
         try:
             os.makedirs(screenshot_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-            filename = f"{timestamp}_{name}.png"
+            filename = f"{name}.png"
             path = os.path.join(screenshot_dir, filename)
             await page.screenshot(path=path)
             logger.info(f"[TurnstileSolver] Saved screenshot: {path}")

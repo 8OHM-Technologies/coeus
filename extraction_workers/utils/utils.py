@@ -170,8 +170,7 @@ async def take_screenshot(page, screenshot_dir: str, name: str):
         return
     try:
         os.makedirs(screenshot_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-        filename = f"{timestamp}_{name}.png"
+        filename = f"{name}.png"
         path = os.path.join(screenshot_dir, filename)
         await page.screenshot(path=path)
         logger.info(f"Saved screenshot: {path}")
