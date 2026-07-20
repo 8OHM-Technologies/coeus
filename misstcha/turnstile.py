@@ -72,10 +72,77 @@ class TurnstileSolver(BaseSolver):
         await self._take_screenshot(page, screenshot_dir, "01_init")
 
         if not turnstile_frame:
-            await self._take_screenshot(page, screenshot_dir, "error_frame_not_found")
-            return {"success": False, "error": "Cloudflare Turnstile frame not found."}
+            # Check for inline Cloudflare challenge elements (like "Verify you are human" buttons)
+            logger.info("No Turnstile frame found. Checking for inline Cloudflare challenge button...")
+            challenge_selectors = [
+                "button:has-text('Verify you are human')",
+                "input[type='button'][value='Verify you are human']",
+                "#challenge-stage button",
+                "#challenge-stage input[type='button']",
+                "#challenge-stage",
+            ]
+            
+            button_element = None
+            for selector in challenge_selectors:
+                try:
+                    loc = page.locator(selector).first
+                    if await loc.count() > 0 and await loc.is_visible():
+                        button_element = loc
+                        logger.info(f"Found inline Cloudflare challenge element matching selector: {selector}")
+                        break
+                except Exception:
+                    continue
 
-        logger.info("Cloudflare Turnstile challenge detected. Attempting to solve...")
+            if not button_element:
+                await self._take_screenshot(page, screenshot_dir, "error_frame_not_found")
+                return {"success": False, "error": "Cloudflare Turnstile frame and inline button not found."}
+
+            logger.info("Inline Cloudflare challenge detected. Attempting to click...")
+            await asyncio.sleep(self.solve_delay)
+            await self._take_screenshot(page, screenshot_dir, "02_after_delay")
+
+            try:
+                await button_element.scroll_into_view_if_needed()
+            except Exception as e:
+                logger.warning(f"Could not scroll inline element into view: {e}")
+
+            box = await button_element.bounding_box()
+            if not box:
+                await self._take_screenshot(page, screenshot_dir, "error_no_bounding_box")
+                return {"success": False, "error": "Could not retrieve bounding box of inline challenge element."}
+
+            await self._take_screenshot(page, screenshot_dir, "03_before_click")
+
+            click_x = box["x"] + (box["width"] / 2) + random.randint(-4, 4)
+            click_y = box["y"] + (box["height"] / 2) + random.randint(-4, 4)
+            logger.info(f"Moving to and clicking inline challenge button at ({click_x}, {click_y})")
+
+            try:
+                await self._human_move_and_click(page, click_x, click_y)
+                await self._take_screenshot(page, screenshot_dir, "04_after_click")
+
+                if wait_selector:
+                    logger.info(f"Waiting for selector: {wait_selector}")
+                    try:
+                        await page.wait_for_selector(wait_selector, timeout=wait_timeout * 1000)
+                        await self._take_screenshot(page, screenshot_dir, "05_selector_found")
+                    except Exception as e:
+                        logger.warning(f"Timeout waiting for selector {wait_selector} after click: {e}")
+                        await self._take_screenshot(page, screenshot_dir, "error_selector_timeout")
+                        return {
+                            "success": True,
+                            "warning": f"Selector {wait_selector} not found after click.",
+                            "error": None,
+                        }
+
+                await self._take_screenshot(page, screenshot_dir, "06_success")
+                return {"success": True, "error": None}
+            except Exception as e:
+                logger.error(f"Error clicking inline challenge button: {e}")
+                await self._take_screenshot(page, screenshot_dir, "error_exception")
+                return {"success": False, "error": str(e)}
+
+        logger.info("Cloudflare Turnstile challenge iframe detected. Attempting to solve...")
 
         try:
             logger.info("Waiting for Turnstile widget to fully load inside the frame...")

@@ -286,7 +286,14 @@ class SafliiScraper(BaseScraper):
                         await take_screenshot(page, self.screenshots_dir, f"{attempt_prefix}_post_solve")
 
                     if load_result == "TIMEOUT":
-                        logger.warning(f"Post-solve page load timed out for [{attempt_prefix}].")
+                        logger.warning(f"Post-solve page load timed out for [{attempt_prefix}]. Attempting page reload to trigger cookie validation...")
+                        try:
+                            await page.reload(timeout=20000)
+                            load_result = await wait_for_page_load(page, url_type)
+                        except Exception as reload_err:
+                            logger.warning(f"Page reload failed: {reload_err}")
+
+                    if load_result == "TIMEOUT":
                         # Re-check state — it may have partially loaded
                         title, h1, body = await get_page_signals(page)
                         state = check_page_state(title, h1, body)

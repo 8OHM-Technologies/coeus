@@ -718,7 +718,7 @@ class SabinetScraper(BaseScraper):
                             
                             async with count_lock:
                                 count += 1
-                            logger.info(f"[Worker {worker_id}]  [+] Enriched tracking map row with {len(metadata)} fields.")
+                            logger.info(f"[Worker {worker_id}] [+] Enriched tracking map row with {len(metadata)} fields.")
                             break
 
                         except Exception as page_err:
