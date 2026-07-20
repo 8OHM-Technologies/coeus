@@ -701,7 +701,7 @@ class SabinetScraper(BaseScraper):
                                 continue
 
                             metadata = detail_info.get("metadata", {})
-                            if len(metadata) < 11:
+                            if len(metadata) < 9:
                                 logger.warning(
                                     f"[Worker {worker_id}] Incomplete detail payload extracted for {url} ({len(metadata)} fields found). "
                                     f"Likely loaded in unauthenticated state. Skipping status update to keep it 'indexed'."
