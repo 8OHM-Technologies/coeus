@@ -175,6 +175,10 @@ class SabinetScraper(BaseScraper):
     Handles authentication state capture, rolling-window searches, and indexing.
     """
 
+    def __init__(self, pipeline_name: str):
+        super().__init__(pipeline_name)
+        self.auth_lock = asyncio.Lock()
+
     async def authenticate(self, headless: bool = False) -> None:
         """Automatically log in to Sabinet and persist browser session state to the database."""
         scrape_url = (
@@ -587,81 +591,138 @@ class SabinetScraper(BaseScraper):
             logger.info("✅ No structural rows require detailed asset parsing updates.")
             return
 
-        count = 0
-        for progress_idx, case_item in enumerate(cases):
-            if progress_idx > 0 and progress_idx % 100 == 0:
-                logger.info("Recycling browser pipeline layer to clear memory allocation limits...")
-                await self.browser_manager.recycle()
-
-            page = self.browser_manager.page
-            record_id = case_item["id"]
-            url = case_item["source_url"]
-            data_payload = case_item["data"]
-
-            current_status = await self.conn.fetchval("SELECT status FROM extracted_records WHERE id = $1", record_id)
-            if current_status == "detailed":
-                continue
-
-            logger.info(f"[{completed_count + progress_idx + 1}/{total_count}] Scraping details from: {url}")
+        # Close the initial indexing page to free resources
+        if self.browser_manager.page:
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                await page.wait_for_load_state("networkidle")
+                await self.browser_manager.page.close()
+            except Exception:
+                pass
 
-                if count == 0 or count % 50 == 0:
-                    await dismiss_cookie_consent(page)
+        concurrency = int(extraction_params.get("concurrency", 8))
+        logger.info(f"Starting concurrent detailing with {concurrency} workers...")
 
-                try:
-                    await page.wait_for_selector('div.item-content-loaded', timeout=15000)
-                except Exception:
-                    logger.warning(f"  Content div did not appear for {url}. Skipping.")
-                    continue
+        queue = asyncio.Queue()
+        for progress_idx, case_item in enumerate(cases):
+            await queue.put((progress_idx, case_item))
 
-                detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
+        count = 0
+        count_lock = asyncio.Lock()
 
-                # Self-healing Authentication check
-                if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
-                    logger.warning("🔒 Session signature invalidated! Refreshing security token states...")
-                    await self.authenticate(headless=True)
-                    
-                    # Reload fresh state allocations down to browser instance wrapper
-                    self.progress_state = await db_storage.load_pipeline_state(self.conn, index_pipeline_name)
-                    self.browser_manager.storage_state = self.progress_state.get("storage_state")
-                    await self.browser_manager.recycle()
-                    page = self.browser_manager.page
-
-                    logger.info(f"Retrying target detail payload location path -> {url}")
-                    await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                    await page.wait_for_load_state("networkidle")
-
+        async def worker(worker_id: int):
+            nonlocal count
+            logger.info(f"Worker {worker_id} started.")
+            
+            # Create a dedicated page for this worker under the shared context
+            page = await self.browser_manager.context.new_page()
+            
+            try:
+                while not queue.empty():
                     try:
-                        await page.wait_for_selector('div.item-content-loaded', timeout=15000)
-                    except Exception:
+                        progress_idx, case_item = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                    record_id = case_item["id"]
+                    url = case_item["source_url"]
+                    data_payload = case_item["data"]
+
+                    async with self.db_lock:
+                        current_status = await self.conn.fetchval("SELECT status FROM extracted_records WHERE id = $1", record_id)
+                    
+                    if current_status == "detailed":
+                        queue.task_done()
                         continue
 
-                    detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
-                    if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
-                        logger.error("🔒 Authentication token deployment failed completely. Exiting engine session execution loops.")
-                        sys.exit(1)
+                    logger.info(f"[Worker {worker_id}][{completed_count + progress_idx + 1}/{total_count}] Scraping details from: {url}")
+                    
+                    for attempt in range(1, 4):
+                        try:
+                            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                            await page.wait_for_load_state("networkidle")
 
-                if not detail_info.get("content_loaded"):
-                    continue
+                            # Periodically dismiss cookie consent
+                            if progress_idx % 50 == 0:
+                                await dismiss_cookie_consent(page)
 
-                metadata = detail_info.get("metadata", {})
-                for key, value in metadata.items():
-                    data_payload[key] = value
-                data_payload["details_scraped_at"] = datetime.now().isoformat()
+                            try:
+                                await page.wait_for_selector('div.item-content-loaded', timeout=15000)
+                            except Exception:
+                                logger.warning(f"[Worker {worker_id}] Content div did not appear for {url} (attempt {attempt}/3).")
+                                continue
 
-                await db_storage.update_record_data(self.conn, record_id, data_payload, status="detailed")
-                count += 1
-                logger.info(f"  ✅ Enriched tracking map row with {len(metadata)} fields.")
+                            detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
 
-                await asyncio.sleep(2)
-                if count % 100 == 0:
-                    logger.info("Scraped 100 details pages. Throttling: sleeping for 60 seconds...")
-                    await asyncio.sleep(60)
-            except Exception as page_err:
-                logger.error(f"Failed parsing detail target row at path {url}: {page_err}")
-                await asyncio.sleep(5)
+                            # Self-healing Authentication check
+                            if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
+                                async with self.auth_lock:
+                                    # Reload state to check if another worker already re-authenticated
+                                    self.progress_state = await db_storage.load_pipeline_state(self.conn, index_pipeline_name)
+                                    self.browser_manager.storage_state = self.progress_state.get("storage_state")
+                                    
+                                    await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                                    await page.wait_for_load_state("networkidle")
+                                    detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
+
+                                    if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
+                                        logger.warning(f"[Worker {worker_id}] 🔒 Session signature invalidated! Refreshing security token states...")
+                                        await self.authenticate(headless=True)
+                                        
+                                        self.progress_state = await db_storage.load_pipeline_state(self.conn, index_pipeline_name)
+                                        self.browser_manager.storage_state = self.progress_state.get("storage_state")
+                                        
+                                        await self.browser_manager.recycle()
+                                        await page.close()
+                                        page = await self.browser_manager.context.new_page()
+                                        
+                                        logger.info(f"[Worker {worker_id}] Retrying target detail payload location path -> {url}")
+                                        await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                                        await page.wait_for_load_state("networkidle")
+                                        
+                                        try:
+                                            await page.wait_for_selector('div.item-content-loaded', timeout=15000)
+                                        except Exception:
+                                            continue
+
+                                        detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
+                                        if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
+                                            logger.error("🔒 Authentication token deployment failed completely. Exiting engine session execution loops.")
+                                            sys.exit(1)
+
+                            if not detail_info.get("content_loaded"):
+                                continue
+
+                            metadata = detail_info.get("metadata", {})
+                            for key, value in metadata.items():
+                                data_payload[key] = value
+                            data_payload["details_scraped_at"] = datetime.now().isoformat()
+
+                            async with self.db_lock:
+                                await db_storage.update_record_data(self.conn, record_id, data_payload, status="detailed")
+                            
+                            async with count_lock:
+                                count += 1
+                            logger.info(f"[Worker {worker_id}]  [+] Enriched tracking map row with {len(metadata)} fields.")
+                            break
+
+                        except Exception as page_err:
+                            logger.error(f"[Worker {worker_id}] Failed parsing detail target row at path {url} (attempt {attempt}/3): {page_err}")
+                            await asyncio.sleep(2)
+
+                    cooldown_seconds = float(extraction_params.get("cooldown_seconds", 2.0))
+                    await asyncio.sleep(cooldown_seconds)
+                    queue.task_done()
+            finally:
+                await page.close()
+                logger.info(f"Worker {worker_id} stopped.")
+
+        # Run workers concurrently
+        workers = [asyncio.create_task(worker(i)) for i in range(1, concurrency + 1)]
+        await queue.join()
+
+        # Cancel any idle worker tasks
+        for w in workers:
+            w.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
 
         logger.info(f"✅ Detailing layer completed execution workflows. Enriched {count} records directly.")
 

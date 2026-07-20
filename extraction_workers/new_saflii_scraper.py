@@ -27,33 +27,136 @@ class BlockedException(Exception):
 # Pure Utility Helpers
 # ---------------------------------------------------------------------------
 
-def check_page_state(page_content: str) -> str:
-    """Determine the logical state of the page to detect blocks or dead links."""
+def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
+    """Determine the logical state of the page to detect blocks or dead links.
+
+    Args:
+        page_title: The page's <title> text.
+        h1_title: The page's first <h1> text.
+        body_text: The page's <body> inner text.
+
+    Returns:
+        "BLOCKED": if it's a Cloudflare/Turnstile challenge page.
+        "NOT_FOUND": if it's a 404/403 or similar error page.
+        "OK": if it's a valid content page.
+    """
+    t_lower = (page_title or "").lower().strip()
+    h_lower = (h1_title or "").lower().strip()
+    b_lower = (body_text or "").lower().strip()
+
     if (
-        "just a moment" in page_content.lower()
-        or "cloudflare" in page_content.lower()
-        or "security verification" in page_content.lower()
-        or "verify you are human" in page_content.lower()
-        or "turnstile" in page_content.lower()
+        "just a moment" in t_lower
+        or "cloudflare" in t_lower
+        or "security verification" in t_lower
+        or "verify you are human" in b_lower
+        or "turnstile" in b_lower
     ):
         return "BLOCKED"
 
     if (
-        "not found" in page_content.lower()
-        or "page not found" in page_content.lower()
-        or "404 not found" in page_content.lower()
-        or "404 - not found" in page_content.lower()
-        or "404 error" in page_content.lower()
-        or "403 forbidden" in page_content.lower()
-        or "forbidden" in page_content.lower()
-        or "you don't have permission to access this resource" in page_content.lower()
+        t_lower
+        in (
+            "not found",
+            "page not found",
+            "404 not found",
+            "404 - not found",
+            "404 error",
+            "403 forbidden",
+            "forbidden",
+        )
+        or h_lower
+        in (
+            "not found",
+            "page not found",
+            "404 not found",
+            "404 - not found",
+            "404 error",
+            "403 forbidden",
+            "forbidden",
+        )
+        or "you don't have permission to access this resource" in b_lower
     ):
         return "NOT_FOUND"
-    
-    if "judgment" in page_content.lower():
-        return "OK"
 
     return "OK"
+
+
+async def get_page_signals(page: Page) -> tuple[str, str, str]:
+    """Extract the title, h1, and body text from the current page for state checks."""
+    title = await page.title()
+    try:
+        h1 = (
+            await page.locator("h1").first.inner_text()
+            if await page.locator("h1").count() > 0
+            else ""
+        )
+    except Exception:
+        h1 = ""
+    try:
+        body = (
+            await page.locator("body").inner_text()
+            if await page.locator("body").count() > 0
+            else ""
+        )
+    except Exception:
+        body = ""
+    return title, h1, body
+
+
+async def wait_for_page_load(page: Page, url_type: str = "page") -> str:
+    """Wait for the page to settle after a Turnstile challenge or navigation.
+
+    Polls for up to 30 seconds, checking both the page state and content-specific
+    signals to confirm the real page has loaded.
+
+    Args:
+        page: The Playwright page instance.
+        url_type: One of "start", "year", or "case" to check for specific content.
+
+    Returns:
+        "OK", "NOT_FOUND", or "TIMEOUT".
+    """
+    year_pattern = re.compile(r"^\d{4}$")
+    for poll_sec in range(30):
+        await asyncio.sleep(1)
+        try:
+            title, h1, body = await get_page_signals(page)
+        except Exception:
+            continue
+
+        state = check_page_state(title, h1, body)
+        if state == "NOT_FOUND":
+            return "NOT_FOUND"
+        if state == "BLOCKED":
+            continue
+
+        # Page is in OK state — verify the expected content is actually present
+        if url_type == "start":
+            anchors = await page.locator("a").all()
+            for a in anchors:
+                try:
+                    text = (await a.inner_text()).strip()
+                    if year_pattern.match(text):
+                        return "OK"
+                except Exception:
+                    pass
+        elif url_type == "year":
+            anchors = await page.locator("a").all()
+            for a in anchors:
+                try:
+                    href = await a.get_attribute("href")
+                    if href and href.endswith(".html") and not ("toc-" in href or "index.html" in href):
+                        return "OK"
+                except Exception:
+                    pass
+        elif url_type == "case":
+            if len(body.strip()) > 500:
+                return "OK"
+        else:
+            if not await turnstile_solver.find_turnstile_frame(page):
+                return "OK"
+
+    return "TIMEOUT"
 
 
 def parse_case_url(case_url: str, default_court: str = "SAFLII") -> tuple[str, str, str]:
@@ -71,12 +174,12 @@ def extract_case_number_from_text(text: str) -> str | None:
     """Extracts standard SAFLII case numbers or formal citations from strings."""
     if not text:
         return None
-    # Matches common legal formats: (123/2025) or [2026] ZACC 4
+    # Matches: (123/2025) or [2026] ZACC 4
     match = re.search(r'\((?:\w+\s+)?\d+/\d+\)|\[\d{4}\]\s+\w+\s+\d+', text)
     if match:
         return match.group(0).strip()
-    
-    # Simple fallback check for standard number/year slashes
+
+    # Simple fallback for standard number/year slashes
     fallback_match = re.search(r'\b\d+/\d+\b', text)
     if fallback_match:
         return fallback_match.group(0).strip()
@@ -106,6 +209,10 @@ class SafliiScraper(BaseScraper):
         # Dynamic operational memory state across sub-processes
         self.case_urls: list[str] = []
         self.url_to_case_number: dict[str, str] = {}
+
+        # Concurrency control locks
+        self.db_lock = asyncio.Lock()
+        self.turnstile_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         """Hydrate runtime variables, baseline tracking sets, and directory structures."""
@@ -139,51 +246,58 @@ class SafliiScraper(BaseScraper):
         """SAFLII bypasses login constraints via inline Cloudflare tokens. No-op implementation."""
         pass
 
-    async def handle_turnstile_challenge(self, page: Page, attempt_prefix: str) -> str:
-        """Inspects, targets, and clears active Cloudflare Turnstile barriers."""
-        state = check_page_state(await page.content())
+    async def handle_turnstile_challenge(self, page: Page, attempt_prefix: str, url_type: str = "page") -> str:
+        """Detect, solve, and verify Cloudflare Turnstile challenges.
+
+        Uses the proven pattern: detect via targeted DOM signals → solve via
+        click → wait for actual page content to load.
+
+        Args:
+            page: The Playwright page instance.
+            attempt_prefix: A label for log messages (e.g. "start_url_attempt_1").
+            url_type: One of "start", "year", or "case" — passed to wait_for_page_load.
+
+        Returns:
+            The page state after resolution: "OK", "BLOCKED", or "NOT_FOUND".
+        """
+        title, h1, body = await get_page_signals(page)
+        state = check_page_state(title, h1, body)
 
         if state == "BLOCKED":
-            logger.info(f"⚠️ Captcha challenge detected during execution space [{attempt_prefix}]. Invoking Solver...")
-            result = await turnstile_solver.solve(page)
-            logger.info(f"Solver result for [{attempt_prefix}]: {result}")
-
-            if result.get("verified"):
-                # Solver already confirmed the challenge frame disappeared / token injected.
-                # Wait briefly for any Cloudflare-triggered page redirect to settle.
-                max_wait = 10
-                poll_interval = 1.0
-                elapsed = 0.0
-                while elapsed < max_wait:
-                    try:
-                        await asyncio.sleep(5)
-                    except Exception:
-                        pass
-                    state = check_page_state(await page.content())
-                    if state != "BLOCKED":
-                        logger.info(f"✅ Page clearance confirmed after {elapsed:.1f}s for [{attempt_prefix}].")
-                        return state
-                    await asyncio.sleep(poll_interval)
-                    elapsed += poll_interval
-
-            # Solver did not verify — fallback poll in case the page clears late
-            max_wait = 8
-            poll_interval = 1.0
-            elapsed = 0.0
-            while elapsed < max_wait:
+            async with self.turnstile_lock:
+                # Reload the page to check if another worker already cleared the Turnstile challenge
+                logger.info(f"Checking Turnstile cookie sharing via reload for [{attempt_prefix}]...")
                 try:
-                    await asyncio.sleep(5)
+                    await page.reload(timeout=15000)
                 except Exception:
                     pass
-                state = check_page_state(await page.content())
+                title, h1, body = await get_page_signals(page)
+                state = check_page_state(title, h1, body)
                 if state != "BLOCKED":
-                    logger.info(f"✅ Late clearance confirmed after {elapsed:.1f}s for [{attempt_prefix}].")
+                    logger.info(f"✅ Bypassed Turnstile challenge for [{attempt_prefix}] via shared session cookies.")
                     return state
-                await asyncio.sleep(poll_interval)
-                elapsed += poll_interval
 
-            logger.warning(f"Turnstile solve did not clear challenge for [{attempt_prefix}]. Solver said: {result.get('error', 'unknown')}")
-            state = check_page_state(await page.content())
+                logger.info(f"⚠️ Captcha challenge detected during [{attempt_prefix}]. Invoking Solver...")
+                solve_res = await turnstile_solver.solve(page, screenshot_dir=self.screenshots_dir)
+
+                if solve_res["success"]:
+                    load_result = await wait_for_page_load(page, url_type)
+                    if self.take_debug_screenshots:
+                        await take_screenshot(page, self.screenshots_dir, f"{attempt_prefix}_post_solve")
+
+                    if load_result == "TIMEOUT":
+                        logger.warning(f"Post-solve page load timed out for [{attempt_prefix}].")
+                        # Re-check state — it may have partially loaded
+                        title, h1, body = await get_page_signals(page)
+                        state = check_page_state(title, h1, body)
+                    else:
+                        state = load_result  # "OK" or "NOT_FOUND"
+                else:
+                    logger.warning(f"Solver failed for [{attempt_prefix}]: {solve_res.get('error', 'unknown')}")
+                    await asyncio.sleep(2)
+                    # Re-check state in case it cleared anyway
+                    title, h1, body = await get_page_signals(page)
+                    state = check_page_state(title, h1, body)
 
         return state
 
@@ -214,7 +328,7 @@ class SafliiScraper(BaseScraper):
                 if self.take_debug_screenshots:
                     await take_screenshot(page, self.screenshots_dir, f"start_url_attempt_{attempt}_navigated")
 
-                state = await self.handle_turnstile_challenge(page, f"start_url_attempt_{attempt}")
+                state = await self.handle_turnstile_challenge(page, f"start_url_attempt_{attempt}", url_type="start")
                 if state == "BLOCKED":
                     raise BlockedException("Cloudflare clearance execution timed out at index node context.")
                 elif state == "NOT_FOUND":
@@ -239,12 +353,16 @@ class SafliiScraper(BaseScraper):
                     raise Exception("No year index nodes isolated from element structures.")
             except Exception as err:
                 logger.warning(f"Index access pass {attempt}/5 obstructed: {err}")
+                if self.take_debug_screenshots:
+                    await take_screenshot(page, self.screenshots_dir, f"start_url_attempt_{attempt}_error")
                 if attempt < 5:
                     await asyncio.sleep(attempt * 5)
 
         if not start_success:
             logger.error("Failed to verify structural clearance benchmarks for base tracking arrays.")
             sys.exit(1)
+
+        logger.info(f"Found {len(year_links)} years to process: {[y for y, _ in year_links]}")
 
         # 2. Iterate through index vectors to isolate documents URLs
         raw_case_urls = []
@@ -258,7 +376,7 @@ class SafliiScraper(BaseScraper):
                     if self.take_debug_screenshots:
                         await take_screenshot(page, self.screenshots_dir, f"year_{year}_attempt_{attempt}_navigated")
 
-                    state = await self.handle_turnstile_challenge(page, f"year_{year}_attempt_{attempt}")
+                    state = await self.handle_turnstile_challenge(page, f"year_{year}_attempt_{attempt}", url_type="year")
                     if state == "BLOCKED":
                         raise BlockedException(f"Resource locks applied on year directory {year}.")
                     elif state == "NOT_FOUND":
@@ -287,6 +405,8 @@ class SafliiScraper(BaseScraper):
                     break
                 except Exception as err:
                     logger.warning(f"Error encountered isolating index structures for year {year} [Attempt {attempt}]: {err}")
+                    if self.take_debug_screenshots:
+                        await take_screenshot(page, self.screenshots_dir, f"year_{year}_attempt_{attempt}_error")
                     if attempt == 5:
                         logger.error(f"Terminated tracking bounds processing loops context for timeframe: {year}")
                     else:
@@ -301,87 +421,137 @@ class SafliiScraper(BaseScraper):
             logger.info("No remote indices staged for detailed processing pipelines.")
             return
 
-        page = self.browser_manager.page
+        extraction_params = self.config.get("extraction_params", {})
+        concurrency = int(extraction_params.get("concurrency", 8))
+        logger.info(f"Starting concurrent detailing with {concurrency} workers...")
+
+        # Close the initial indexing page to free resources
+        if self.browser_manager.page:
+            try:
+                await self.browser_manager.page.close()
+            except Exception:
+                pass
+
+        queue = asyncio.Queue()
+        for idx, case_url in enumerate(self.case_urls, start=1):
+            await queue.put((idx, case_url))
+
         total_new = 0
 
-        for idx, case_url in enumerate(self.case_urls, start=1):
-            c_court, c_year, c_id = parse_case_url(case_url)
-            case_no = self.url_to_case_number.get(case_url)
-
-            # Execution deduplication checks using pre-hydrated tracking sets
-            if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
-                logger.info(f"[{idx}/{len(self.case_urls)}] Skipping record entry (Pre-existing validation signature matches): {case_url}")
-                continue
-
-            logger.info(f"[{idx}/{len(self.case_urls)}] Detailed enrichment active -> {case_url}")
-            success = False
-
-            for attempt in range(1, 6):
-                try:
-                    await page.goto(case_url, timeout=30000)
-                    if self.take_debug_screenshots:
-                        await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_navigated")
-
-                    state = await self.handle_turnstile_challenge(page, f"case_{c_id}_attempt_{attempt}")
-                    if state == "BLOCKED":
-                        raise BlockedException(f"Challenge wall containment failure active on asset element: {c_id}")
-                    elif state == "NOT_FOUND":
-                        logger.warning(f"Target payload resource {case_url} not found (404/403). Dropping link tracking.")
-                        success = True
-                        break
-
-                    html_content = await page.content()
-                    soup = BeautifulSoup(html_content, "lxml")
-                    center_div = soup.find("div", id="center")
-                    center_html = str(center_div) if center_div else ""
-
-                    h2_el = center_div.find("h2") if center_div else None
-                    title = h2_el.get_text(strip=True) if h2_el else await page.title()
-
-                    if not case_no:
-                        case_no = extract_case_number_from_text(title)
-
-                    if case_no and case_no in self.existing_case_numbers:
-                        logger.info(f"  [~] Duplicate signature isolated via late mapping step for identifier: {case_no}")
-                        success = True
-                        break
-
-                    record = {
-                        "court": c_court,
-                        "year": c_year,
-                        "case_id": c_id,
-                        "title": title,
-                        "url": case_url,
-                        "center_content": center_html,
-                        "scraped_at": datetime.now().isoformat(),
-                    }
-
+        async def worker(worker_id: int):
+            nonlocal total_new
+            logger.info(f"Worker {worker_id} started.")
+            
+            # Create a dedicated page for this worker under the shared context
+            page = await self.browser_manager.context.new_page()
+            
+            try:
+                while not queue.empty():
                     try:
-                        doc_date = dt_date(int(c_year), 1, 1)
-                    except Exception:
-                        doc_date = dt_date.today()
+                        idx, case_url = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
 
-                    # Push safely formatted record via centralized db interface helper
-                    await db_storage.upsert_scraped_record(
-                        self.conn, self.target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
-                    )
-                    
-                    self.existing_urls.add(case_url)
-                    if case_no:
-                        self.existing_case_numbers.add(case_no)
-                    
-                    total_new += 1
-                    logger.info(f"  [+] Unified structural database record written: {c_court}_{c_year}_{c_id}")
-                    success = True
-                    break
+                    c_court, c_year, c_id = parse_case_url(case_url)
+                    case_no = self.url_to_case_number.get(case_url)
 
-                except Exception as err:
-                    logger.warning(f"Enrichment payload extraction error on asset {c_id} [Attempt {attempt}]: {err}")
-                    if attempt < 5:
-                        await asyncio.sleep(attempt * 10)
+                    # Check against deduplication sets (read/write is safe in single-threaded event loop)
+                    if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
+                        logger.info(f"[Worker {worker_id}][{idx}/{len(self.case_urls)}] Skipping record entry (Pre-existing validation signature matches): {case_url}")
+                        queue.task_done()
+                        continue
 
-            if success:
-                await asyncio.sleep(self.cooldown_seconds)
+                    logger.info(f"[Worker {worker_id}][{idx}/{len(self.case_urls)}] Detailed enrichment active -> {case_url}")
+                    success = False
+
+                    for attempt in range(1, 6):
+                        try:
+                            await page.goto(case_url, timeout=30000)
+                            if self.take_debug_screenshots:
+                                await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_navigated")
+
+                            state = await self.handle_turnstile_challenge(page, f"case_{c_id}_attempt_{attempt}", url_type="case")
+                            if state == "BLOCKED":
+                                raise BlockedException(f"Challenge wall containment failure active on asset element: {c_id}")
+                            elif state == "NOT_FOUND":
+                                logger.warning(f"[Worker {worker_id}] Target payload resource {case_url} not found (404/403). Dropping link tracking.")
+                                success = True
+                                break
+
+                            html_content = await page.content()
+                            soup = BeautifulSoup(html_content, "lxml")
+                            center_div = soup.find("div", id="center")
+                            center_html = str(center_div) if center_div else ""
+
+                            h2_el = center_div.find("h2") if center_div else None
+                            title = h2_el.get_text(strip=True) if h2_el else await page.title()
+
+                            if not case_no:
+                                case_no = extract_case_number_from_text(title)
+
+                            if case_no and case_no in self.existing_case_numbers:
+                                logger.info(f"[Worker {worker_id}]  [~] Duplicate signature isolated via late mapping step for identifier: {case_no}")
+                                success = True
+                                break
+
+                            record = {
+                                "court": c_court,
+                                "year": c_year,
+                                "case_id": c_id,
+                                "title": title,
+                                "url": case_url,
+                                "center_content": center_html,
+                                "scraped_at": datetime.now().isoformat(),
+                            }
+
+                            try:
+                                doc_date = dt_date(int(c_year), 1, 1)
+                            except Exception:
+                                doc_date = dt_date.today()
+
+                            # Push safely formatted record via database helper, protected by db_lock
+                            async with self.db_lock:
+                                await db_storage.upsert_scraped_record(
+                                    self.conn, self.target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
+                                )
+                            
+                            self.existing_urls.add(case_url)
+                            if case_no:
+                                self.existing_case_numbers.add(case_no)
+                            
+                            total_new += 1
+                            logger.info(f"[Worker {worker_id}]  [+] Unified structural database record written: {c_court}_{c_year}_{c_id}")
+                            success = True
+                            break
+
+                        except BlockedException as be:
+                            logger.warning(f"[Worker {worker_id}] Blocked on case page {case_url} (attempt {attempt}/5): {be}")
+                            if self.take_debug_screenshots:
+                                await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_blocked_error")
+                            if attempt < 5:
+                                await asyncio.sleep(attempt * 5)
+                        except Exception as err:
+                            logger.warning(f"[Worker {worker_id}] Enrichment payload extraction error on asset {c_id} [Attempt {attempt}]: {err}")
+                            if self.take_debug_screenshots:
+                                await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_error")
+                            if attempt < 5:
+                                await asyncio.sleep(attempt * 5)
+
+                    if success:
+                        await asyncio.sleep(self.cooldown_seconds)
+                    queue.task_done()
+            finally:
+                await page.close()
+                logger.info(f"Worker {worker_id} stopped.")
+
+        # Run workers concurrently
+        workers = [asyncio.create_task(worker(i)) for i in range(1, concurrency + 1)]
+        await queue.join()
+        
+        # Cancel any idle worker tasks (should already be done, but to be safe)
+        for w in workers:
+            w.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
 
         logger.info(f"✅ Scraping execution layer completely processed. Staged transactional commits: {total_new}")
 

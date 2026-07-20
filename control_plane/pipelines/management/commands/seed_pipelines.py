@@ -70,6 +70,8 @@ class Command(BaseCommand):
         # Shared credentials/params for SAFLII
         saflii_extraction_params = {
             "use_proxy": "false",
+            "concurrency": 8,
+            "cooldown_seconds": 1.5,
         }
 
         # Seed SAFLII Labour Court - Appeals
@@ -199,9 +201,10 @@ class Command(BaseCommand):
                 "llm_engine": LLMEngine.LOCAL,
                 "pydantic_schema_name": "GenericDocumentExtraction",
                 "extraction_instructions": "Extract court details.",
-                "target_table": "extracted_records",
                 "extraction_params": {
-                    "shared_record_type": "sabinet_ccma"
+                    "shared_record_type": "sabinet_ccma",
+                    "concurrency": 8,
+                    "cooldown_seconds": 2.0
                 }
             }
         )
@@ -226,7 +229,9 @@ class Command(BaseCommand):
                 "target_table": "extracted_records",
                 "extraction_params": {
                     "shared_record_type": "sabinet_ccma",
-                    "reverse_direction": True
+                    "reverse_direction": True,
+                    "concurrency": 8,
+                    "cooldown_seconds": 2.0
                 }
             }
         )

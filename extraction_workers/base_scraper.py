@@ -28,6 +28,7 @@ class BaseScraper(ABC):
         self.existing_urls: Set[str] = set()
         self.existing_case_numbers: Set[str] = set()
         self.progress_state: Dict[str, Any] = {}
+        self.db_lock = asyncio.Lock()
         
         # Browser Management
         self.playwright_instance = None
