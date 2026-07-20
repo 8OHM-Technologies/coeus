@@ -27,7 +27,6 @@ down:
 
 prod-up:
 	docker compose -f docker-compose.prod.yml up -d --build
-	docker compose -f docker-compose.prod.yml build coeus-scraper coeus-extractor
 
 # Tear down all containers, networks, and volumes
 prod-down:
