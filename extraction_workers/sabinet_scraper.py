@@ -275,11 +275,11 @@ class SabinetScraper(BaseScraper):
             or "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards"
         )
         extraction_params = self.config.get("extraction_params") or {}
-        incremental = extraction_params.get("incremental", False)
+        is_fully_complete = self.progress_state.get("fully_complete", False)
+        incremental = extraction_params.get("incremental", False) or is_fully_complete
 
-        if self.progress_state.get("fully_complete") and not incremental:
-            logger.info("✅ Pipeline status matches complete flag definitions. Skipping index stage.")
-            return
+        if incremental:
+            logger.info("🔄 Incremental mode active (automatically enabled because full scrape is complete).")
 
         reverse_direction = extraction_params.get("reverse_direction", False)
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name

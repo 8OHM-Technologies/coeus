@@ -204,8 +204,7 @@ class Command(BaseCommand):
                 "extraction_params": {
                     "shared_record_type": "sabinet_ccma",
                     "concurrency": 8,
-                    "cooldown_seconds": 2.0,
-                    "incremental": True
+                    "cooldown_seconds": 2.0
                 }
             }
         )
@@ -232,8 +231,7 @@ class Command(BaseCommand):
                     "shared_record_type": "sabinet_ccma",
                     "reverse_direction": True,
                     "concurrency": 8,
-                    "cooldown_seconds": 2.0,
-                    "incremental": True
+                    "cooldown_seconds": 2.0
                 }
             }
         )
