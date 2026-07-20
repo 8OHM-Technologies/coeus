@@ -60,3 +60,23 @@ def sync_selectors_from_lab(request, pk):
     config.save()
 
     return JsonResponse({"status": "success", "message": "Selectors synced!"})
+
+
+from .models import ScrapingPipelineMetrics
+from .analytics import update_pipeline_analytics
+
+def pipeline_analytics_api(request):
+    """
+    Exposes pipeline analytics. If ?refresh=true is provided, or if the metrics
+    table is empty, calculations are run synchronously.
+    """
+    refresh = request.GET.get('refresh', 'false').lower() in ('true', '1', 'yes')
+    
+    if refresh or not ScrapingPipelineMetrics.objects.exists():
+        metrics_dict = update_pipeline_analytics()
+    else:
+        metrics_dict = {
+            m.pipeline_name: m.metrics for m in ScrapingPipelineMetrics.objects.all()
+        }
+        
+    return JsonResponse({"scraping_pipeline_metrics": metrics_dict})

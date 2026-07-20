@@ -256,6 +256,16 @@ class Command(BaseCommand):
         )
         logger.info("Added weekly job: 'delete_old_job_executions'.")
 
+        from pipelines.analytics import update_pipeline_analytics
+        scheduler.add_job(
+            update_pipeline_analytics,
+            trigger=CronTrigger(minute="*/5"),  # Run every 5 minutes
+            id="update_pipeline_analytics",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info("Added 5-minute job 'update_pipeline_analytics'.")
+
         try:
             logger.info("Starting scheduler...")
             scheduler.start()

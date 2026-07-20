@@ -170,3 +170,24 @@ class PipelineConfiguration(models.Model):
             },
             "phase_3_loading": {"table_name": self.target_table},
         }
+
+
+class ScrapingPipelineMetrics(models.Model):
+    """
+    Stores aggregated scraping analytics metrics per pipeline.
+    Calculated and updated periodically by a background task.
+    """
+    pipeline_name = models.CharField(
+        max_length=255, unique=True, help_text="The pipeline name or identifier."
+    )
+    metrics = models.JSONField(
+        default=dict, help_text="Calculated metrics including average scrape rate, uptime, and worker breakdown."
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Scraping Pipeline Metrics"
+        verbose_name_plural = "Scraping Pipeline Metrics"
+
+    def __str__(self):
+        return f"{self.pipeline_name} (updated {self.updated_at})"

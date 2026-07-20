@@ -502,6 +502,7 @@ class SafliiScraper(BaseScraper):
                                 "url": case_url,
                                 "center_content": center_html,
                                 "scraped_at": datetime.now().isoformat(),
+                                "worker_id": worker_id,
                             }
 
                             try:

@@ -711,6 +711,7 @@ class SabinetScraper(BaseScraper):
                             for key, value in metadata.items():
                                 data_payload[key] = value
                             data_payload["details_scraped_at"] = datetime.now().isoformat()
+                            data_payload["worker_id"] = worker_id
 
                             async with self.db_lock:
                                 await db_storage.update_record_data(self.conn, record_id, data_payload, status="detailed")
