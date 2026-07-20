@@ -93,11 +93,11 @@ WSGI_APPLICATION = "core.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("POSTGRES_DB", "coeus"),
-        "USER": os.environ.get("POSTGRES_USER", "postgres"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "super_secret_password"),
-        "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
-        "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+        "NAME": os.environ.get("POSTGRES_DB", "coeus").strip("'\""),
+        "USER": os.environ.get("POSTGRES_USER", "postgres").strip("'\""),
+        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "super_secret_password").strip("'\""),
+        "HOST": os.environ.get("POSTGRES_HOST", "localhost").strip("'\""),
+        "PORT": os.environ.get("POSTGRES_PORT", "5432").strip("'\""),
     }
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
