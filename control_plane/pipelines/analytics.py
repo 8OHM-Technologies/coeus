@@ -1,5 +1,4 @@
 from datetime import datetime
-from django.db.models import Q
 from extracted_data.models import ExtractedRecord
 from .models import PipelineConfiguration, ScrapingPipelineMetrics
 
@@ -14,40 +13,15 @@ def parse_iso_datetime(val):
     except ValueError:
         return None
 
-def calculate_uptime_and_rate(records_list):
+def calculate_uptime_and_rate(timestamps):
     """
     Calculates the active uptime duration, number of active intervals, and average scrape rate.
     An interval is active if the difference between consecutive scrapes is <= 2 minutes (120s).
     """
-    if not records_list:
-        return {
-            "uptime_seconds": 0.0,
-            "total_scraped": 0,
-            "active_scraped_count": 0,
-            "average_scrape_rate": 0.0
-        }
-
-    # Extract timestamps
-    timestamps = []
-    for r in records_list:
-        ts = None
-        data = r.get('data') or {}
-        # Try different possible scraped timestamp keys
-        for key in ('details_scraped_at', 'scraped_at', 'index_scraped_at'):
-            val = data.get(key)
-            if val:
-                ts = parse_iso_datetime(val)
-                if ts:
-                    break
-        if not ts:
-            ts = r.get('extracted_at')
-        if ts:
-            timestamps.append(ts)
-
     if not timestamps:
         return {
             "uptime_seconds": 0.0,
-            "total_scraped": len(records_list),
+            "total_scraped": 0,
             "active_scraped_count": 0,
             "average_scrape_rate": 0.0
         }
@@ -70,54 +44,107 @@ def calculate_uptime_and_rate(records_list):
 
     return {
         "uptime_seconds": uptime_seconds,
-        "total_scraped": len(records_list),
+        "total_scraped": len(timestamps),
         "active_scraped_count": active_scraped_count,
         "average_scrape_rate": rate
     }
 
 def update_pipeline_analytics():
     """
-    Background worker function that aggregates records from the extracted_records table,
-    calculates metrics per pipeline and per worker, and saves the results to the db.
+    Aggregates records from the extracted_records table, calculates metrics
+    per pipeline and per worker, differentiating between indexing and detailing stages.
+    Saves the results to the db.
     """
     # 1. Fetch all configurations
     pipelines = PipelineConfiguration.objects.all()
     pipeline_configs = {p.name: p for p in pipelines}
 
-    # 2. Fetch all extracted records to avoid large number of N+1 queries
+    # 2. Query only the light fields from ExtractedRecord (avoid loading massive HTML content)
     records = ExtractedRecord.objects.values(
-        'id', 'record_type', 'extracted_at', 'data', 'target__entity__name'
+        'id',
+        'record_type',
+        'status',
+        'extracted_at',
+        'target__entity__name',
+        'data__worker_id',
+        'data__scraped_at',
+        'data__details_scraped_at',
+        'data__index_scraped_at'
     )
 
-    # 3. Group records by pipeline
-    grouped_records = {}
+    # 3. Group timestamps by pipeline, stage, and worker in memory
+    data_by_pipeline = {}
+
     for r in records:
         pipeline_name = r['target__entity__name'] or r['record_type'] or 'Unknown'
-        if pipeline_name not in grouped_records:
-            grouped_records[pipeline_name] = []
-        grouped_records[pipeline_name].append(r)
-
-    # 4. Calculate metrics for each pipeline
-    results = {}
-    for name, recs in grouped_records.items():
-        # Pipeline level
-        pipeline_metrics = calculate_uptime_and_rate(recs)
         
-        # Concurrency/Worker level breakdown
-        worker_groups = {}
-        for r in recs:
-            data = r.get('data') or {}
-            worker_id = data.get('worker_id')
-            worker_key = str(worker_id) if worker_id is not None else 'unknown'
-            if worker_key not in worker_groups:
-                worker_groups[worker_key] = []
-            worker_groups[worker_key].append(r)
+        # Resolve timestamp
+        ts = None
+        for key in ('data__details_scraped_at', 'data__scraped_at', 'data__index_scraped_at'):
+            val = r.get(key)
+            if val:
+                ts = parse_iso_datetime(val)
+                if ts:
+                    break
+        if not ts:
+            ts = r.get('extracted_at')
 
+        if not ts:
+            continue
+
+        worker_id = r.get('data__worker_id')
+        worker_key = str(worker_id) if worker_id is not None else 'unknown'
+        status = r.get('status') or 'indexed'
+
+        if pipeline_name not in data_by_pipeline:
+            data_by_pipeline[pipeline_name] = {
+                'indexed': {'overall': [], 'workers': {}},
+                'detailed': {'overall': [], 'workers': {}},
+                'all': {'overall': [], 'workers': {}}
+            }
+
+        pipe_data = data_by_pipeline[pipeline_name]
+
+        def append_to_stage(stage):
+            stage['overall'].append(ts)
+            if worker_key not in stage['workers']:
+                stage['workers'][worker_key] = []
+            stage['workers'][worker_key].append(ts)
+
+        if status == 'indexed':
+            append_to_stage(pipe_data['indexed'])
+        elif status == 'detailed':
+            append_to_stage(pipe_data['detailed'])
+
+        append_to_stage(pipe_data['all'])
+
+    # 4. Compute metrics and update databases
+    results = {}
+    for name, pipe_data in data_by_pipeline.items():
+        indexed_metrics = calculate_uptime_and_rate(pipe_data['indexed']['overall'])
+        indexed_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['indexed']['workers'].items()}
+
+        detailed_metrics = calculate_uptime_and_rate(pipe_data['detailed']['overall'])
+        detailed_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['detailed']['workers'].items()}
+
+        overall_metrics = calculate_uptime_and_rate(pipe_data['all']['overall'])
+        overall_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['all']['workers'].items()}
+
+        # Build worker breakdown
+        all_workers_keys = set(pipe_data['all']['workers'].keys())
         workers_breakdown = {}
-        for w_key, w_recs in worker_groups.items():
-            workers_breakdown[w_key] = calculate_uptime_and_rate(w_recs)
+        for w in all_workers_keys:
+            workers_breakdown[w] = {
+                "overall_totals": {
+                    "total_indexed": len(pipe_data['indexed']['workers'].get(w, [])),
+                    "total_detailed": len(pipe_data['detailed']['workers'].get(w, [])),
+                    "total_records": len(pipe_data['all']['workers'].get(w, []))
+                },
+                "overall": overall_workers.get(w, {}),
+                "indexing": indexed_workers.get(w, {}),
+                "detailing": detailed_workers.get(w, {})
+            }
 
-        # Get configured concurrency
         config = pipeline_configs.get(name)
         configured_concurrency = None
         if config:
@@ -126,7 +153,14 @@ def update_pipeline_analytics():
         metrics_payload = {
             "pipeline_name": name,
             "configured_concurrency": configured_concurrency,
-            "overall": pipeline_metrics,
+            "overall_totals": {
+                "total_indexed": len(pipe_data['indexed']['overall']),
+                "total_detailed": len(pipe_data['detailed']['overall']),
+                "total_records": len(pipe_data['all']['overall'])
+            },
+            "overall": overall_metrics,
+            "indexing": indexed_metrics,
+            "detailing": detailed_metrics,
             "workers": workers_breakdown
         }
         results[name] = metrics_payload
