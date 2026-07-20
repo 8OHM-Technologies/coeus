@@ -1,5 +1,5 @@
 -include .env
-export
+export GITHUB_ACCESS_TOKEN
 
 # Define phony targets so Make doesn't look for actual files with these names
 .PHONY: up down status logs dagster stop-dagster publish
