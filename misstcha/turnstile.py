@@ -18,7 +18,7 @@ class TurnstileSolver(BaseSolver):
 
     def __init__(
         self,
-        check_timeout: float = 5.0,
+        check_timeout: float = 8.0,
         solve_delay: float = 7.0,
         verify_timeout: float = 12.0,
         max_click_attempts: int = 2,
@@ -33,13 +33,77 @@ class TurnstileSolver(BaseSolver):
     # -----------------------------------------------------------------
 
     async def find_turnstile_frame(self, page: Page):
-        """Locate the Cloudflare Turnstile challenge iframe."""
+        """Locate the Cloudflare Turnstile challenge iframe.
+
+        Checks for several known URL patterns that Cloudflare uses for
+        Turnstile challenge iframes.
+        """
+        patterns = [
+            "challenges.cloudflare.com",
+            "challenge-platform.cloudflare.com",
+            "cloudflare.com/cdn-cgi/challenge-platform",
+            "turnstile.cloudflare.com",
+        ]
         steps = int(self.check_timeout / 0.5)
-        for _ in range(max(1, steps)):
+        for tick in range(max(1, steps)):
+            frame_urls = []
             for frame in page.frames:
-                if "challenges.cloudflare.com" in frame.url:
-                    return frame
+                url = frame.url
+                frame_urls.append(url)
+                for pattern in patterns:
+                    if pattern in url:
+                        logger.info(f"Found Turnstile frame matching '{pattern}': {url}")
+                        return frame
+            if tick == 0 or tick == steps - 1:
+                # Log all frames on first and last tick for diagnostics
+                logger.debug(f"[Turnstile discovery tick {tick}] All frames ({len(frame_urls)}): {frame_urls}")
             await asyncio.sleep(0.5)
+
+        # Final diagnostic dump — always log at INFO on failure so it shows up
+        all_urls = [f.url for f in page.frames]
+        logger.warning(
+            f"Turnstile frame not found after {self.check_timeout}s. "
+            f"Page frames ({len(all_urls)}): {all_urls}"
+        )
+        return None
+
+    # -----------------------------------------------------------------
+    # DOM Widget Discovery (no-iframe fallback)
+    # -----------------------------------------------------------------
+
+    async def find_turnstile_widget(self, page: Page) -> dict | None:
+        """Locate a Turnstile widget rendered directly in the page DOM.
+
+        Cloudflare's managed challenge and some Turnstile integrations
+        do NOT use a cross-origin iframe. Instead the widget is rendered
+        inside a ``<div class="cf-turnstile">`` container (or similar).
+
+        Returns the bounding box dict if found, or *None*.
+        """
+        # Selectors ordered by likelihood
+        selectors = [
+            "div.cf-turnstile",
+            "#cf-turnstile",
+            "#turnstile-wrapper",
+            "[data-sitekey]",              # generic Turnstile mount point
+            "div.cf-challenge-running",    # managed challenge container
+            "iframe[src*='cloudflare']",   # catch-all for any iframe we missed
+        ]
+        steps = int(self.check_timeout / 0.5)
+        for tick in range(max(1, steps)):
+            for sel in selectors:
+                try:
+                    loc = page.locator(sel).first
+                    if await loc.count() > 0 and await loc.is_visible():
+                        box = await loc.bounding_box()
+                        if box:
+                            logger.info(f"Found Turnstile DOM widget via selector '{sel}': {box}")
+                            return {"box": box, "selector": sel, "locator": loc}
+                except Exception:
+                    continue
+            await asyncio.sleep(0.5)
+
+        logger.warning("No Turnstile DOM widget found either.")
         return None
 
     # -----------------------------------------------------------------
@@ -56,10 +120,18 @@ class TurnstileSolver(BaseSolver):
            via ``window.turnstileToken``).
         """
         # 1. Frame gone?
+        cf_patterns = [
+            "challenges.cloudflare.com",
+            "challenge-platform.cloudflare.com",
+            "cloudflare.com/cdn-cgi/challenge-platform",
+            "turnstile.cloudflare.com",
+        ]
+        frame_still_present = False
         for frame in page.frames:
-            if "challenges.cloudflare.com" in frame.url:
+            if any(p in frame.url for p in cf_patterns):
+                frame_still_present = True
                 break
-        else:
+        if not frame_still_present:
             # No challenge frame found → cleared
             return True
 
@@ -113,6 +185,53 @@ class TurnstileSolver(BaseSolver):
         await page.mouse.up()
 
     # -----------------------------------------------------------------
+    # Internal Solve Routines
+    # -----------------------------------------------------------------
+
+    async def _solve_via_frame(self, page: Page, turnstile_frame, attempt: int) -> bool:
+        """Click the checkbox inside the Turnstile *iframe* and verify."""
+        frame_el = await turnstile_frame.frame_element()
+        if not frame_el:
+            logger.warning(f"[Attempt {attempt}] Could not retrieve frame element.")
+            return False
+
+        try:
+            await frame_el.scroll_into_view_if_needed()
+        except Exception as e:
+            logger.warning(f"Could not scroll turnstile frame into view: {e}")
+
+        box = await frame_el.bounding_box()
+        if not box:
+            logger.warning(f"[Attempt {attempt}] No bounding box for turnstile frame.")
+            return False
+
+        click_x = box["x"] + 30 + random.randint(-5, 5)
+        click_y = box["y"] + (box["height"] / 2) + random.randint(-4, 4)
+        logger.info(
+            f"[Attempt {attempt}] Clicking iframe checkbox at ({click_x:.0f}, {click_y:.0f}) "
+            f"[frame box: {box['width']:.0f}×{box['height']:.0f}]"
+        )
+
+        await self._human_move_and_click(page, click_x, click_y)
+        return True
+
+    async def _solve_via_widget(self, page: Page, widget_info: dict, attempt: int) -> bool:
+        """Click the checkbox inside a DOM-rendered Turnstile *widget*."""
+        box = widget_info["box"]
+        sel = widget_info["selector"]
+
+        # The checkbox is typically in the left portion of the widget
+        click_x = box["x"] + min(30, box["width"] * 0.15) + random.randint(-3, 3)
+        click_y = box["y"] + (box["height"] / 2) + random.randint(-3, 3)
+        logger.info(
+            f"[Attempt {attempt}] Clicking DOM widget checkbox at ({click_x:.0f}, {click_y:.0f}) "
+            f"[widget '{sel}': {box['width']:.0f}×{box['height']:.0f}]"
+        )
+
+        await self._human_move_and_click(page, click_x, click_y)
+        return True
+
+    # -----------------------------------------------------------------
     # Public API
     # -----------------------------------------------------------------
 
@@ -126,27 +245,46 @@ class TurnstileSolver(BaseSolver):
     ) -> Dict[str, Any]:
         """Find and solve the Cloudflare Turnstile checkbox.
 
-        Improvements over the legacy solver:
-        - Verifies the challenge is actually cleared after clicking.
-        - Retries the click up to *max_click_attempts* times.
-        - Varies mouse movement and timing to reduce behavioural fingerprinting.
+        Strategy:
+        1. Look for the challenge in a cross-origin iframe (classic Turnstile).
+        2. If no iframe is found, search the DOM for a widget container
+           (managed challenge / inline Turnstile).
+        3. Click the checkbox and verify clearance.
         """
+        # --- Discover the challenge target ---
         turnstile_frame = await self.find_turnstile_frame(page)
+        widget_info = None
+        mode = "frame"
 
         if not turnstile_frame:
-            return {"success": False, "error": "Cloudflare Turnstile frame not found."}
+            logger.info("No Turnstile iframe found. Searching for DOM widget fallback...")
+            widget_info = await self.find_turnstile_widget(page)
+            if not widget_info:
+                return {
+                    "success": False,
+                    "error": "Cloudflare Turnstile frame not found and no DOM widget detected.",
+                }
+            mode = "widget"
 
-        logger.info("Cloudflare Turnstile challenge detected. Attempting to solve...")
+        logger.info(f"Cloudflare Turnstile challenge detected (mode={mode}). Attempting to solve...")
 
         for attempt in range(1, self.max_click_attempts + 1):
-            # Re-locate the frame on retries (it may have been refreshed)
+            # Re-locate target on retries
             if attempt > 1:
-                turnstile_frame = await self.find_turnstile_frame(page)
-                if not turnstile_frame:
-                    return {
-                        "success": False,
-                        "error": f"Turnstile frame disappeared before attempt {attempt}.",
-                    }
+                if mode == "frame":
+                    turnstile_frame = await self.find_turnstile_frame(page)
+                    if not turnstile_frame:
+                        return {
+                            "success": False,
+                            "error": f"Turnstile frame disappeared before attempt {attempt}.",
+                        }
+                else:
+                    widget_info = await self.find_turnstile_widget(page)
+                    if not widget_info:
+                        return {
+                            "success": False,
+                            "error": f"Turnstile widget disappeared before attempt {attempt}.",
+                        }
 
             # Wait for the widget JS to fully initialise
             delay = self.solve_delay + random.uniform(-0.5, 1.5)
@@ -156,33 +294,16 @@ class TurnstileSolver(BaseSolver):
             )
             await asyncio.sleep(delay)
 
-            frame_el = await turnstile_frame.frame_element()
-            if not frame_el:
-                logger.warning(f"[Attempt {attempt}] Could not retrieve frame element.")
-                continue
-
             try:
-                await frame_el.scroll_into_view_if_needed()
-            except Exception as e:
-                logger.warning(f"Could not scroll turnstile frame into view: {e}")
-
-            box = await frame_el.bounding_box()
-            if not box:
-                logger.warning(f"[Attempt {attempt}] No bounding box for turnstile frame.")
-                continue
-
-            # Target the checkbox area (left side of the Turnstile widget)
-            click_x = box["x"] + 30 + random.randint(-5, 5)
-            click_y = box["y"] + (box["height"] / 2) + random.randint(-4, 4)
-            logger.info(
-                f"[Attempt {attempt}] Clicking checkbox at ({click_x:.0f}, {click_y:.0f}) "
-                f"[frame box: {box['width']:.0f}×{box['height']:.0f}]"
-            )
-
-            try:
-                await self._human_move_and_click(page, click_x, click_y)
+                if mode == "frame":
+                    clicked = await self._solve_via_frame(page, turnstile_frame, attempt)
+                else:
+                    clicked = await self._solve_via_widget(page, widget_info, attempt)
             except Exception as e:
                 logger.error(f"[Attempt {attempt}] Click failed: {e}")
+                clicked = False
+
+            if not clicked:
                 continue
 
             # --- Verify the click actually worked ---
@@ -220,7 +341,7 @@ class TurnstileSolver(BaseSolver):
             "verified": False,
             "error": (
                 f"Turnstile challenge not cleared after {self.max_click_attempts} "
-                f"click attempt(s). Cloudflare may be detecting automation."
+                f"click attempt(s) via {mode} mode. Cloudflare may be detecting automation."
             ),
         }
 
