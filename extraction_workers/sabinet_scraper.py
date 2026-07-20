@@ -269,21 +269,23 @@ class SabinetScraper(BaseScraper):
 
     async def indexing(self) -> None:
         """Sub-process A: Extracts records utilizing programmatic rolling timeframe parameters."""
-        if self.progress_state.get("fully_complete"):
-            logger.info("✅ Pipeline status matches complete flag definitions. Skipping index stage.")
-            return
-
         from utils.browser_helper import BrowserManager
         start_url = (
             self.config.get("start_url")
             or "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards"
         )
         extraction_params = self.config.get("extraction_params") or {}
+        incremental = extraction_params.get("incremental", False)
+
+        if self.progress_state.get("fully_complete") and not incremental:
+            logger.info("✅ Pipeline status matches complete flag definitions. Skipping index stage.")
+            return
+
         reverse_direction = extraction_params.get("reverse_direction", False)
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
 
-        resume_year: int = self.progress_state.get("last_year", 0)
-        resume_month: int = self.progress_state.get("last_month", 0)
+        resume_year: int = 0 if incremental else self.progress_state.get("last_year", 0)
+        resume_month: int = 0 if incremental else self.progress_state.get("last_month", 0)
         last_completed: bool = self.progress_state.get("last_completed", True)
 
         if last_completed and resume_year > 0:
@@ -333,7 +335,14 @@ class SabinetScraper(BaseScraper):
                 }
             """)
             year_entries = [(int(y), int(c)) for y, c in raw_years]
-            year_entries.sort(key=lambda x: x[0], reverse=reverse_direction)
+            if incremental:
+                current_year = datetime.now().year
+                year_entries = [entry for entry in year_entries if entry[0] == current_year]
+                if not year_entries:
+                    year_entries = [(current_year, 1)]
+                logger.info(f"🔄 Incremental mode: Limit scanning to current year {current_year}")
+            else:
+                year_entries.sort(key=lambda x: x[0], reverse=reverse_direction)
             logger.info("Target timelines loaded: " + ", ".join(f"{y}({c})" for y, c in year_entries))
         except Exception as ye:
             logger.warning(f"Could not read dynamic timeline sidebars: {ye}. Resetting defaults to current year.")
