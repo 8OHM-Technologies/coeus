@@ -156,7 +156,7 @@ class SafliiScraper(BaseScraper):
                 elapsed = 0.0
                 while elapsed < max_wait:
                     try:
-                        await page.wait_for_load_state("domcontentloaded", timeout=2000)
+                        await asyncio.sleep(5)
                     except Exception:
                         pass
                     state = check_page_state(await page.content())
@@ -172,7 +172,7 @@ class SafliiScraper(BaseScraper):
             elapsed = 0.0
             while elapsed < max_wait:
                 try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=2000)
+                    await asyncio.sleep(5)
                 except Exception:
                     pass
                 state = check_page_state(await page.content())
