@@ -268,7 +268,7 @@ class SafliiScraper(BaseScraper):
                 # Reload the page to check if another worker already cleared the Turnstile challenge
                 logger.info(f"Checking Turnstile cookie sharing via reload for [{attempt_prefix}]...")
                 try:
-                    await page.reload(timeout=15000)
+                    await page.reload(timeout=8000)
                 except Exception:
                     pass
                 title, h1, body = await get_page_signals(page)
@@ -288,7 +288,7 @@ class SafliiScraper(BaseScraper):
                     if load_result == "TIMEOUT":
                         logger.warning(f"Post-solve page load timed out for [{attempt_prefix}]. Attempting page reload to trigger cookie validation...")
                         try:
-                            await page.reload(timeout=20000)
+                            await page.reload(timeout=8000)
                             load_result = await wait_for_page_load(page, url_type)
                         except Exception as reload_err:
                             logger.warning(f"Page reload failed: {reload_err}")
@@ -329,7 +329,7 @@ class SafliiScraper(BaseScraper):
         start_success = False
         year_links = []
         
-        for attempt in range(1, 6):
+        for attempt in range(1, 4):
             try:
                 await page.goto(self.start_url, timeout=30000)
                 if self.take_debug_screenshots:
@@ -377,7 +377,7 @@ class SafliiScraper(BaseScraper):
             logger.info(f"Processing structural year context directory: {year} -> {year_url}")
             await log_browser_proxy_ip(page, f"Year {year}", self.use_proxy)
 
-            for attempt in range(1, 6):
+            for attempt in range(1, 4):
                 try:
                     await page.goto(year_url, timeout=30000)
                     if self.take_debug_screenshots:
@@ -477,7 +477,7 @@ class SafliiScraper(BaseScraper):
                     logger.info(f"[Worker {worker_id}][{idx}/{len(self.case_urls)}] Detailed enrichment active -> {case_url}")
                     success = False
 
-                    for attempt in range(1, 6):
+                    for attempt in range(1, 4):
                         try:
                             await page.goto(case_url, timeout=30000)
                             if self.take_debug_screenshots:
