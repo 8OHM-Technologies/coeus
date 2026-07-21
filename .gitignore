@@ -221,7 +221,7 @@ __marimo__/
 
 #Custom
 project_context.json
-data
+data/
 ohmbase/bookstack_app_data/
 ohmbase/bookstack_db_data/
 control_plane/staticfiles/
@@ -230,3 +230,4 @@ data/lotto_results/historical_lotto_results.csv
 .playwright-cli/
 ohmbot-telegram/
 ohmbase/bookstack_db_data/log/mysql/mariadb-bin.index
+postgres_data/
