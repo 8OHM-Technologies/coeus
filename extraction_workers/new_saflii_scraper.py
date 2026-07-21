@@ -449,8 +449,19 @@ class SafliiScraper(BaseScraper):
             nonlocal total_new
             logger.info(f"Worker {worker_id} started.")
             
-            # Create a dedicated page for this worker under the shared context
-            page = await self.browser_manager.context.new_page()
+            # Create a dedicated context and page for this worker to ensure a different proxy IP
+            context = None
+            if self.use_proxy and self.proxy_url:
+                from utils.browser_helper import create_browser_context
+                context, page = await create_browser_context(
+                    self.browser_manager.browser,
+                    ignore_https_errors=self.config.get("allow_insecure_requests", False),
+                    proxy_url=self.proxy_url,
+                    viewport={"width": 1280, "height": 720},
+                )
+            else:
+                context = self.browser_manager.context
+                page = await context.new_page()
             
             try:
                 while not queue.empty():
@@ -550,6 +561,8 @@ class SafliiScraper(BaseScraper):
                     queue.task_done()
             finally:
                 await page.close()
+                if self.use_proxy and self.proxy_url:
+                    await context.close()
                 logger.info(f"Worker {worker_id} stopped.")
 
         # Run workers concurrently

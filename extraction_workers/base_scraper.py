@@ -63,6 +63,10 @@ class BaseScraper(ABC):
         self.progress_state = await db_storage.load_pipeline_state(self.conn, self.pipeline_name)
         logger.info(f"Progress state loaded for execution footprint: {self.progress_state}")
 
+        # Hydrate internal proxies if present in config maps
+        self.use_proxy = self.config.get("use_proxy", False)
+        self.proxy_url = self.config.get("proxy_url")
+
     async def save_progress(self, year: int, month: int, completed: bool = False) -> None:
         """Persists rolling-window pagination execution markers into storage."""
         self.progress_state["last_year"] = year

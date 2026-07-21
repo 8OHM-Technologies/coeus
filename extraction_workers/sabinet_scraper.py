@@ -308,6 +308,7 @@ class SabinetScraper(BaseScraper):
             headless=True,
             ignore_https_errors=self.config.get("allow_insecure_https", False),
             storage_state=db_storage_state,
+            proxy_url=self.proxy_url if self.use_proxy else None,
         )
 
         page = await self.browser_manager.start()
@@ -621,8 +622,20 @@ class SabinetScraper(BaseScraper):
             nonlocal count
             logger.info(f"Worker {worker_id} started.")
             
-            # Create a dedicated page for this worker under the shared context
-            page = await self.browser_manager.context.new_page()
+            # Create a dedicated context and page for this worker to ensure a different proxy IP
+            context = None
+            if self.use_proxy and self.proxy_url:
+                from utils.browser_helper import create_browser_context
+                context, page = await create_browser_context(
+                    self.browser_manager.browser,
+                    ignore_https_errors=self.config.get("allow_insecure_https", False),
+                    storage_state=self.progress_state.get("storage_state"),
+                    proxy_url=self.proxy_url,
+                    viewport={"width": 1280, "height": 800},
+                )
+            else:
+                context = self.browser_manager.context
+                page = await context.new_page()
             
             try:
                 while not queue.empty():
@@ -681,7 +694,18 @@ class SabinetScraper(BaseScraper):
                                         
                                         await self.browser_manager.recycle()
                                         await page.close()
-                                        page = await self.browser_manager.context.new_page()
+                                        if self.use_proxy and self.proxy_url:
+                                            await context.close()
+                                            from utils.browser_helper import create_browser_context
+                                            context, page = await create_browser_context(
+                                                self.browser_manager.browser,
+                                                ignore_https_errors=self.config.get("allow_insecure_https", False),
+                                                storage_state=self.progress_state.get("storage_state"),
+                                                proxy_url=self.proxy_url,
+                                                viewport={"width": 1280, "height": 800},
+                                            )
+                                        else:
+                                            page = await self.browser_manager.context.new_page()
                                         
                                         logger.info(f"[Worker {worker_id}] Retrying target detail payload location path -> {url}")
                                         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -730,6 +754,8 @@ class SabinetScraper(BaseScraper):
                     queue.task_done()
             finally:
                 await page.close()
+                if self.use_proxy and self.proxy_url:
+                    await context.close()
                 logger.info(f"Worker {worker_id} stopped.")
 
         # Run workers concurrently

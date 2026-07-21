@@ -50,6 +50,18 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
     Fetches pipeline configuration, prioritizing environment variables
     provided by the dynamic_factory, falling back to the Control Plane API.
     """
+    # Build proxy_url from individual environment variables if available
+    proxy_host = os.getenv("PROXY_HOST")
+    proxy_port = os.getenv("PROXY_PORT")
+    proxy_username = os.getenv("PROXY_USERNAME")
+    proxy_password = os.getenv("PROXY_PASSWORD")
+    proxy_url = None
+    if proxy_host and proxy_port:
+        if proxy_username and proxy_password:
+            proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_host}:{proxy_port}"
+        else:
+            proxy_url = f"http://{proxy_host}:{proxy_port}"
+
     # 1. Try to load from environment variables (provided by dynamic_factory)
     env_config = {
         "start_url": os.getenv("START_URL"),
@@ -59,6 +71,7 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
         "allow_insecure_requests": os.getenv("ALLOW_INSECURE_REQUESTS", "False").lower()
         == "true",
         "use_proxy": os.getenv("USE_PROXY", "False").lower() == "true",
+        "proxy_url": proxy_url,
         "name": os.getenv("PIPELINE_NAME", pipeline_name_or_id),
         "subset": os.getenv("SUBSET", ""),
     }
@@ -116,6 +129,7 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
             "name": config.get("name"),
             "subset": config.get("subset", ""),
             "use_proxy": config["phase_1_ingestion"].get("use_proxy", False),
+            "proxy_url": proxy_url,
         }
 
         if standard_config.get("allow_insecure_requests"):
