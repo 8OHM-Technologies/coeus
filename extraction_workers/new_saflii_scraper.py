@@ -450,18 +450,13 @@ class SafliiScraper(BaseScraper):
             logger.info(f"Worker {worker_id} started.")
             
             # Create a dedicated context and page for this worker to ensure a different proxy IP
-            context = None
-            if self.use_proxy and self.proxy_url:
-                from utils.browser_helper import create_browser_context
-                context, page = await create_browser_context(
-                    self.browser_manager.browser,
-                    ignore_https_errors=self.config.get("allow_insecure_requests", False),
-                    proxy_url=self.proxy_url,
-                    viewport={"width": 1280, "height": 720},
-                )
-            else:
-                context = self.browser_manager.context
-                page = await context.new_page()
+            from utils.browser_helper import create_browser_context
+            context, page = await create_browser_context(
+                self.browser_manager.browser,
+                ignore_https_errors=self.config.get("allow_insecure_requests", False),
+                proxy_url=self.proxy_url if self.use_proxy else None,
+                viewport={"width": 1280, "height": 720},
+            )
             
             try:
                 while not queue.empty():
@@ -550,6 +545,36 @@ class SafliiScraper(BaseScraper):
                             if attempt < 5:
                                 await asyncio.sleep(attempt * 5)
                         except Exception as err:
+                            err_msg = str(err).lower()
+                            if "closed" in err_msg or "connection" in err_msg:
+                                logger.error(f"[Worker {worker_id}] Browser connection lost: {err}. Attempting self-healing recovery...")
+                                async with self.db_lock:
+                                    if not self.browser_manager.browser or not self.browser_manager.browser.is_connected():
+                                        logger.warning(f"[Worker {worker_id}] Browser process is disconnected. Restarting BrowserManager...")
+                                        try:
+                                            await self.browser_manager.recycle()
+                                        except Exception as recycle_err:
+                                            logger.error(f"[Worker {worker_id}] Failed to recycle browser manager: {recycle_err}")
+                                try:
+                                    try:
+                                        await page.close()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        await context.close()
+                                    except Exception:
+                                        pass
+                                    context, page = await create_browser_context(
+                                        self.browser_manager.browser,
+                                        ignore_https_errors=self.config.get("allow_insecure_requests", False),
+                                        proxy_url=self.proxy_url if self.use_proxy else None,
+                                        viewport={"width": 1280, "height": 720},
+                                    )
+                                except Exception as recreate_err:
+                                    logger.error(f"[Worker {worker_id}] Failed to recreate worker context/page: {recreate_err}")
+                                    await asyncio.sleep(5)
+                                continue
+
                             logger.warning(f"[Worker {worker_id}] Enrichment payload extraction error on asset {c_id} [Attempt {attempt}]: {err}")
                             if self.take_debug_screenshots:
                                 await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_error")
@@ -560,9 +585,14 @@ class SafliiScraper(BaseScraper):
                         await asyncio.sleep(self.cooldown_seconds)
                     queue.task_done()
             finally:
-                await page.close()
-                if self.use_proxy and self.proxy_url:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+                try:
                     await context.close()
+                except Exception:
+                    pass
                 logger.info(f"Worker {worker_id} stopped.")
 
         # Run workers concurrently

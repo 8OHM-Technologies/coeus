@@ -622,20 +622,15 @@ class SabinetScraper(BaseScraper):
             nonlocal count
             logger.info(f"Worker {worker_id} started.")
             
-            # Create a dedicated context and page for this worker to ensure a different proxy IP
-            context = None
-            if self.use_proxy and self.proxy_url:
-                from utils.browser_helper import create_browser_context
-                context, page = await create_browser_context(
-                    self.browser_manager.browser,
-                    ignore_https_errors=self.config.get("allow_insecure_https", False),
-                    storage_state=self.progress_state.get("storage_state"),
-                    proxy_url=self.proxy_url,
-                    viewport={"width": 1280, "height": 800},
-                )
-            else:
-                context = self.browser_manager.context
-                page = await context.new_page()
+            # Create a dedicated context and page for this worker
+            from utils.browser_helper import create_browser_context
+            context, page = await create_browser_context(
+                self.browser_manager.browser,
+                ignore_https_errors=self.config.get("allow_insecure_https", False),
+                storage_state=self.progress_state.get("storage_state"),
+                proxy_url=self.proxy_url if self.use_proxy else None,
+                viewport={"width": 1280, "height": 800},
+            )
             
             try:
                 consecutive_crashes = 0
@@ -663,7 +658,6 @@ class SabinetScraper(BaseScraper):
                             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
                             await page.wait_for_load_state("networkidle")
 
-                            # Periodically dismiss cookie consent
                             if progress_idx % 50 == 0:
                                 await dismiss_cookie_consent(page)
 
@@ -675,52 +669,36 @@ class SabinetScraper(BaseScraper):
 
                             detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
 
-                            # Self-healing Authentication check
                             if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
-                                async with self.auth_lock:
-                                    # Reload state to check if another worker already re-authenticated
-                                    self.progress_state = await db_storage.load_pipeline_state(self.conn, index_pipeline_name)
-                                    self.browser_manager.storage_state = self.progress_state.get("storage_state")
-                                    
-                                    await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                                    await page.wait_for_load_state("networkidle")
-                                    detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
+                                logger.warning(f"[Worker {worker_id}] 🔒 Session signature invalidated! Refreshing security token states...")
+                                await self.authenticate(headless=True)
+                                
+                                self.progress_state = await db_storage.load_pipeline_state(self.conn, index_pipeline_name)
+                                self.browser_manager.storage_state = self.progress_state.get("storage_state")
+                                
+                                await page.close()
+                                await context.close()
+                                context, page = await create_browser_context(
+                                    self.browser_manager.browser,
+                                    ignore_https_errors=self.config.get("allow_insecure_https", False),
+                                    storage_state=self.progress_state.get("storage_state"),
+                                    proxy_url=self.proxy_url if self.use_proxy else None,
+                                    viewport={"width": 1280, "height": 800},
+                                )
+                                
+                                logger.info(f"[Worker {worker_id}] Retrying target detail payload location path -> {url}")
+                                await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                                await page.wait_for_load_state("networkidle")
+                                
+                                try:
+                                    await page.wait_for_selector('div.item-content-loaded', timeout=15000)
+                                except Exception:
+                                    continue
 
-                                    if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
-                                        logger.warning(f"[Worker {worker_id}] 🔒 Session signature invalidated! Refreshing security token states...")
-                                        await self.authenticate(headless=True)
-                                        
-                                        self.progress_state = await db_storage.load_pipeline_state(self.conn, index_pipeline_name)
-                                        self.browser_manager.storage_state = self.progress_state.get("storage_state")
-                                        
-                                        await self.browser_manager.recycle()
-                                        await page.close()
-                                        if self.use_proxy and self.proxy_url:
-                                            await context.close()
-                                            from utils.browser_helper import create_browser_context
-                                            context, page = await create_browser_context(
-                                                self.browser_manager.browser,
-                                                ignore_https_errors=self.config.get("allow_insecure_https", False),
-                                                storage_state=self.progress_state.get("storage_state"),
-                                                proxy_url=self.proxy_url,
-                                                viewport={"width": 1280, "height": 800},
-                                            )
-                                        else:
-                                            page = await self.browser_manager.context.new_page()
-                                        
-                                        logger.info(f"[Worker {worker_id}] Retrying target detail payload location path -> {url}")
-                                        await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                                        await page.wait_for_load_state("networkidle")
-                                        
-                                        try:
-                                            await page.wait_for_selector('div.item-content-loaded', timeout=15000)
-                                        except Exception:
-                                            continue
-
-                                        detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
-                                        if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
-                                            logger.error("🔒 Authentication token deployment failed completely. Exiting engine session execution loops.")
-                                            sys.exit(1)
+                                detail_info = await page.evaluate(_EXTRACT_DETAIL_JS)
+                                if detail_info.get("content_loaded") and not detail_info.get("auth_ok"):
+                                    logger.error("🔒 Authentication token deployment failed completely. Exiting engine session execution loops.")
+                                    sys.exit(1)
 
                             if not detail_info.get("content_loaded"):
                                 continue
@@ -749,39 +727,50 @@ class SabinetScraper(BaseScraper):
 
                         except Exception as page_err:
                             err_str = str(page_err)
-                            is_crash = "crash" in err_str.lower()
+                            is_closed_err = "closed" in err_str.lower() or "connection" in err_str.lower()
+                            is_crash = "crash" in err_str.lower() or is_closed_err
 
                             if is_crash:
                                 consecutive_crashes += 1
                                 logger.error(
-                                    f"[Worker {worker_id}] 💥 Page crashed on {url} (attempt {attempt}/3, "
-                                    f"consecutive crashes: {consecutive_crashes}). Recreating page..."
+                                    f"[Worker {worker_id}] 💥 Page crashed/closed on {url} (attempt {attempt}/3, "
+                                    f"consecutive crashes: {consecutive_crashes}). Recreating..."
                                 )
-                                # The old page is dead — close it and open a fresh one
+                                
+                                if is_closed_err:
+                                    logger.error(f"[Worker {worker_id}] Browser connection lost. Attempting self-healing recovery...")
+                                    async with self.db_lock:
+                                        if not self.browser_manager.browser or not self.browser_manager.browser.is_connected():
+                                            logger.warning(f"[Worker {worker_id}] Browser process is disconnected. Restarting BrowserManager...")
+                                            try:
+                                                await self.browser_manager.recycle()
+                                            except Exception as recycle_err:
+                                                logger.error(f"[Worker {worker_id}] Failed to recycle browser manager: {recycle_err}")
+
                                 try:
-                                    await page.close()
-                                except Exception:
-                                    pass
-                                try:
-                                    if self.use_proxy and self.proxy_url:
-                                        from utils.browser_helper import create_browser_context
-                                        if context:
-                                            await context.close()
-                                        context, page = await create_browser_context(
-                                            self.browser_manager.browser,
-                                            ignore_https_errors=self.config.get("allow_insecure_https", False),
-                                            storage_state=self.progress_state.get("storage_state"),
-                                            proxy_url=self.proxy_url,
-                                            viewport={"width": 1280, "height": 800},
-                                        )
-                                    else:
-                                        page = await self.browser_manager.context.new_page()
+                                    try:
+                                        await page.close()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        await context.close()
+                                    except Exception:
+                                        pass
+                                    
+                                    context, page = await create_browser_context(
+                                        self.browser_manager.browser,
+                                        ignore_https_errors=self.config.get("allow_insecure_https", False),
+                                        storage_state=self.progress_state.get("storage_state"),
+                                        proxy_url=self.proxy_url if self.use_proxy else None,
+                                        viewport={"width": 1280, "height": 800},
+                                    )
                                 except Exception as recreate_err:
-                                    logger.error(f"[Worker {worker_id}] Failed to recreate page after crash: {recreate_err}")
-                                    return  # Browser itself is likely dead, stop this worker
+                                    logger.error(f"[Worker {worker_id}] Failed to recreate page/context: {recreate_err}")
+                                    await asyncio.sleep(5)
+                                    continue
 
                                 if consecutive_crashes >= 5:
-                                    logger.error(f"[Worker {worker_id}] Too many consecutive page crashes ({consecutive_crashes}). Stopping worker — Chrome may be out of memory.")
+                                    logger.error(f"[Worker {worker_id}] Too many consecutive crashes/disconnects ({consecutive_crashes}). Stopping worker.")
                                     return
 
                                 await asyncio.sleep(3)
@@ -797,18 +786,15 @@ class SabinetScraper(BaseScraper):
                     await page.close()
                 except Exception:
                     pass
-                if self.use_proxy and self.proxy_url and context and context != self.browser_manager.context:
-                    try:
-                        await context.close()
-                    except Exception:
-                        pass
+                try:
+                    await context.close()
+                except Exception:
+                    pass
                 logger.info(f"Worker {worker_id} stopped.")
 
-        # Run workers concurrently
         workers = [asyncio.create_task(worker(i)) for i in range(1, concurrency + 1)]
         await queue.join()
 
-        # Cancel any idle worker tasks
         for w in workers:
             w.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
