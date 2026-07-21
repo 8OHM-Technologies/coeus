@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone as dt_timezone
 from extracted_data.models import ExtractedRecord
 from .models import PipelineConfiguration, ScrapingPipelineMetrics
 
@@ -13,6 +13,12 @@ def parse_iso_datetime(val):
     except ValueError:
         return None
 
+def make_aware(ts):
+    """Ensure a timestamp is timezone-aware (assumes UTC if naive)."""
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=dt_timezone.utc)
+    return ts
+
 def calculate_uptime_and_rate(timestamps):
     """
     Calculates the active uptime duration, number of active intervals, and average scrape rate.
@@ -23,7 +29,8 @@ def calculate_uptime_and_rate(timestamps):
             "uptime_seconds": 0.0,
             "total_scraped": 0,
             "active_scraped_count": 0,
-            "average_scrape_rate": 0.0
+            "scrape_rate": 0.0,
+            "scrape_rate_per_hour": 0.0
         }
 
     # Sort timestamps in ascending order
@@ -46,7 +53,8 @@ def calculate_uptime_and_rate(timestamps):
         "uptime_seconds": uptime_seconds,
         "total_scraped": len(timestamps),
         "active_scraped_count": active_scraped_count,
-        "average_scrape_rate": rate
+        "scrape_rate": rate,
+        "scrape_rate_per_hour": rate * 3600
     }
 
 def update_pipeline_analytics():
@@ -58,6 +66,11 @@ def update_pipeline_analytics():
     # 1. Fetch all configurations
     pipelines = PipelineConfiguration.objects.all()
     pipeline_configs = {p.name: p for p in pipelines}
+
+    # 7-day wall-clock window
+    now = datetime.now(dt_timezone.utc)
+    seven_days_ago = now - timedelta(days=7)
+    SEVEN_DAYS_SECONDS = 7 * 24 * 3600  # 604800
 
     # 2. Query only the light fields from ExtractedRecord (avoid loading massive HTML content)
     records = ExtractedRecord.objects.values(
@@ -130,6 +143,20 @@ def update_pipeline_analytics():
         overall_metrics = calculate_uptime_and_rate(pipe_data['all']['overall'])
         overall_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['all']['workers'].items()}
 
+        # 7-day wall-clock rate (includes downtime)
+        recent_all = [ts for ts in pipe_data['all']['overall'] if make_aware(ts) >= seven_days_ago]
+        recent_indexed = [ts for ts in pipe_data['indexed']['overall'] if make_aware(ts) >= seven_days_ago]
+        recent_detailed = [ts for ts in pipe_data['detailed']['overall'] if make_aware(ts) >= seven_days_ago]
+
+        seven_day_rate = {
+            "period_seconds": SEVEN_DAYS_SECONDS,
+            "total_records": len(recent_all),
+            "total_indexed": len(recent_indexed),
+            "total_detailed": len(recent_detailed),
+            "scrape_rate": len(recent_all) / SEVEN_DAYS_SECONDS,
+            "scrape_rate_per_hour": len(recent_all) / SEVEN_DAYS_SECONDS * 3600,
+        }
+
         # Build worker breakdown
         all_workers_keys = set(pipe_data['all']['workers'].keys())
         workers_breakdown = {}
@@ -161,6 +188,7 @@ def update_pipeline_analytics():
             "overall": overall_metrics,
             "indexing": indexed_metrics,
             "detailing": detailed_metrics,
+            "last_7_days": seven_day_rate,
             "workers": workers_breakdown
         }
         results[name] = metrics_payload
