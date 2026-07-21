@@ -638,6 +638,7 @@ class SabinetScraper(BaseScraper):
                 page = await context.new_page()
             
             try:
+                consecutive_crashes = 0
                 while not queue.empty():
                     try:
                         progress_idx, case_item = queue.get_nowait()
@@ -742,20 +743,65 @@ class SabinetScraper(BaseScraper):
                             
                             async with count_lock:
                                 count += 1
+                            consecutive_crashes = 0
                             logger.info(f"[Worker {worker_id}] [+] Enriched tracking map row with {len(metadata)} fields.")
                             break
 
                         except Exception as page_err:
-                            logger.error(f"[Worker {worker_id}] Failed parsing detail target row at path {url} (attempt {attempt}/3): {page_err}")
-                            await asyncio.sleep(2)
+                            err_str = str(page_err)
+                            is_crash = "crash" in err_str.lower()
+
+                            if is_crash:
+                                consecutive_crashes += 1
+                                logger.error(
+                                    f"[Worker {worker_id}] 💥 Page crashed on {url} (attempt {attempt}/3, "
+                                    f"consecutive crashes: {consecutive_crashes}). Recreating page..."
+                                )
+                                # The old page is dead — close it and open a fresh one
+                                try:
+                                    await page.close()
+                                except Exception:
+                                    pass
+                                try:
+                                    if self.use_proxy and self.proxy_url:
+                                        from utils.browser_helper import create_browser_context
+                                        if context:
+                                            await context.close()
+                                        context, page = await create_browser_context(
+                                            self.browser_manager.browser,
+                                            ignore_https_errors=self.config.get("allow_insecure_https", False),
+                                            storage_state=self.progress_state.get("storage_state"),
+                                            proxy_url=self.proxy_url,
+                                            viewport={"width": 1280, "height": 800},
+                                        )
+                                    else:
+                                        page = await self.browser_manager.context.new_page()
+                                except Exception as recreate_err:
+                                    logger.error(f"[Worker {worker_id}] Failed to recreate page after crash: {recreate_err}")
+                                    return  # Browser itself is likely dead, stop this worker
+
+                                if consecutive_crashes >= 5:
+                                    logger.error(f"[Worker {worker_id}] Too many consecutive page crashes ({consecutive_crashes}). Stopping worker — Chrome may be out of memory.")
+                                    return
+
+                                await asyncio.sleep(3)
+                            else:
+                                logger.error(f"[Worker {worker_id}] Failed parsing detail target row at path {url} (attempt {attempt}/3): {page_err}")
+                                await asyncio.sleep(2)
 
                     cooldown_seconds = float(extraction_params.get("cooldown_seconds", 2.0))
                     await asyncio.sleep(cooldown_seconds)
                     queue.task_done()
             finally:
-                await page.close()
-                if self.use_proxy and self.proxy_url:
-                    await context.close()
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+                if self.use_proxy and self.proxy_url and context and context != self.browser_manager.context:
+                    try:
+                        await context.close()
+                    except Exception:
+                        pass
                 logger.info(f"Worker {worker_id} stopped.")
 
         # Run workers concurrently

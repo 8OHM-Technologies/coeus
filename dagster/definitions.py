@@ -266,6 +266,7 @@ def raw_scraped_pages(
             "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
             "user": "root",
             "auto_remove": True,
+            "shm_size": "2g",
         }
     )
     return result.get_materialize_result()
