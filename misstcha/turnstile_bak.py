@@ -2,8 +2,6 @@ import asyncio
 import logging
 import os
 import random
-import urllib.request
-import json
 from datetime import datetime
 from typing import Any, Dict
 from playwright.async_api import Page
@@ -58,150 +56,6 @@ class TurnstileSolver(BaseSolver):
         await asyncio.sleep(random.uniform(0.05, 0.15))
         await page.mouse.up()
 
-    def _get_descendant_pids(self, pid: int) -> list[int]:
-        descendants = []
-        try:
-            for pid_str in os.listdir('/proc'):
-                if not pid_str.isdigit():
-                    continue
-                try:
-                    with open(f'/proc/{pid_str}/stat', 'r') as f:
-                        stat = f.read().split()
-                    ppid = int(stat[3])
-                    if ppid == pid:
-                        child_pid = int(pid_str)
-                        descendants.append(child_pid)
-                        descendants.extend(self._get_descendant_pids(child_pid))
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        return descendants
-
-    def _find_cdp_port(self) -> int:
-        mypid = os.getpid()
-        descendants = self._get_descendant_pids(mypid)
-        pids = [mypid] + descendants
-        for pid in pids:
-            try:
-                with open(f'/proc/{pid}/cmdline', 'rb') as f:
-                    cmdline = f.read()
-                if b'--remote-debugging-port=' in cmdline:
-                    s = cmdline.decode('utf-8', errors='ignore')
-                    parts = []
-                    for part in s.split('\x00'):
-                        parts.extend(part.split(' '))
-                    for part in parts:
-                        if part.startswith('--remote-debugging-port='):
-                            return int(part.split('=')[1])
-            except Exception:
-                continue
-        return None
-
-    async def _solve_via_pydoll(
-        self,
-        page: Page,
-        wait_timeout: float,
-    ) -> Dict[str, Any]:
-        """Attempt to solve Turnstile via pydoll CDP integration."""
-        try:
-            from pydoll.browser import Chrome
-        except ImportError:
-            logger.debug("pydoll is not installed, cannot use pydoll solver.")
-            return {"success": False, "error": "pydoll not installed"}
-
-        port = self._find_cdp_port()
-        if not port:
-            logger.debug("Could not find Chrome subprocess CDP port.")
-            return {"success": False, "error": "CDP port not found"}
-
-        logger.debug(f"Connecting pydoll to Chrome on port {port}...")
-        try:
-            req = urllib.request.Request(f"http://127.0.0.1:{port}/json/version")
-            with urllib.request.urlopen(req, timeout=3) as response:
-                data = json.loads(response.read().decode())
-            ws_url = data["webSocketDebuggerUrl"]
-        except Exception as e:
-            logger.debug(f"Failed to fetch webSocketDebuggerUrl from port {port}: {e}")
-            return {"success": False, "error": f"Failed to get WS debugger URL: {e}"}
-
-        pydoll_browser = Chrome(connection_port=port)
-        pydoll_browser._connection_port = port
-        if pydoll_browser._connection_handler:
-            pydoll_browser._connection_handler._connection_port = port
-
-        try:
-            await pydoll_browser.connect(ws_url)
-            
-            # Match current Playwright page to pydoll Tab
-            match_id = f"pydoll_match_{random.randint(100000, 999999)}"
-            await page.evaluate(f"window.__pydoll_match_id = '{match_id}'")
-            
-            tabs = await pydoll_browser.get_opened_tabs()
-            target_tab = None
-            for t in tabs:
-                try:
-                    res = await t.execute_script("return window.__pydoll_match_id")
-                    val = res.get("result", {}).get("result", {}).get("value")
-                    if val == match_id:
-                        target_tab = t
-                        break
-                except Exception:
-                    continue
-
-            # Fallback to matching by URL if JS matching failed
-            if not target_tab:
-                current_url = page.url
-                for t in tabs:
-                    if t.url == current_url:
-                        target_tab = t
-                        break
-
-            # Fallback to first tab if still not found
-            if not target_tab and tabs:
-                target_tab = tabs[0]
-
-            if not target_tab:
-                return {"success": False, "error": "No matching pydoll tab found"}
-
-            # Ensure connection_port is propagated to prevent localhost:None resolution errors inside iframes/OOP-iframes
-            target_tab._connection_port = port
-            if target_tab._connection_handler:
-                target_tab._connection_handler._connection_port = port
-
-            # Perform the Turnstile click using pydoll's native shadow traversal
-            loop = asyncio.get_event_loop()
-            deadline = loop.time() + wait_timeout
-            clicked = False
-            last_error = None
-            
-            while loop.time() < deadline:
-                try:
-                    shadow_root = await target_tab._find_cloudflare_shadow_root()
-                    if shadow_root is not None:
-                        await target_tab._click_cloudflare_checkbox(shadow_root)
-                        clicked = True
-                        logger.info("[TurnstileSolver] Solved Cloudflare Turnstile checkbox via pydoll.")
-                        break
-                except Exception as e:
-                    last_error = e
-                    logger.debug(f"[TurnstileSolver] Retrying Turnstile shadow click: {e}")
-                await asyncio.sleep(0.5)
-
-            if clicked:
-                return {"success": True, "error": None}
-            else:
-                return {"success": False, "error": f"pydoll Turnstile solving timed out: {last_error}"}
-
-        except Exception as e:
-            logger.warning(f"Error during pydoll solver execution: {e}")
-            return {"success": False, "error": str(e)}
-        finally:
-            try:
-                await pydoll_browser.close()
-            except Exception:
-                pass
-
     async def solve(
         self,
         page: Page,
@@ -212,27 +66,6 @@ class TurnstileSolver(BaseSolver):
         **kwargs,
     ) -> Dict[str, Any]:
         """Attempts to find and solve the Cloudflare Turnstile checkbox on the page."""
-        # 1. Attempt pydoll CDP-based solving
-        pydoll_res = await self._solve_via_pydoll(page, wait_timeout)
-        if pydoll_res["success"]:
-            # If a selector is provided, wait for it to confirm success/navigation
-            if wait_selector:
-                logger.info(f"Waiting for selector: {wait_selector}")
-                try:
-                    await page.wait_for_selector(wait_selector, timeout=wait_timeout * 1000)
-                    await self._take_screenshot(page, screenshot_dir, "05_selector_found")
-                except Exception as e:
-                    logger.warning(f"Timeout waiting for selector {wait_selector} after click: {e}")
-                    await self._take_screenshot(page, screenshot_dir, "error_selector_timeout")
-                    return {
-                        "success": True,
-                        "warning": f"Selector {wait_selector} not found after click.",
-                        "error": None,
-                    }
-            return pydoll_res
-
-        # 2. Fallback to Playwright-native click/move logic
-        logger.info(f"pydoll solving failed ({pydoll_res['error']}). Falling back to Playwright-native solver...")
         turnstile_frame = await self.find_turnstile_frame(page)
         
         await self._take_screenshot(page, screenshot_dir, "01_init")

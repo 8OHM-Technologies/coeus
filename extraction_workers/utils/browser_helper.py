@@ -25,11 +25,29 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
+def _get_default_user_agent() -> str:
+    """Get a default User-Agent matching the host platform to avoid anti-bot checks."""
+    if sys.platform.startswith("linux"):
+        return (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+    elif sys.platform == "darwin":
+        return (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+    else:  # win32 or others
+        return (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+
+DEFAULT_USER_AGENT = _get_default_user_agent()
+
 
 DEFAULT_VIEWPORT = {"width": 1280, "height": 720}
 
@@ -203,7 +221,7 @@ async def create_browser_context(
 
     if anti_webdriver:
         await context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            "Object.defineProperty(Navigator.prototype, 'webdriver', {get: () => undefined})"
         )
 
     page = await context.new_page()

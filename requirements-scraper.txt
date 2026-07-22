@@ -14,3 +14,4 @@ python-dotenv
 requests
 PyGithub>=2.9.1
 lxml
+pydoll-python

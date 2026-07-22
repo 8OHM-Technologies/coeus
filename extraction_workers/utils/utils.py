@@ -50,17 +50,7 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
     Fetches pipeline configuration, prioritizing environment variables
     provided by the dynamic_factory, falling back to the Control Plane API.
     """
-    # Build proxy_url from individual environment variables if available
-    proxy_host = os.getenv("PROXY_HOST")
-    proxy_port = os.getenv("PROXY_PORT")
-    proxy_username = os.getenv("PROXY_USERNAME")
-    proxy_password = os.getenv("PROXY_PASSWORD")
-    proxy_url = None
-    if proxy_host and proxy_port:
-        if proxy_username and proxy_password:
-            proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_host}:{proxy_port}"
-        else:
-            proxy_url = f"http://{proxy_host}:{proxy_port}"
+    proxy_url = os.getenv("PROXY_URL")
 
     # 1. Try to load from environment variables (provided by dynamic_factory)
     env_config = {

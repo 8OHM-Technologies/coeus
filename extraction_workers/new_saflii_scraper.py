@@ -278,6 +278,10 @@ class SafliiScraper(BaseScraper):
                     return state
 
                 logger.info(f"⚠️ Captcha challenge detected during [{attempt_prefix}]. Invoking Solver...")
+                try:
+                    await page.bring_to_front()
+                except Exception as e:
+                    logger.warning(f"Could not bring page to front: {e}")
                 solve_res = await turnstile_solver.solve(page, screenshot_dir=self.screenshots_dir)
 
                 if solve_res["success"]:

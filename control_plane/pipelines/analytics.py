@@ -57,6 +57,65 @@ def calculate_uptime_and_rate(timestamps):
         "scrape_rate_per_hour": rate * 3600
     }
 
+def calculate_last_hour_intervals(timestamps, now=None, interval_minutes=5, indexed_timestamps=None, detailed_timestamps=None):
+    """
+    Calculates scrape rate projections for intervals over the previous hour.
+    Default interval length is 5 minutes (producing 12 intervals for 1 hour).
+
+    Only includes fully elapsed intervals. For example, if current time is 15:07,
+    the in-progress interval [15:05, 15:10) is excluded. Completed intervals
+    going back 1 hour are returned.
+
+    For each 5-minute interval:
+    - count: pages scraped in that 5-minute window
+    - scrape_rate_per_hour: count * (60 / interval_minutes) projected scrape rate
+    """
+    if now is None:
+        now = datetime.now(dt_timezone.utc)
+    else:
+        now = make_aware(now)
+
+    aware_all = [make_aware(ts) for ts in timestamps] if timestamps else []
+    aware_indexed = [make_aware(ts) for ts in indexed_timestamps] if indexed_timestamps else []
+    aware_detailed = [make_aware(ts) for ts in detailed_timestamps] if detailed_timestamps else []
+
+    # Floor 'now' to the start of the current incomplete interval
+    minute_offset = now.minute % interval_minutes
+    current_interval_start = now.replace(minute=now.minute - minute_offset, second=0, microsecond=0)
+
+    num_intervals = 60 // interval_minutes
+    multiplier = 60 // interval_minutes
+    intervals = []
+
+    # Build intervals chronologically (oldest to newest)
+    for i in range(num_intervals, 0, -1):
+        end_ts = current_interval_start - timedelta(minutes=(i - 1) * interval_minutes)
+        start_ts = end_ts - timedelta(minutes=interval_minutes)
+
+        count_all = sum(1 for ts in aware_all if start_ts <= ts < end_ts)
+        count_indexed = sum(1 for ts in aware_indexed if start_ts <= ts < end_ts)
+        count_detailed = sum(1 for ts in aware_detailed if start_ts <= ts < end_ts)
+
+        intervals.append({
+            "interval_start": start_ts.isoformat(),
+            "interval_end": end_ts.isoformat(),
+            "start_label": start_ts.strftime("%H:%M"),
+            "end_label": end_ts.strftime("%H:%M"),
+            "label": start_ts.strftime("%H:%M"),
+            "count": count_all,
+            "count_indexed": count_indexed,
+            "count_detailed": count_detailed,
+            "scrape_rate_per_hour": float(count_all * multiplier),
+            "indexing_scrape_rate_per_hour": float(count_indexed * multiplier),
+            "detailing_scrape_rate_per_hour": float(count_detailed * multiplier),
+        })
+
+    return {
+        "interval_minutes": interval_minutes,
+        "total_intervals": len(intervals),
+        "intervals": intervals
+    }
+
 def update_pipeline_analytics():
     """
     Aggregates records from the extracted_records table, calculates metrics
@@ -157,6 +216,15 @@ def update_pipeline_analytics():
             "scrape_rate_per_hour": len(recent_all) / SEVEN_DAYS_SECONDS * 3600,
         }
 
+        # Last hour 5-minute intervals
+        last_hour_intervals = calculate_last_hour_intervals(
+            timestamps=pipe_data['all']['overall'],
+            now=now,
+            interval_minutes=5,
+            indexed_timestamps=pipe_data['indexed']['overall'],
+            detailed_timestamps=pipe_data['detailed']['overall']
+        )
+
         # Build worker breakdown
         all_workers_keys = set(pipe_data['all']['workers'].keys())
         workers_breakdown = {}
@@ -189,6 +257,7 @@ def update_pipeline_analytics():
             "indexing": indexed_metrics,
             "detailing": detailed_metrics,
             "last_7_days": seven_day_rate,
+            "last_hour_5min_intervals": last_hour_intervals,
             "workers": workers_breakdown
         }
         results[name] = metrics_payload

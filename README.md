@@ -8,31 +8,37 @@ The project demonstrates a scalable approach to handling varying degrees of web 
 
 ## 🏗️ System Architecture
 
-The platform uses a decoupled, microservices-oriented architecture designed for horizontal scalability:
+The platform uses a decoupled, microservices-oriented architecture designed for horizontal scalability and robust data extraction. It has transitioned from Apache Airflow to **Dagster** for workflow orchestration, leveraging containerized execution via Dagster Pipes.
 
 | Component | Role |
 | :--- | :--- |
 | **Control Plane (Django 6)** | Source of truth for pipeline blueprints, scraper routing, scheduling metadata, and the Selector Lab API. |
 | **Extracted Data (Django)** | Read-only ORM layer over PostgreSQL tables (`entities`, `targets`, `extracted_records`) for structured LLM output. |
-| **Orchestrator (Apache Airflow 2.9.1)** | Polls the Control Plane API and materializes one DAG per active `PipelineConfiguration`. Workers run as ephemeral `DockerOperator` containers. |
-| **Extraction Workers** | Playwright/BeautifulSoup scripts plus `llm_extractor.py` for schema-enforced post-processing via a local **Ollama** instance. |
+| **Orchestrator (Dagster v1.x+)** | Evaluates pipeline blueprints via sensors, registers Dynamic Partitions, and materializes Assets. Runs `dagster-webserver`, `dagster-daemon`, and `dagster-worker`. |
+| **Extraction Workers** | Ephemeral containers (`coeus-scraper` and `coeus-extractor`) run via **Dagster Pipes Docker**. Scraping scripts subclass `BaseScraper` and store records directly to PostgreSQL. |
 | **`misstcha/`** | Local Python package providing `HCaptchaSolver` (Grounding DINO + Qwen), `TurnstileSolver` (Cloudflare checkbox automation), and a `CaptchaSolverFactory`. Copied into the worker image at build time. |
-| **Storage (PostgreSQL)** | Primary database used by the control plane and extraction workers. BookStack (OhmBase) uses MariaDB. |
-| **Gateway (Traefik)** | Reverse proxy with host-based routing; TLS termination and HTTP→HTTPS redirect in production. |
-| **Landing Page (Nginx)** | Static marketing site served at `8ohm.co.za` in production. |
+| **Storage (PostgreSQL 17)** | Primary database used by the control plane and extraction workers for storing pipeline definitions and scraped/extracted structured data. |
+| **Gateway (Traefik)** | Reverse proxy with host-based routing; routes local domains to containers via port `8085` and handles Let's Encrypt TLS termination in production. |
 
 ```text
-┌─────────────┐     poll      ┌──────────────────┐     spawn     ┌─────────────────┐
-│   Airflow   │ ────────────► │  Control Plane   │ ────────────► │ DockerOperator  │
-│  Scheduler  │               │  (Django API)    │               │  (coeus-worker) │
-└─────────────┘               └──────────────────┘               └─────────────────┘
-       │                                │                                  │
-       └────────────────────────────────┴──────────────────────────────────┘
-                                        │
-                               ┌────────▼────────┐
-                               │  PostgreSQL      │
-                               │  (Cloud SQL)     │
-                               └─────────────────┘
+┌────────────────────────┐      polls      ┌──────────────────┐
+│     Dagster Daemon     │ ──────────────► │  Control Plane   │
+│   (Blueprint Sensor)   │                 │   (Django API)   │
+└────────────────────────┘                 └──────────────────┘
+            │                                        │
+            │ spawns via Pipes                       │
+ ┌──────────▼──────────┐                             │
+ │    Docker Engine    │                             │
+ │ ┌─────────────────┐ │                             │
+ │ │  coeus-scraper  │ │                             │
+ │ └────────┬────────┘ │                             │
+ │          │          │                             │
+ └──────────┼──────────┘                             │
+            │ writes records                         │
+            ▼                                        ▼
+┌──────────────────────────────────────────────────────┐
+│                  PostgreSQL Database                 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -40,73 +46,60 @@ The platform uses a decoupled, microservices-oriented architecture designed for 
 ## 🛠️ Key Technical Features
 
 ### **1. Model-Driven Pipelines**
-Every scraper is configured through the Django `PipelineConfiguration` model: `scraper_type`, cron schedule, CSS selectors, `extraction_params` JSON, SSL flags, and optional LLM extraction settings. Changes propagate to Airflow on the next DAG parse without orchestrator restarts.
+Every scraper is configured through the Django `PipelineConfiguration` model: `scraper_type`, cron schedule, CSS selectors, `extraction_params` JSON, SSL flags, and optional LLM extraction settings. Changes propagate dynamically:
+* The Dagster sensor `coeus_blueprint_sensor` fetches active pipeline blueprints from the Django API every 60 seconds.
+* It dynamically updates the `pipelines` Dynamic Partitions in Dagster, creating or removing partitions without requiring orchestrator restarts.
+* Scheduled runs are triggered based on the cron expressions stored directly in the database configurations.
 
-### **2. Adaptive Scraping Strategy**
-COEUS does not use a one-size-fits-all approach. Based on the target's complexity defined in the Control Plane:
+### **2. Scraper Concurrency & Worker Model**
+High-throughput scrapers (like `sabinet` and `new_saflii`) utilize an asynchronous, concurrent worker model to expedite detailing:
+* **Concurrency Configuration**: The number of parallel workers is defined via `concurrency` in the pipeline's `extraction_params` (defaulting to `8`).
+* **Async Workers**: An `asyncio.Queue` distributes URLs. Multiple worker coroutines process tasks concurrently.
+* **Resilient Isolation**: To avoid browser context conflicts and IP blocks, each worker instantiates its own Playwright browser context and page. This ensures independent proxy routing (if `use_proxy` is enabled).
+* **Safe Database Commits**: Shared database writes are coordinated with a `self.db_lock` (asyncio Lock) to protect concurrent PostgreSQL updates.
 
-- **Lightweight extraction:** Rapidly parses unprotected sites with minimal browser overhead.
-- **Heavy-lift automation:** Deploys **Playwright** to navigate JavaScript-heavy frameworks, Ant Design components, and dynamic loaders.
-- **Two-phase Sabinet:** Index scraping (`sabinet_scraper.py`) followed by per-record detail extraction (`sabinet_detail_scraper.py`).
-- **Cloudflare Turnstile bypass (SAFLII):** The SAFLII scraper uses `misstcha.TurnstileSolver` to detect and click Cloudflare Turnstile challenges before downloading case PDFs and metadata.
+### **3. BaseScraper Class Framework**
+All standardized scrapers subclass `BaseScraper` (`extraction_workers/base_scraper.py`), which abstracts lifecycle and state management:
+* **`initialize()`**: Fetches configuration, establishes database connections, resolves target IDs, and loads deduplication data.
+* **Deduplication State**: Hydrates internal sets (`existing_urls` and `existing_case_numbers`) from the database, preventing redundant scraping or duplicate network calls.
+* **Pagination State Persistence**: Implements `save_progress()` to cache rolling-window pagination execution markers (e.g. `last_year`/`last_month`) directly in the database.
+* **`cleanup()`**: Automatically recycles page, context, browser, and database connections.
 
-### **3. Dynamic DAG Factory**
-`orchestration/airflow_dags/dynamic_factory.py` discovers `*_scraper.py` files at parse time, maps them to `scraper_type` keys, and builds a two-task DAG when `requires_extraction` is enabled: scrape → LLM extract. The factory now:
-- JSON-encodes `EXTRACTION_PARAMS` before injecting it into containers (no more `ast.literal_eval` needed in workers).
-- Sets `PYTHONPATH=/app:/app/extraction_workers` on every container so sibling modules (`utils/utils.py`, `db.py`, `schemas.py`) and the `misstcha` package are always importable.
-- Passes Postgres credentials (`POSTGRES_HOST/USER/PASSWORD/DB`) into LLM extractor containers.
-- Uses `docker_conn_id="github_container_registry"` for authenticated image pulls from GHCR.
+### **4. Dagster Pipes Docker Infrastructure**
+Instead of static agent environments, Dagster executes scrapers and extractors using **Dagster Pipes Docker** (`PipesDockerClient`):
+* Spawns ephemeral `coeus-scraper` and `coeus-extractor` container runs in the shared Docker network.
+* Bind-mounts host data volumes (`/var/shared_scraping_data`) to pass raw output and assets.
+* Forwards environment variables (e.g., PostgreSQL credentials, OpenAI API keys, Hugging Face tokens) securely.
 
-### **4. `misstcha` — Local CAPTCHA Solver Package**
-The `misstcha/` directory is a structured Python package (not a standalone `solver/` folder) that is **COPY**'d into the worker image at `/app/misstcha`. It provides:
+### **5. Database-Centric Storage**
+Scrapers write records directly to PostgreSQL using `db_storage.py` and `asyncpg`, completely replacing the legacy workflow that relied on local JSON files and Google Drive backups. Duplicate entries are caught during indexing/detailing via database signatures, making operations incremental and self-deduplicating.
 
-- **`HCaptchaSolver`** — Grounding DINO zero-shot object detection + Qwen LLM prompt translation for image-grid hCaptchas.
-- **`TurnstileSolver`** — Lightweight Playwright-based solver that locates the Cloudflare Turnstile iframe and performs the checkbox interaction.
-- **`CaptchaSolverFactory`** — Registry pattern (`register` / `get_solver`) for selecting solvers by name.
-- **`solve_captcha()`** — Convenience helper for one-shot captcha solving.
+### **6. `misstcha` — Local CAPTCHA Solver Package**
+The `misstcha/` directory is structured as a local Python package copied into the worker images:
+* **`HCaptchaSolver`**: Uses Grounding DINO zero-shot object detection combined with Qwen LLM translation for image-grid hCaptchas.
+* **`TurnstileSolver`**: Playwright-based solver that locates Cloudflare Turnstile iframes and performs checkbox interactions.
+* **`CaptchaSolverFactory`**: Implements a registry pattern to load captcha solvers dynamically by name.
 
-### **5. LLM Extraction Layer (Ollama-backed)**
-`llm_extractor.py` runs as the second Airflow task when `requires_extraction` is enabled. Key details:
-- Connects to a local **Ollama** instance via the OpenAI-compatible API (`http://ollama:11434/v1`).
-- Model is configurable per-pipeline via `AI_MODEL` env var (default: `ollama/phi4-mini`).
-- Reads PDFs with **pdfplumber** or JSON sidecars depending on `DOCUMENT_TYPE`.
-- Validates LLM output against a **Pydantic** schema from `schemas.py` (falls back to `GenericDocumentExtraction`).
-- Upserts structured results into `entities` → `targets` → `extracted_records` PostgreSQL tables.
-- Exits with code `1` if all files fail, signalling a hard failure to Airflow.
-
-### **6. SAFLII Scraper — Enhanced Resilience & GDrive Integration**
-`saflii_scraper.py` has received significant updates:
-- **Turnstile handling:** Integrates `misstcha.TurnstileSolver` on both case-metadata pages and PDF download pages with a post-solve polling loop.
-- **Google Drive integration:** Optional upload of downloaded PDFs and JSON metadata to a GDrive folder (`gdrive_folder_id` in `extraction_params`). Supports credential discovery from `extraction_params`, `GOOGLE_APPLICATION_CREDENTIALS` env var, or well-known file paths.
-- **In-memory deduplication:** Tracks downloaded files in-memory using the Google Drive folder list (when enabled) or the local output directory, preventing redundant downloads and backfilling missing PDFs or metadata.
-- **Graceful error handling:** 403 rate-limit responses trigger a 30-second cooldown; `ERR_ABORTED`/transient network errors skip the sequence without crashing.
-- **Partial-completion support:** Can independently backfill a missing PDF or metadata JSON for a sequence without re-fetching the already-present file.
-
-### **7. Ecommerce Aggregation Scheduler**
-The control plane runs background combination tasks (via Django-APScheduler, `run_scheduler` management command) to merge Mantech and Livestainable product datasets, apply markups, deduplicate, and trigger Saleor sync (`sync_saleor`).
-
-### **8. Incremental Crawling & Rate Throttling**
-Scrapers targeting large volumes (such as Sabinet CCMA Awards) use output-aware incremental early stopping. They compare scraped metadata `(award_number, title)` against existing files and terminate when cached records are hit. Page-based rate throttling (e.g. 60-second sleeps after every 100 pages) reduces bot-mitigation triggers.
+### **7. LLM Extraction & PII Scrubbing**
+* **LLM Extraction**: The `extracted_structured_data` asset runs as a downstream task in Dagster. It processes documents (PDF/JSON) via pdfplumber, queries local **Ollama** instances (`ollama/phi4-mini`) or external APIs, validates the output using Pydantic schemas (`schemas.py`), and saves structured records.
+* **PII Scrubbing**: The `scrubbed_extracted_records` asset executes downstream from the LLM extractor. It runs `/app/scrub_entrypoint.py` inside the extractor container to anonymize and remove PII from the structured outputs.
 
 ---
 
 ## 🕵️ Scraper Registry
 
-Specialized worker scripts live in `extraction_workers/`:
+Specialized worker scripts reside in `extraction_workers/`:
 
 | Scraper Script | Target Platform / Data Type | Technology & Strategy |
 | :--- | :--- | :--- |
-| [sedarplus_scraper.py](extraction_workers/sedarplus_scraper.py) | **SEDAR+ Corporate Filings** | Playwright + `misstcha.HCaptchaSolver` (Grounding DINO + Qwen) |
-| [sabinet_scraper.py](extraction_workers/sabinet_scraper.py) | **Sabinet CCMA Labor Awards (index)** | Playwright, incremental early-stopping, rate-limit throttling |
-| [sabinet_detail_scraper.py](extraction_workers/sabinet_detail_scraper.py) | **Sabinet Award Details** | Playwright; follows index JSON output from parent pipeline |
-| [ccma_playwright_scraper.py](extraction_workers/ccma_playwright_scraper.py) | **CCMA Arbitration Documents** | Playwright multi-category traversal + download utility |
-| [judiciary_scraper.py](extraction_workers/judiciary_scraper.py) | **South African Judiciary Judgments** | Playwright limit auto-expander + bulk downloader |
-| [saflii_scraper.py](extraction_workers/saflii_scraper.py) | **SAFLII Case Law** | Playwright + Xvfb + `misstcha.TurnstileSolver`; GDrive upload; manifest deduplication |
-| [mantech_scraper.py](extraction_workers/mantech_scraper.py) | **Mantech Electronics Store** | Playwright ASP.NET WebForms paginated table extraction |
-| [livestainable_scraper.py](extraction_workers/livestainable_scraper.py) | **Livestainable Products** | Playwright e-commerce scraper |
-| [lotto_scraper.py](extraction_workers/lotto_scraper.py) | **National Lottery Results** | Playwright historical data parser with CSV exporter |
+| [sedarplus_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/sedarplus_scraper.py) | **SEDAR+ Corporate Filings** | Playwright + `misstcha.HCaptchaSolver` (Grounding DINO + Qwen) |
+| [sabinet_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/sabinet_scraper.py) | **Sabinet CCMA Labor Awards** | Playwright, async concurrency, early stopping, rate-limit throttling, direct DB storage |
+| [new_saflii_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/new_saflii_scraper.py) | **SAFLII Case Law** | BeautifulSoup + Playwright + `misstcha.TurnstileSolver`, async concurrency, direct DB storage |
+| [mantech_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/mantech_scraper.py) | **Mantech Electronics Store** | Playwright, ASP.NET WebForms paginated table extraction |
+| [livestainable_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/livestainable_scraper.py) | **Livestainable Products** | Playwright e-commerce scraping |
+| [lotto_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/lotto_scraper.py) | **National Lottery Results** | Playwright historical data parser with CSV exporter |
 
-Supported `scraper_type` values are defined in `control_plane/pipelines/models.py` (`ScraperType` enum).
+Supported `scraper_type` values are defined in `control_plane/pipelines/models.py` (`ScraperType` choices).
 
 ---
 
@@ -118,14 +111,13 @@ The Control Plane exposes a REST API powered by **Django REST Framework** with *
 
 The API uses the standard OAuth2 **Client Credentials** grant type for secure machine-to-machine communication:
 
-1. **Create an OAuth2 Application**:
-   Register a client application via the Django Admin panel at `http://localhost:8001/admin/oauth2_provider/application/` or the endpoint `http://control-plane.localhost:81/admin/oauth2_provider/application/`.
-   - **Client Type**: Confidential
-   - **Authorization Grant Type**: Client credentials
-   - **User**: Select your admin or API user
+1. **Register an OAuth2 Application**:
+   Create an application via the Django Admin panel at `http://localhost:8001/admin/oauth2_provider/application/` (or via the Traefik route `http://control-plane.localhost:8085/admin/...`).
+   * **Client Type**: Confidential
+   * **Authorization Grant Type**: Client credentials
+   * **User**: Select your admin or API user
 
 2. **Obtain an Access Token**:
-   Send a `POST` request to `/o/token/` with Basic Authentication using the client's `client_id` and `client_secret`:
    ```bash
    curl -X POST http://localhost:8001/o/token/ \
      -u "client_id:client_secret" \
@@ -142,7 +134,6 @@ The API uses the standard OAuth2 **Client Credentials** grant type for secure ma
    ```
 
 3. **Access Protected API Endpoints**:
-   Pass the token in the `Authorization` header as a Bearer token:
    ```bash
    curl -X GET http://localhost:8001/api/v1/entities/ \
      -H "Authorization: Bearer your_access_token"
@@ -156,93 +147,90 @@ The API uses the standard OAuth2 **Client Credentials** grant type for secure ma
 | `/api/v1/targets/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Manage projects, locations, or assets belonging to an Entity. |
 | `/api/v1/extracted-records/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Manage structured data records extracted from documents. |
 
-*Note: Access to these endpoints requires the token to have `read` scope (for `GET` requests) or `write` scope (for `POST`, `PUT`, `PATCH`, `DELETE` requests).*
-
 ---
 
 ## 🚀 Quick Start (Local Development)
 
-The stack is fully containerized. You need a `.env` file at the repo root with Cloud SQL proxy settings (`INSTANCE_CONNECTION_NAME`, `AIRFLOW_SQL_ALCHEMY_CONN`, `COEUS_API_URL`, database credentials, etc.) and GCP credentials mounted for the proxy (see `docker-compose.yml`).
+The local stack is fully containerized. You must supply a `.env` file at the root with environment variables (credentials, endpoints, etc.) matching `docker-compose.yml`.
 
-### 1. Boot the System
+### 1. Build and Boot the Services
 
 ```bash
-docker compose up -d --build
+# Build the application, orchestrator, and pipes worker images
+docker compose build
+
+# Boot the local stack
+docker compose up -d
 ```
 
 ### 2. Access the Dashboards
 
-| Service | Direct URL | Traefik URL (port 81) | Credentials |
+Local URLs are reverse-proxied by Traefik and exposed on port **`8085`** (HTTP) and **`8080`** (Traefik dashboard).
+
+| Service | Direct Port URL | Traefik URL (Port 8085) | Credentials |
 | :--- | :--- | :--- | :--- |
-| **Control Plane** | `http://localhost:8001/admin` | `http://control-plane.localhost:81/admin` | `admin` / `admin` |
-| **Airflow UI** | `http://localhost:9001` | `http://airflow.localhost:81` | `admin` / `admin` |
-| **Active Pipelines API** | — | `http://control-plane.localhost:81/api/pipelines/active/` | N/A |
+| **Control Plane (Django)** | `http://localhost:8001/admin` | `http://control-plane.localhost:8085/admin` | `admin` / `admin` |
+| **Dagster Web UI** | `http://localhost:3000` | `http://dagster.localhost:8085` | N/A |
+| **Active Pipelines API** | — | `http://control-plane.localhost:8085/api/pipelines/active/` | N/A |
 | **Traefik Dashboard** | `http://localhost:8080` | — | — |
 
-On first boot, the control plane runs migrations and creates the default superuser automatically.
+On first boot, the control plane will run migrations and automatically create the default superuser.
 
-### 3. Run a Scraper Manually (optional)
+### 3. Run a Scraper Manually
+
+To bypass Dagster orchestration and execute a scraper script directly in the worker environment:
 
 ```bash
-docker exec -it coeus-worker python extraction_workers/sedarplus_scraper.py --pipeline_name <pipeline_id>
+docker exec -it coeus-control-plane python extraction_workers/new_saflii_scraper.py --pipeline_name <pipeline_name>
 ```
-
-Scraped output is written under `./data/` (bind-mounted into workers).
 
 ---
 
 ## 🌐 Production Deployment
 
-Production runs on a VPS (AbsoluteHosting) with automated deploys from GitHub Actions on every push to `main`.
+Production is deployed on a VPS (AbsoluteHosting) with automated builds and deployment via GitHub Actions on every push to the `main` branch.
 
 | Concern | Implementation |
 | :--- | :--- |
 | **Compose file** | `docker-compose.prod.yml` |
-| **Images** | `ghcr.io/8ohm-technologies/coeus-app:latest`, `ghcr.io/8ohm-technologies/coeus-worker:latest` |
-| **CI/CD** | `.github/workflows/deploy.yml` — path-filtered image builds + SCP/SSH deploy with Telegram notifications |
-| **TLS** | Traefik with Let's Encrypt certs (`traefik-config/certs.yml`) |
-| **Airflow** | Split `airflow_scheduler` and `airflow_webserver` services |
-| **Public URLs** | `https://8ohm.co.za`, `https://control-plane.8ohm.co.za`, `https://airflow.8ohm.co.za` |
-
-Required GitHub secrets: `SSH_HOST`, `SSH_USER`, `SSH_KEY`, plus registry access for GHCR pulls on the VPS.
+| **Services** | `control-plane`, `dagster-webserver`, `dagster-daemon`, `dagster-worker`, `postgres`, `redis`, `traefik` |
+| **Images** | `ghcr.io/8ohm-technologies/coeus-app`, `ghcr.io/8ohm-technologies/coeus-dagster-webserver`, `ghcr.io/8ohm-technologies/coeus-dagster-daemon`, `ghcr.io/8ohm-technologies/coeus-dagster-worker` |
+| **CI/CD** | `.github/workflows/deploy.yml` — Automated docker builds pushed to GHCR, deployed via SSH with Telegram status updates. |
+| **TLS** | Traefik with automatic Let's Encrypt certificates. |
+| **Public URLs** | `https://control-plane.8ohm.co.za`, `https://dagster.8ohm.co.za` |
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-├── control_plane/           # Django project (pipelines + extracted_data apps)
-├── extraction_workers/      # Playwright scrapers, LLM extractor, Pydantic schemas, db.py
-├── misstcha/                # Local CAPTCHA solver package (HCaptcha + Turnstile + Factory)
-├── orchestration/           # Airflow dynamic DAG factory
-├── landing_page/            # Static marketing site (production Nginx volume)
-├── ohmbase/                 # BookStack wiki configuration (Dockerfile.ohmbase)
-├── traefik-config/          # Production TLS certificate paths for Traefik file provider
-├── database/                # SQL initialization scripts
-├── .github/workflows/       # CI/CD (build, push, deploy with Telegram notifications)
-├── Dockerfile.app           # Control plane image
-├── Dockerfile.worker        # Playwright + Chromium worker image (includes misstcha/)
-├── Dockerfile.ohmbase        # BookStack (OhmBase) image
-├── docker-compose.yml       # Local development stack
-└── docker-compose.prod.yml  # Production VPS stack
+├── control_plane/           # Django project (pipelines, extracted_data apps, scheduler)
+├── dagster/                 # Dagster configuration, pipelines workspace, and definitions
+├── extraction_workers/      # Python scrapers, LLM extractors, schemas, and db_storage.py
+├── misstcha/                # Local CAPTCHA solver package (hCaptcha, Turnstile, Captcha Factory)
+├── traefik-config/          # Reverse proxy routing rules
+├── ohmbase/                 # BookStack Wiki configuration (Dockerfiles & logs)
+├── ohmbot-telegram/         # Telegram Bot interface
+├── Dockerfile.app           # Django control plane container image
+├── Dockerfile.dagster       # Dagster webserver/daemon container image
+├── Dockerfile.worker        # Dagster worker container image
+├── Dockerfile.scraper       # Pipes Docker Scraper image
+├── Dockerfile.extractor     # Pipes Docker Extractor image
+├── docker-compose.yml       # Local development multi-container orchestration
+└── docker-compose.prod.yml  # Production deployment multi-container orchestration
 ```
 
 ---
 
 ## 🔮 Future Enhancements
 
-The production stack already covers managed database access, CI/CD, and TLS. Remaining improvements worth considering:
-
-- **Executor upgrade:** Move from `DockerOperator` to `KubernetesExecutor` for native pod-per-task scaling.
-- **Object storage:** Offload PDF archives from local `./data` volumes to GCS/S3 with lifecycle policies (GDrive integration in SAFLII is a first step toward this).
-- **Proxy rotation:** Residential proxy pools for high-friction regulatory portals (SAFLII already supports `SCRAPING_PROXY` / `HTTP_PROXY` env vars).
-- **Playwright binary caching:** Add a Docker volume for `~/.cache/ms-playwright` to speed up container cold-starts.
-- **Observability:** Sentry integration in workers and structured pipeline run metrics.
-- **Secrets management:** Migrate `.env` values to a dedicated secrets store.
-- **DAG blueprint caching:** Persist the last-known blueprints on the Airflow host so DAGs survive Control Plane downtime.
+* **Proxy Rotation Pools**: Integrate rotating residential proxy networks natively within `BaseScraper` to bypass aggressive geo-blocking.
+* **Kubernetes Executor**: Transition from `PipesDockerClient` to `PipesK8sClient` for autoscaling containers dynamically on Kubernetes clusters.
+* **Object Cloud Storage**: Offload local `/var/shared_scraping_data` PDFs and JSON assets directly to Google Cloud Storage (GCS) or AWS S3 buckets.
+* **Observability**: Set up Prometheus/Grafana or Sentry logging across the scraping/extraction container fleet.
 
 ---
 
 ## 📄 Related Documentation
 
-- [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) — Comprehensive technical analysis of the Coeus scraping, extraction, and orchestration architecture.
+* [TECHNICAL_OVERVIEW.md](file:///home/tiaanf/Dev/coeus/TECHNICAL_OVERVIEW.md) — Comprehensive technical details of the COEUS scraping, extraction, and orchestration architecture.
