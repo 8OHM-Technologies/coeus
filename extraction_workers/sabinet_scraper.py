@@ -195,7 +195,7 @@ class SabinetScraper(BaseScraper):
     and concurrent detailed item extraction.
     """
 
-    def __init__(self, pipeline_name: str, headless: bool = True):
+    def __init__(self, pipeline_name: str, headless: bool = False):
         super().__init__(pipeline_name)
         self.headless = headless
         self.use_proxy: bool = False

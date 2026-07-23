@@ -217,7 +217,7 @@ class SafliiScraper(BaseScraper):
             sb.set_window_size(1280, 720)
             
             # 1. Gather Year Links
-            logger.info(f"Navigating to operational index anchor: {self.start_url}")
+            logger.info(f"Navigating to index start: {self.start_url}")
             year_links = []
             start_success = False
 
@@ -470,6 +470,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     headless_value = args.headless.lower() == "true"
-    scraper = SafliiScraper(pipeline_name=args.pipeline_name, headless=headless_value)
+    scraper = SafliiScraper(pipeline_name=args.pipeline_name)
     
     asyncio.run(scraper.run())

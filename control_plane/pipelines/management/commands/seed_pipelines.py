@@ -18,13 +18,50 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"{name} pipeline configuration already exists."))
             return config
 
+        # Seed choices models
+        document_types_data = {
+            "pdf": "PDF Document",
+            "json": "JSON Document",
+            "html": "HTML",
+        }
+        for name, label in document_types_data.items():
+            DocumentType.objects.get_or_create(name=name, defaults={"label": label})
+
+        llm_engines_data = {
+            "ollama/phi4-mini": "Local Phi-4 Mini (Ollama)",
+        }
+        for name, label in llm_engines_data.items():
+            LLMEngine.objects.get_or_create(name=name, defaults={"label": label})
+
+        scraper_types_data = {
+            "lotto": "National Lottery (Playwright)",
+            "sedarplus": "SEDAR+ (Playwright + Misstcha)",
+            "mantech": "Mantech (Playwright)",
+            "livestainable": "Livestainable (Playwright)",
+            "sabinet": "Sabinet (Playwright + Misstcha)",
+            "new_saflii": "SAFLII (BeautifulSoup + AI)",
+        }
+        for name, label in scraper_types_data.items():
+            ScraperType.objects.get_or_create(name=name, defaults={"label": label})
+
+        # Fetch model instances
+        mantech_scraper = ScraperType.objects.get(name=ScraperType.MANTECH)
+        livestainable_scraper = ScraperType.objects.get(name=ScraperType.LIVESTAINABLE)
+        saflii_scraper = ScraperType.objects.get(name=ScraperType.SAFLII)
+        sabinet_scraper = ScraperType.objects.get(name=ScraperType.SABINET)
+
+        html_doc = DocumentType.objects.get(name=DocumentType.HTML)
+        pdf_doc = DocumentType.objects.get(name=DocumentType.PDF)
+
+        local_llm = LLMEngine.objects.get(name=LLMEngine.LOCAL)
+
         # Seed Mantech
         get_or_create_pipeline(
             name="Mantech",
             defaults={
-                "scraper_type": ScraperType.MANTECH,
+                "scraper_type": mantech_scraper,
                 "industry": "Electronics",
-                "document_type": DocumentType.HTML,
+                "document_type": html_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 * * *",
                 "start_url": "https://www.mantech.co.za/Categories.aspx",
@@ -32,7 +69,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": False,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
                 "target_table": "products",
@@ -46,9 +83,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Livestainable",
             defaults={
-                "scraper_type": ScraperType.LIVESTAINABLE,
+                "scraper_type": livestainable_scraper,
                 "industry": "Electronics",
-                "document_type": DocumentType.HTML,
+                "document_type": html_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 * * *",
                 "start_url": "https://livestainable.co.za/collections/vendors?sort_by=title-ascending&q=Keyestudio&filter.v.availability=1",
@@ -56,7 +93,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": False,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
                 "target_table": "products",
@@ -78,9 +115,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Saflii Labour Court - Appeals",
             defaults={
-                "scraper_type": ScraperType.SAFLII,
+                "scraper_type": saflii_scraper,
                 "industry": "Legal",
-                "document_type": DocumentType.HTML,
+                "document_type": html_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 28 2 *",
                 "start_url": "https://www.saflii.org/za/cases/ZALAC/",
@@ -88,7 +125,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": True,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
                 "target_table": "",
@@ -100,9 +137,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Saflii Labour Court - DB",
             defaults={
-                "scraper_type": ScraperType.SAFLII,
+                "scraper_type": saflii_scraper,
                 "industry": "Legal",
-                "document_type": DocumentType.HTML,
+                "document_type": html_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 28 2 *",
                 "start_url": "https://www.saflii.org/za/cases/ZALCD/",
@@ -110,7 +147,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": True,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
                 "target_table": "",
@@ -122,9 +159,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Saflii Labour Court - PE",
             defaults={
-                "scraper_type": ScraperType.SAFLII,
+                "scraper_type": saflii_scraper,
                 "industry": "Legal",
-                "document_type": DocumentType.HTML,
+                "document_type": html_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 28 2 *",
                 "start_url": "https://www.saflii.org/za/cases/ZALCPE/",
@@ -132,7 +169,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": True,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
                 "target_table": "",
@@ -144,9 +181,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Saflii Labour Court - CCT",
             defaults={
-                "scraper_type": ScraperType.SAFLII,
+                "scraper_type": saflii_scraper,
                 "industry": "Legal",
-                "document_type": DocumentType.HTML,
+                "document_type": html_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 28 2 *",
                 "start_url": "https://www.saflii.org/za/cases/ZALCCT/",
@@ -154,7 +191,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": False,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
                 "target_table": "",
@@ -166,9 +203,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Saflii Labour Court - JHB",
             defaults={
-                "scraper_type": ScraperType.SAFLII,
+                "scraper_type": saflii_scraper,
                 "industry": "Legal",
-                "document_type": DocumentType.HTML,
+                "document_type": html_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 28 2 *",
                 "start_url": "https://www.saflii.org/za/cases/ZALCJHB/",
@@ -176,7 +213,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": False,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
                 "target_table": "",
@@ -188,9 +225,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Sabinet CCMA - Oldest First",
             defaults={
-                "scraper_type": ScraperType.SABINET,
+                "scraper_type": sabinet_scraper,
                 "industry": "Legal",
-                "document_type": DocumentType.PDF,
+                "document_type": pdf_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 * * *",
                 "start_url": "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards&resultsortOption=%22Date+Oldest+first%22",
@@ -198,7 +235,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": True,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "GenericDocumentExtraction",
                 "extraction_instructions": "Extract court details.",
                 "extraction_params": {
@@ -213,9 +250,9 @@ class Command(BaseCommand):
         get_or_create_pipeline(
             name="Sabinet CCMA - Newest First",
             defaults={
-                "scraper_type": ScraperType.SABINET,
+                "scraper_type": sabinet_scraper,
                 "industry": "Legal",
-                "document_type": DocumentType.PDF,
+                "document_type": pdf_doc,
                 "is_active": True,
                 "schedule_cron": "0 0 * * *",
                 "start_url": "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards&resultsortOption=%22Date+Newest+first%22",
@@ -223,7 +260,7 @@ class Command(BaseCommand):
                 "allow_insecure_requests": True,
                 "use_proxy": False,
                 "requires_extraction": True,
-                "llm_engine": LLMEngine.LOCAL,
+                "llm_engine": local_llm,
                 "pydantic_schema_name": "GenericDocumentExtraction",
                 "extraction_instructions": "Extract court details.",
                 "target_table": "extracted_records",

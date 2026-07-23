@@ -1,7 +1,25 @@
 # control_plane/pipelines/admin.py
 from django.contrib import admin
 
-from .models import PipelineConfiguration
+from .models import PipelineConfiguration, DocumentType, LLMEngine, ScraperType
+
+
+@admin.register(DocumentType)
+class DocumentTypeAdmin(admin.ModelAdmin):
+    list_display = ("name", "label")
+    search_fields = ("name", "label")
+
+
+@admin.register(LLMEngine)
+class LLMEngineAdmin(admin.ModelAdmin):
+    list_display = ("name", "label")
+    search_fields = ("name", "label")
+
+
+@admin.register(ScraperType)
+class ScraperTypeAdmin(admin.ModelAdmin):
+    list_display = ("name", "label")
+    search_fields = ("name", "label")
 
 
 @admin.register(PipelineConfiguration)

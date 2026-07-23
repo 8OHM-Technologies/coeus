@@ -65,10 +65,10 @@ def combine_scraper_data():
     logger.info("Starting data combination job...")
 
     mantech_pipelines = PipelineConfiguration.objects.filter(
-        scraper_type=ScraperType.MANTECH
+        scraper_type__name=ScraperType.MANTECH
     )
     livestainable_pipelines = PipelineConfiguration.objects.filter(
-        scraper_type=ScraperType.LIVESTAINABLE
+        scraper_type__name=ScraperType.LIVESTAINABLE
     )
 
     # 1. Load all Livestainable data into a lookup dictionary and keep track of files

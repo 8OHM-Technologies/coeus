@@ -86,9 +86,7 @@ def get_stealth_driver(
     """
     sb_proxy = format_sb_proxy(proxy_url)
     
-    # If Xvfb is requested, we MUST run "headed" (headless=False) so it 
-    # renders to the virtual display. Turnstile blocks pure headless easily.
-    if use_xvfb and headless:
+    if use_xvfb:
         logger.info("🖥️ Xvfb enabled: Overriding headless=True to headless=False for virtual display routing.")
         headless = False
 
@@ -131,7 +129,7 @@ def navigate_and_bypass_turnstile(
 
     logger.info("Handling potential Turnstile/CAPTCHA challenges...")
     try:
-        sb.uc_gui_handle_captcha()
+        sb.uc_gui_click_captcha()
     except Exception as e:
         logger.warning(f"CAPTCHA auto-handler finished or skipped: {e}")
 

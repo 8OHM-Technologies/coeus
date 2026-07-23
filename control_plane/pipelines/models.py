@@ -2,23 +2,95 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
-class DocumentType(models.TextChoices):
-    PDF = "pdf", "PDF Document"
-    JSON = "json", "JSON Document"
-    HTML = "html", "HTML"
+class DocumentType(models.Model):
+    PDF = "pdf"
+    JSON = "json"
+    HTML = "html"
+
+    name = models.CharField(
+        max_length=50,
+        unique=True,
+        help_text="The programmatic identifier (e.g., 'pdf', 'json').",
+    )
+    label = models.CharField(
+        max_length=100,
+        help_text="User-friendly name (e.g., 'PDF Document').",
+    )
+
+    def __str__(self):
+        return f"{self.label} ({self.name})"
 
 
-class LLMEngine(models.TextChoices):
-    LOCAL = "ollama/phi4-mini", "Local Phi-4 Mini (Ollama)"
+class LLMEngine(models.Model):
+    LOCAL = "ollama/phi4-mini"
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="The programmatic identifier (e.g., 'ollama/phi4-mini').",
+    )
+    label = models.CharField(
+        max_length=150,
+        help_text="User-friendly name (e.g., 'Local Phi-4 Mini (Ollama)').",
+    )
+
+    def __str__(self):
+        return f"{self.label} ({self.name})"
 
 
-class ScraperType(models.TextChoices):
-    LOTTO = "lotto", "National Lottery (Playwright)"
-    SEDARPLUS = "sedarplus", "SEDAR+ (Playwright + Misstcha)"
-    MANTECH = "mantech", "Mantech (Playwright)"
-    LIVESTAINABLE = "livestainable", "Livestainable (Playwright)"
-    SABINET = "sabinet", "Sabinet (Playwright + Misstcha)"
-    SAFLII = "new_saflii", "SAFLII (BeautifulSoup + AI)"
+class ScraperType(models.Model):
+    LOTTO = "lotto"
+    SEDARPLUS = "sedarplus"
+    MANTECH = "mantech"
+    LIVESTAINABLE = "livestainable"
+    SABINET = "sabinet"
+    SAFLII = "new_saflii"
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="The programmatic identifier (e.g., 'lotto', 'new_saflii').",
+    )
+    label = models.CharField(
+        max_length=150,
+        help_text="User-friendly name (e.g., 'National Lottery (Playwright)').",
+    )
+
+    def __str__(self):
+        return f"{self.label} ({self.name})"
+
+
+def get_default_scraper_type():
+    try:
+        obj, _ = ScraperType.objects.get_or_create(
+            name="new_saflii",
+            defaults={"label": "SAFLII (BeautifulSoup + AI)"}
+        )
+        return obj.pk
+    except Exception:
+        return None
+
+
+def get_default_document_type():
+    try:
+        obj, _ = DocumentType.objects.get_or_create(
+            name="json",
+            defaults={"label": "JSON Document"}
+        )
+        return obj.pk
+    except Exception:
+        return None
+
+
+def get_default_llm_engine():
+    try:
+        obj, _ = LLMEngine.objects.get_or_create(
+            name="ollama/phi4-mini",
+            defaults={"label": "Local Phi-4 Mini (Ollama)"}
+        )
+        return obj.pk
+    except Exception:
+        return None
 
 class PipelineConfiguration(models.Model):
     """
@@ -37,19 +109,19 @@ class PipelineConfiguration(models.Model):
         blank=True,
         help_text="Subset label used as the Target name for scraped records (e.g., 'CCMA Awards', 'ZACC').",
     )
-    scraper_type = models.CharField(
-        max_length=20,
-        choices=ScraperType.choices,
-        default=ScraperType.SAFLII,
+    scraper_type = models.ForeignKey(
+        ScraperType,
+        on_delete=models.PROTECT,
+        default=get_default_scraper_type,
         help_text="The specific worker script to execute.",
     )
     industry = models.CharField(
         max_length=100, blank=True, help_text="e.g., Finance, Mining, Healthcare"
     )
-    document_type = models.CharField(
-        max_length=10,
-        choices=DocumentType.choices,
-        default=DocumentType.JSON,
+    document_type = models.ForeignKey(
+        DocumentType,
+        on_delete=models.PROTECT,
+        default=get_default_document_type,
         help_text="The primary document type that will be scraped. e.g. PDF, JSON or sometimes plain HTML",
     )
     is_active = models.BooleanField(
@@ -94,10 +166,10 @@ class PipelineConfiguration(models.Model):
         default=True,
         help_text="Uncheck to skip LLM extraction (e.g., for raw document hoarding - NOTE: stores PDF/JSON on local filesystem).",
     )
-    llm_engine = models.CharField(
-        max_length=50,
-        choices=LLMEngine.choices,
-        default=LLMEngine.LOCAL,
+    llm_engine = models.ForeignKey(
+        LLMEngine,
+        on_delete=models.PROTECT,
+        default=get_default_llm_engine,
         help_text="The AI model used for extraction (Ollama model string).",
     )
     pydantic_schema_name = models.CharField(
@@ -148,12 +220,12 @@ class PipelineConfiguration(models.Model):
             "pipeline_id": self.name.lower().replace(" ", "_").replace("-", "_"),
             "name": self.name,
             "subset": self.subset,
-            "scraper_type": self.scraper_type,
+            "scraper_type": self.scraper_type.name if self.scraper_type else "",
             "is_active": self.is_active,
             "schedule": self.schedule_cron,
             "metadata": {
                 "industry": self.industry,
-                "document_type": self.document_type,
+                "document_type": self.document_type.name if self.document_type else "",
             },
             "phase_1_ingestion": {
                 "start_url": self.start_url,
@@ -163,7 +235,7 @@ class PipelineConfiguration(models.Model):
             },
             "phase_2_extraction": {
                 "requires_extraction": self.requires_extraction,
-                "engine": self.llm_engine,
+                "engine": self.llm_engine.name if self.llm_engine else "",
                 "expected_schema": self.pydantic_schema_name,
                 "extraction_instructions": self.extraction_instructions or "",
                 "extraction_params": self.extraction_params,

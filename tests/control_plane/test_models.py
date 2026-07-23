@@ -10,9 +10,9 @@ def test_pipeline_configuration_creation_and_defaults():
     )
     
     assert config.name == "Test Pipeline"
-    assert config.scraper_type == ScraperType.SAFLII
-    assert config.document_type == DocumentType.JSON
-    assert config.llm_engine == LLMEngine.LOCAL
+    assert config.scraper_type.name == ScraperType.SAFLII
+    assert config.document_type.name == DocumentType.JSON
+    assert config.llm_engine.name == LLMEngine.LOCAL
     assert config.is_active is True
     assert config.schedule_cron == "0 0 * * *"
     assert config.extraction_params == {}
@@ -45,11 +45,21 @@ def test_pipeline_configuration_clean_validation():
 
 @pytest.mark.django_db
 def test_to_blueprint_serialization():
+    scraper_saflii, _ = ScraperType.objects.get_or_create(
+        name=ScraperType.SAFLII, defaults={"label": "SAFLII (BeautifulSoup + AI)"}
+    )
+    doc_pdf, _ = DocumentType.objects.get_or_create(
+        name=DocumentType.PDF, defaults={"label": "PDF Document"}
+    )
+    llm_local, _ = LLMEngine.objects.get_or_create(
+        name=LLMEngine.LOCAL, defaults={"label": "Local Phi-4 Mini (Ollama)"}
+    )
+
     config = PipelineConfiguration.objects.create(
         name="Test-Pipeline Ingestion",
-        scraper_type=ScraperType.SAFLII,
+        scraper_type=scraper_saflii,
         industry="Legal",
-        document_type=DocumentType.PDF,
+        document_type=doc_pdf,
         is_active=False,
         schedule_cron="0 12 * * *",
         start_url="https://saflii.org/content/recent",
@@ -58,7 +68,7 @@ def test_to_blueprint_serialization():
         use_proxy=True,
         extraction_params={"cooldown_seconds": 2.5},
         requires_extraction=True,
-        llm_engine=LLMEngine.LOCAL,
+        llm_engine=llm_local,
         pydantic_schema_name="GenericDocumentExtraction",
         extraction_instructions="Extract court details.",
         target_table="saflii_records",
