@@ -37,36 +37,41 @@ async def test_find_turnstile_frame_not_found():
 
 
 @pytest.mark.asyncio
-async def test_solve_turnstile_success(mocker):
-    # Shorten delays for test speed
-    solver = TurnstileSolver(check_timeout=0.1, solve_delay=0.1)
-
-    # Mock the cloudflare frame
-    mock_frame = AsyncMock()
-    mock_frame.url = "https://challenges.cloudflare.com/turnstile"
+async def test_solve_turnstile_success():
+    solver = TurnstileSolver()
     
-    # Mock locator for checkbox input
-    mock_locator = AsyncMock()
-    mock_frame.locator.return_value = mock_locator
+    # Mock Playwright page
+    mock_page = MagicMock()
+    mock_page.url = "https://nowsecure.nl/"
+    mock_page.wait_for_selector = AsyncMock()
     
-    # Mock frame element
-    mock_frame_el = AsyncMock()
-    mock_frame_el.bounding_box.return_value = {"x": 100, "y": 200, "width": 300, "height": 65}
-    mock_frame.frame_element.return_value = mock_frame_el
-
-    # Mock page
-    mock_page = AsyncMock()
-    mock_page.frames = [mock_frame]
-
-    # Mock screenshot method to avoid disk writes
-    mocker.patch.object(solver, "_take_screenshot", new_callable=AsyncMock)
-
-    result = await solver.solve(mock_page, wait_selector=".success-indicator", wait_timeout=1.0)
-
-    # Verify mouse clicks were invoked
-    mock_page.mouse.move.assert_called()
-    mock_page.mouse.down.assert_called_once()
-    mock_page.mouse.up.assert_called_once()
+    # Mock SeleniumBase tab
+    mock_tab = MagicMock()
+    mock_tab.url = "https://nowsecure.nl/"
+    
+    # Mock SeleniumBase driver
+    mock_driver = MagicMock()
+    del mock_driver.cdp_base
+    mock_driver.tabs = [mock_tab]
+    # Mock update_targets to return a dummy coroutine/object
+    mock_driver.update_targets.return_value = asyncio.Future()
+    mock_driver.update_targets.return_value.set_result(None)
+    
+    # Mock SeleniumBase sb instance
+    mock_sb = MagicMock()
+    mock_sb.driver = mock_driver
+    mock_sb.loop = MagicMock()
+    mock_sb.loop.run_until_complete = MagicMock()
+    mock_sb.switch_to_tab = MagicMock()
+    mock_sb.solve_captcha = MagicMock()
+    
+    result = await solver.solve(mock_page, sb=mock_sb, wait_selector=".success-indicator", wait_timeout=1.0)
+    
+    # Assertions
+    mock_driver.update_targets.assert_called_once()
+    mock_sb.loop.run_until_complete.assert_called_once_with(mock_driver.update_targets.return_value)
+    mock_sb.switch_to_tab.assert_called_once_with(mock_tab)
+    mock_sb.solve_captcha.assert_called_once()
     mock_page.wait_for_selector.assert_called_once_with(".success-indicator", timeout=1000.0)
     
     assert result["success"] is True

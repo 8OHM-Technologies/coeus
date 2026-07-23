@@ -194,10 +194,7 @@ def _build_container_env() -> dict[str, str]:
         "COEUS_API_URL",
         "USE_PROXY",
         "PROXY_URL",
-        "GOOGLE_APPLICATION_CREDENTIALS",
         "DAGSTER_PIPES_DEBUG",
-        "OLLAMA_BASE_URL",
-        "OPENAI_API_KEY",
         "HF_TOKEN",
         "HF_HOME",
     ]

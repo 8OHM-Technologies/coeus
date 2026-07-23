@@ -37,12 +37,13 @@ async def get_db_connection() -> asyncpg.Connection:
     db_user = clean_env_var(os.environ.get("POSTGRES_USER"))
     db_pass = clean_env_var(os.environ.get("POSTGRES_PASSWORD"))
     db_name = clean_env_var(os.environ.get("POSTGRES_DB"))
+    db_port = int(clean_env_var(os.environ.get("POSTGRES_PORT") or "5432"))
 
     if not all([db_host, db_user, db_pass, db_name]):
         raise ValueError("Database environment variables are not fully set.")
 
     return await asyncpg.connect(
-        host=db_host, user=db_user, password=db_pass, database=db_name, port=5432
+        host=db_host, user=db_user, password=db_pass, database=db_name, port=db_port
     )
 
 
@@ -54,7 +55,8 @@ async def get_db_pool():
     db_user = clean_env_var(os.environ.get("POSTGRES_USER"))
     db_pass = clean_env_var(os.environ.get("POSTGRES_PASSWORD"))
     db_name = clean_env_var(os.environ.get("POSTGRES_DB"))
+    db_port = int(clean_env_var(os.environ.get("POSTGRES_PORT") or "5432"))
 
     return await asyncpg.create_pool(
-        host=db_host, user=db_user, password=db_pass, database=db_name, port=5432
+        host=db_host, user=db_user, password=db_pass, database=db_name, port=db_port
     )

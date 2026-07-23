@@ -8,8 +8,13 @@ from playwright.async_api import async_playwright, Page
 
 from .base_scraper import BaseScraper, setup_logger
 from . import db_storage
+from utils.utils import fetch_pipeline_config
+from db import get_db_connection
+from utils.browser_helper import BrowserManager
+from misstcha.turnstile import TurnstileSolver
 
 logger = setup_logger(__name__)
+turnstile_solver = TurnstileSolver()
 
 # -----------------------------------------------------------------------------
 # JavaScript DOM Extractor Injection
@@ -179,6 +184,39 @@ class SabinetScraper(BaseScraper):
         super().__init__(pipeline_name)
         self.auth_lock = asyncio.Lock()
 
+    async def handle_turnstile_challenge(self, page: Page, label: str) -> None:
+        """Detect and solve Cloudflare Turnstile captcha if present."""
+        title = await page.title()
+        body = ""
+        try:
+            body = await page.locator("body").inner_text() if await page.locator("body").count() > 0 else ""
+        except Exception:
+            pass
+        
+        t_lower = title.lower()
+        b_lower = body.lower()
+        
+        is_blocked = (
+            "just a moment" in t_lower
+            or "cloudflare" in t_lower
+            or "security verification" in t_lower
+            or "verify you are human" in b_lower
+            or "turnstile" in b_lower
+        )
+        
+        if is_blocked:
+            logger.warning(f"[SabinetScraper][{label}] Captcha challenge detected! Invoking Solver...")
+            try:
+                await page.bring_to_front()
+            except Exception:
+                pass
+            solve_res = await turnstile_solver.solve(page, sb=self.browser_manager.chrome_proc)
+            if solve_res["success"]:
+                logger.info(f"[SabinetScraper][{label}] Captcha solved successfully.")
+                await asyncio.sleep(2)
+            else:
+                logger.error(f"[SabinetScraper][{label}] Captcha solver failed: {solve_res.get('error')}")
+
     async def authenticate(self, headless: bool = False) -> None:
         """Automatically log in to Sabinet and persist browser session state to the database."""
         scrape_url = (
@@ -191,7 +229,7 @@ class SabinetScraper(BaseScraper):
 
         # Create temporary isolated playwright orchestration framework to flush state down
         async with async_playwright() as p:
-            from utils.browser_helper import BrowserManager, dismiss_cookie_consent
+            from utils.browser_helper import dismiss_cookie_consent
             logger.info("[INFO] Launching browser for automated authentication state generation...")
             manager = BrowserManager(
                 p,
@@ -243,6 +281,8 @@ class SabinetScraper(BaseScraper):
         logger.info(f"Navigating browser window pointer to footprint: {start_url}")
         await page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_load_state("networkidle")
+
+        await self.handle_turnstile_challenge(page, "setup_search_page")
 
         await dismiss_cookie_consent(page)
 
@@ -559,7 +599,7 @@ class SabinetScraper(BaseScraper):
         Fetches pending document rows from Postgres, checks for auth status, expands layouts,
         and saves complete detail structures directly back into the operational rows.
         """
-        from utils.browser_helper import dismiss_cookie_consent, BrowserManager
+        from utils.browser_helper import dismiss_cookie_consent
 
         # Bootstrap browser if indexing was skipped (e.g. fully_complete state)
         if not self.browser_manager:
@@ -664,6 +704,8 @@ class SabinetScraper(BaseScraper):
                             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
                             await page.wait_for_load_state("networkidle")
 
+                            await self.handle_turnstile_challenge(page, f"worker_{worker_id}_detail")
+
                             if progress_idx % 50 == 0:
                                 await dismiss_cookie_consent(page)
 
@@ -695,6 +737,8 @@ class SabinetScraper(BaseScraper):
                                 logger.info(f"[Worker {worker_id}] Retrying target detail payload location path -> {url}")
                                 await page.goto(url, wait_until="domcontentloaded", timeout=45000)
                                 await page.wait_for_load_state("networkidle")
+
+                                await self.handle_turnstile_challenge(page, f"worker_{worker_id}_detail_retry")
                                 
                                 try:
                                     await page.wait_for_selector('div.item-content-loaded', timeout=15000)
@@ -816,6 +860,20 @@ class SabinetScraper(BaseScraper):
         total = await self.conn.fetchval("SELECT COUNT(*) FROM extracted_records WHERE record_type = $1", db_record_type)
         detailed = await self.conn.fetchval("SELECT COUNT(*) FROM extracted_records WHERE record_type = $1 AND status = 'detailed'", db_record_type)
         logger.info(f"📊 Final Data Pipeline Audit Log -> Total Records: {total} | Fully Detailed/Enriched: {detailed}")
+
+
+async def run_extraction(pipeline_name: str) -> None:
+    scraper = SabinetScraper(pipeline_name=pipeline_name)
+    await scraper.initialize()
+    await scraper.indexing()
+    await scraper.cleanup()
+
+
+async def run_detail_extraction(pipeline_name: str) -> None:
+    scraper = SabinetScraper(pipeline_name=pipeline_name)
+    await scraper.initialize()
+    await scraper.detailing()
+    await scraper.cleanup()
 
 
 # -----------------------------------------------------------------------------

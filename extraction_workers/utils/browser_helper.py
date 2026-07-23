@@ -18,6 +18,7 @@ import tempfile
 import urllib.parse
 from typing import Optional
 
+from seleniumbase import sb_cdp
 from playwright.async_api import async_playwright, Playwright, Browser, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
@@ -91,81 +92,83 @@ async def launch_browser_cdp(
     headless: bool = True,
     proxy_url: Optional[str] = None,
     extra_args: list[str] | None = None,
-) -> tuple[Browser, subprocess.Popen, str]:
-    """Launch Chrome via subprocess with CDP and connect Playwright to it.
-
-    This approach avoids the ``navigator.webdriver`` flag that standard
-    ``playwright.chromium.launch()`` sets, which many anti-bot systems
-    detect.
+) -> tuple[Browser, object, Optional[str]]:
+    """Launch Chrome via SeleniumBase Pure CDP mode and connect Playwright to it.
 
     Returns:
-        A tuple of ``(browser, chrome_process, user_data_dir)`` so callers
+        A tuple of ``(browser, sb, user_data_dir)`` so callers
         can clean up when finished.
     """
-    cdp_port = _find_free_port()
-    user_data_dir = tempfile.mkdtemp()
 
-    chrome_args = [
-        playwright.chromium.executable_path,
-        f"--remote-debugging-port={cdp_port}",
-        f"--user-data-dir={user_data_dir}",
-        "--disable-blink-features=AutomationControlled",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-background-networking",
-        "--disable-gcm",
-        "--disable-default-apps",
-        "--disable-extensions",
-        "--disable-component-update",
-        "--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC",
-        "--disable-peer-connection-encryption",
-        "--window-size=1280,720",
-    ]
-
+    sb_proxy = None
     if proxy_url:
         parsed_proxy = urllib.parse.urlparse(proxy_url)
-        server_url = f"{parsed_proxy.scheme}://{parsed_proxy.hostname}"
+        sb_proxy = ""
+        if parsed_proxy.username and parsed_proxy.password:
+            sb_proxy += f"{parsed_proxy.username}:{parsed_proxy.password}@"
+        if parsed_proxy.hostname:   
+            sb_proxy += parsed_proxy.hostname
         if parsed_proxy.port:
-            server_url += f":{parsed_proxy.port}"
-        chrome_args.append(f"--proxy-server={server_url}")
+            sb_proxy += f":{parsed_proxy.port}"
 
-    if extra_args:
-        chrome_args.extend(extra_args)
-
-    if headless:
-        chrome_args.append("--headless=new")
-
-    logger.info(f"Starting Chrome with CDP on port {cdp_port}...")
-    chrome_proc = subprocess.Popen(
-        chrome_args,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    import shutil
+    chrome_in_path = (
+        shutil.which("google-chrome")
+        or shutil.which("chrome")
+        or shutil.which("google-chrome-stable")
     )
+    loop = asyncio.get_running_loop()
+    
+    if chrome_in_path:
+        logger.info(f"Google Chrome detected in PATH: {chrome_in_path}. Letting SeleniumBase launch it automatically.")
+        sb = await loop.run_in_executor(
+            None,
+            lambda: sb_cdp.Chrome(
+                headless=headless,
+                proxy=sb_proxy
+            )
+        )
+    else:
+        chrome_path = playwright.chromium.executable_path
+        logger.info(f"Google Chrome not found in PATH. Falling back to Playwright Chromium: {chrome_path}")
+        sb = await loop.run_in_executor(
+            None,
+            lambda: sb_cdp.Chrome(
+                headless=headless,
+                proxy=sb_proxy,
+                browser_executable_path=chrome_path
+            )
+        )
+    endpoint_url = sb.get_endpoint_url()
 
-    # Give Chrome a moment to bind the debug port
-    await asyncio.sleep(3)
-
-    browser = await playwright.chromium.connect_over_cdp(
-        f"http://127.0.0.1:{cdp_port}"
-    )
-    return browser, chrome_proc, user_data_dir
+    logger.info(f"Connecting Playwright over CDP to: {endpoint_url}")
+    browser = await playwright.chromium.connect_over_cdp(endpoint_url)
+    return browser, sb, None
 
 
 async def close_browser_cdp(
     browser: Browser,
-    chrome_proc: subprocess.Popen,
+    chrome_proc: object,
 ) -> None:
-    """Gracefully close a CDP-launched browser and its Chrome subprocess."""
+    """Gracefully close a CDP-launched browser and its Chrome subprocess/SeleniumBase."""
     try:
         await browser.close()
     except Exception as e:
         logger.warning(f"Error closing browser: {e}")
-    try:
-        chrome_proc.terminate()
-        chrome_proc.wait(timeout=5)
-    except Exception as e:
-        logger.warning(f"Error terminating Chrome process: {e}")
+    if chrome_proc:
+        if hasattr(chrome_proc, "quit"):
+            try:
+                logger.info("Quitting SeleniumBase Chrome browser...")
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, chrome_proc.quit)
+            except Exception as e:
+                logger.warning(f"Error terminating SeleniumBase: {e}")
+        elif isinstance(chrome_proc, subprocess.Popen):
+            try:
+                chrome_proc.terminate()
+                chrome_proc.wait(timeout=5)
+            except Exception as e:
+                logger.warning(f"Error terminating Chrome process: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +333,9 @@ class BrowserManager:
                 headless=self.headless,
                 proxy_url=self.proxy_url,
             )
+            # Find default context(s) before we create our custom context
+            default_contexts = list(self.browser.contexts)
+
             self.context, self.page = await create_browser_context(
                 self.browser,
                 ignore_https_errors=self.ignore_https_errors,
@@ -339,6 +345,10 @@ class BrowserManager:
                 viewport=self.viewport,
                 anti_webdriver=self.anti_webdriver,
             )
+
+            # Note: Do not close default contexts when connected over CDP,
+            # as it will close the entire browser session.
+            pass
         return self.page
 
     async def recycle(self) -> Page:

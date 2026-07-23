@@ -36,8 +36,8 @@ def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
         body_text: The page's <body> inner text.
 
     Returns:
-        "BLOCKED": if it's a Cloudflare/Turnstile challenge page.
-        "NOT_FOUND": if it's a 404/403 or similar error page.
+        "BLOCKED": if it's a Cloudflare/Turnstile challenge or 403 block page.
+        "NOT_FOUND": if it's a 404 error page.
         "OK": if it's a valid content page.
     """
     t_lower = (page_title or "").lower().strip()
@@ -50,6 +50,11 @@ def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
         or "security verification" in t_lower
         or "verify you are human" in b_lower
         or "turnstile" in b_lower
+        or "403 forbidden" in t_lower
+        or "forbidden" in t_lower
+        or "403 forbidden" in h_lower
+        or "forbidden" in h_lower
+        or "you don't have permission to access this resource" in b_lower
     ):
         return "BLOCKED"
 
@@ -61,8 +66,6 @@ def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
             "404 not found",
             "404 - not found",
             "404 error",
-            "403 forbidden",
-            "forbidden",
         )
         or h_lower
         in (
@@ -71,10 +74,7 @@ def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
             "404 not found",
             "404 - not found",
             "404 error",
-            "403 forbidden",
-            "forbidden",
         )
-        or "you don't have permission to access this resource" in b_lower
     ):
         return "NOT_FOUND"
 
@@ -174,15 +174,23 @@ def extract_case_number_from_text(text: str) -> str | None:
     """Extracts standard SAFLII case numbers or formal citations from strings."""
     if not text:
         return None
-    # Matches: (123/2025) or [2026] ZACC 4
-    match = re.search(r'\((?:\w+\s+)?\d+/\d+\)|\[\d{4}\]\s+\w+\s+\d+', text)
+
+    # First, try to extract a parenthesized case number, stripping the parentheses
+    # e.g., "(JR2672/2021)" -> "JR2672/2021", "(1/2026)" -> "1/2026"
+    match = re.search(r'\((?:\w+\s+)?(\w+/\d+)\)', text)
+    if match:
+        return match.group(1).strip()
+
+    # Second, check for citation style e.g., "[2026] ZACC 4"
+    match = re.search(r'\[\d{4}\]\s+\w+\s+\d+', text)
     if match:
         return match.group(0).strip()
 
-    # Simple fallback for standard number/year slashes
-    fallback_match = re.search(r'\b\d+/\d+\b', text)
-    if fallback_match:
-        return fallback_match.group(0).strip()
+    # Third, try standard fallback without parentheses
+    match = re.search(r'\b\w+/\d+\b', text)
+    if match:
+        return match.group(0).strip()
+
     return None
 
 
@@ -282,7 +290,7 @@ class SafliiScraper(BaseScraper):
                     await page.bring_to_front()
                 except Exception as e:
                     logger.warning(f"Could not bring page to front: {e}")
-                solve_res = await turnstile_solver.solve(page, screenshot_dir=self.screenshots_dir)
+                solve_res = await turnstile_solver.solve(page, sb=self.browser_manager.chrome_proc, screenshot_dir=self.screenshots_dir)
 
                 if solve_res["success"]:
                     load_result = await wait_for_page_load(page, url_type)
@@ -391,8 +399,7 @@ class SafliiScraper(BaseScraper):
                     if state == "BLOCKED":
                         raise BlockedException(f"Resource locks applied on year directory {year}.")
                     elif state == "NOT_FOUND":
-                        logger.warning(f"Target index {year_url} missing (404/403). Dropping step context.")
-                        break
+                        raise Exception(f"Target index {year_url} missing or returned error (state: {state}).")
 
                     y_anchors = await page.locator("a").all()
                     for y_anchor in y_anchors:
@@ -491,9 +498,7 @@ class SafliiScraper(BaseScraper):
                             if state == "BLOCKED":
                                 raise BlockedException(f"Challenge wall containment failure active on asset element: {c_id}")
                             elif state == "NOT_FOUND":
-                                logger.warning(f"[Worker {worker_id}] Target payload resource {case_url} not found (404/403). Dropping link tracking.")
-                                success = True
-                                break
+                                raise Exception(f"Target payload resource {case_url} not found (could be transient block/404).")
 
                             html_content = await page.content()
                             soup = BeautifulSoup(html_content, "lxml")

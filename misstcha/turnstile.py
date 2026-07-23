@@ -1,10 +1,5 @@
 import asyncio
 import logging
-import os
-import random
-import urllib.request
-import json
-from datetime import datetime
 from typing import Any, Dict
 from playwright.async_api import Page
 from .base import BaseSolver
@@ -13,24 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 class TurnstileSolver(BaseSolver):
-    """Solver for Cloudflare Turnstile verification challenge."""
+    """Solver for Cloudflare Turnstile verification challenge using SeleniumBase."""
 
     def __init__(self, check_timeout: float = 5.0, solve_delay: float = 7.0):
         self.check_timeout = check_timeout
         self.solve_delay = solve_delay
-
-    async def _take_screenshot(self, page: Page, screenshot_dir: str, name: str):
-        """Save a diagnostic screenshot if screenshot_dir is set."""
-        if not screenshot_dir:
-            return
-        try:
-            os.makedirs(screenshot_dir, exist_ok=True)
-            filename = f"{name}.png"
-            path = os.path.join(screenshot_dir, filename)
-            await page.screenshot(path=path)
-            logger.info(f"[TurnstileSolver] Saved screenshot: {path}")
-        except Exception as e:
-            logger.warning(f"[TurnstileSolver] Failed to take screenshot {name}: {e}")
 
     async def find_turnstile_frame(self, page: Page):
         """Locates the Cloudflare Turnstile challenge iframe on the page."""
@@ -42,338 +24,81 @@ class TurnstileSolver(BaseSolver):
             await asyncio.sleep(0.5)
         return None
 
-    @staticmethod
-    async def _human_move_and_click(page: Page, target_x: float, target_y: float) -> None:
-        """Move the mouse in a human-like arc and click."""
-        start_x = random.randint(0, 100)
-        start_y = random.randint(0, 100)
-        await page.mouse.move(start_x, start_y)
-        await asyncio.sleep(0.1)
-
-        steps = random.randint(10, 15)
-        await page.mouse.move(target_x, target_y, steps=steps)
-        await asyncio.sleep(random.uniform(0.2, 0.4))
-
-        await page.mouse.down()
-        await asyncio.sleep(random.uniform(0.05, 0.15))
-        await page.mouse.up()
-
-    def _get_descendant_pids(self, pid: int) -> list[int]:
-        descendants = []
-        try:
-            for pid_str in os.listdir('/proc'):
-                if not pid_str.isdigit():
-                    continue
-                try:
-                    with open(f'/proc/{pid_str}/stat', 'r') as f:
-                        stat = f.read().split()
-                    ppid = int(stat[3])
-                    if ppid == pid:
-                        child_pid = int(pid_str)
-                        descendants.append(child_pid)
-                        descendants.extend(self._get_descendant_pids(child_pid))
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        return descendants
-
-    def _find_cdp_port(self) -> int:
-        mypid = os.getpid()
-        descendants = self._get_descendant_pids(mypid)
-        pids = [mypid] + descendants
-        for pid in pids:
-            try:
-                with open(f'/proc/{pid}/cmdline', 'rb') as f:
-                    cmdline = f.read()
-                if b'--remote-debugging-port=' in cmdline:
-                    s = cmdline.decode('utf-8', errors='ignore')
-                    parts = []
-                    for part in s.split('\x00'):
-                        parts.extend(part.split(' '))
-                    for part in parts:
-                        if part.startswith('--remote-debugging-port='):
-                            return int(part.split('=')[1])
-            except Exception:
-                continue
-        return None
-
-    async def _solve_via_pydoll(
-        self,
-        page: Page,
-        wait_timeout: float,
-    ) -> Dict[str, Any]:
-        """Attempt to solve Turnstile via pydoll CDP integration."""
-        try:
-            from pydoll.browser import Chrome
-        except ImportError:
-            logger.debug("pydoll is not installed, cannot use pydoll solver.")
-            return {"success": False, "error": "pydoll not installed"}
-
-        port = self._find_cdp_port()
-        if not port:
-            logger.debug("Could not find Chrome subprocess CDP port.")
-            return {"success": False, "error": "CDP port not found"}
-
-        logger.debug(f"Connecting pydoll to Chrome on port {port}...")
-        try:
-            req = urllib.request.Request(f"http://127.0.0.1:{port}/json/version")
-            with urllib.request.urlopen(req, timeout=3) as response:
-                data = json.loads(response.read().decode())
-            ws_url = data["webSocketDebuggerUrl"]
-        except Exception as e:
-            logger.debug(f"Failed to fetch webSocketDebuggerUrl from port {port}: {e}")
-            return {"success": False, "error": f"Failed to get WS debugger URL: {e}"}
-
-        pydoll_browser = Chrome(connection_port=port)
-        pydoll_browser._connection_port = port
-        if pydoll_browser._connection_handler:
-            pydoll_browser._connection_handler._connection_port = port
-
-        try:
-            await pydoll_browser.connect(ws_url)
-            
-            # Match current Playwright page to pydoll Tab
-            match_id = f"pydoll_match_{random.randint(100000, 999999)}"
-            await page.evaluate(f"window.__pydoll_match_id = '{match_id}'")
-            
-            tabs = await pydoll_browser.get_opened_tabs()
-            target_tab = None
-            for t in tabs:
-                try:
-                    res = await t.execute_script("return window.__pydoll_match_id")
-                    val = res.get("result", {}).get("result", {}).get("value")
-                    if val == match_id:
-                        target_tab = t
-                        break
-                except Exception:
-                    continue
-
-            # Fallback to matching by URL if JS matching failed
-            if not target_tab:
-                current_url = page.url
-                for t in tabs:
-                    if t.url == current_url:
-                        target_tab = t
-                        break
-
-            # Fallback to first tab if still not found
-            if not target_tab and tabs:
-                target_tab = tabs[0]
-
-            if not target_tab:
-                return {"success": False, "error": "No matching pydoll tab found"}
-
-            # Ensure connection_port is propagated to prevent localhost:None resolution errors inside iframes/OOP-iframes
-            target_tab._connection_port = port
-            if target_tab._connection_handler:
-                target_tab._connection_handler._connection_port = port
-
-            # Perform the Turnstile click using pydoll's native shadow traversal
-            loop = asyncio.get_event_loop()
-            deadline = loop.time() + wait_timeout
-            clicked = False
-            last_error = None
-            
-            while loop.time() < deadline:
-                try:
-                    shadow_root = await target_tab._find_cloudflare_shadow_root()
-                    if shadow_root is not None:
-                        await target_tab._click_cloudflare_checkbox(shadow_root)
-                        clicked = True
-                        logger.info("[TurnstileSolver] Solved Cloudflare Turnstile checkbox via pydoll.")
-                        break
-                except Exception as e:
-                    last_error = e
-                    logger.debug(f"[TurnstileSolver] Retrying Turnstile shadow click: {e}")
-                await asyncio.sleep(0.5)
-
-            if clicked:
-                return {"success": True, "error": None}
-            else:
-                return {"success": False, "error": f"pydoll Turnstile solving timed out: {last_error}"}
-
-        except Exception as e:
-            logger.warning(f"Error during pydoll solver execution: {e}")
-            return {"success": False, "error": str(e)}
-        finally:
-            try:
-                await pydoll_browser.close()
-            except Exception:
-                pass
-
     async def solve(
         self,
         page: Page,
         wait_selector: str = None,
         wait_timeout: float = 15.0,
         screenshot_dir: str = None,
+        sb: Any = None,
         *args,
         **kwargs,
     ) -> Dict[str, Any]:
-        """Attempts to find and solve the Cloudflare Turnstile checkbox on the page."""
-        # 1. Attempt pydoll CDP-based solving
-        pydoll_res = await self._solve_via_pydoll(page, wait_timeout)
-        if pydoll_res["success"]:
-            # If a selector is provided, wait for it to confirm success/navigation
+        """Attempts to solve the Cloudflare Turnstile challenge using SeleniumBase."""
+        if not sb:
+            logger.error("[TurnstileSolver] SeleniumBase (sb) instance must be provided.")
+            return {"success": False, "error": "SeleniumBase instance not provided"}
+
+        logger.info("[TurnstileSolver] Initiating SeleniumBase Turnstile solve...")
+        try:
+            loop = asyncio.get_running_loop()
+            
+            # 1. Update targets and switch to correct tab on sb's thread/loop
+            def update_and_switch():
+                driver = sb.driver
+                if hasattr(driver, "cdp_base"):
+                    driver = driver.cdp_base
+                
+                sb.loop.run_until_complete(driver.update_targets())
+                
+                # Find the tab matching the Playwright page URL
+                current_url = page.url
+                target_tab = None
+                for tab in driver.tabs:
+                    if tab.url == current_url or current_url.startswith(tab.url) or tab.url.startswith(current_url):
+                        target_tab = tab
+                        break
+                
+                # Fallback to match by URL domains/paths if exact match fails
+                if not target_tab:
+                    from urllib.parse import urlparse
+                    curr_parsed = urlparse(current_url)
+                    for tab in driver.tabs:
+                        tab_parsed = urlparse(tab.url)
+                        if curr_parsed.netloc == tab_parsed.netloc and curr_parsed.path == tab_parsed.path:
+                            target_tab = tab
+                            break
+                            
+                # Fallback to the active/newest tab if not matched
+                if not target_tab and driver.tabs:
+                    target_tab = driver.tabs[-1]
+
+                if not target_tab:
+                    raise RuntimeError("No matching tab found in SeleniumBase")
+
+                logger.info(f"[TurnstileSolver] Switching sb to tab: {target_tab}")
+                sb.switch_to_tab(target_tab)
+                
+                logger.info("[TurnstileSolver] Solving captcha via sb.solve_captcha()...")
+                sb.solve_captcha()
+                logger.info("[TurnstileSolver] sb.solve_captcha() finished.")
+                return True
+
+            await loop.run_in_executor(None, update_and_switch)
+            
             if wait_selector:
-                logger.info(f"Waiting for selector: {wait_selector}")
+                logger.info(f"[TurnstileSolver] Waiting for selector: {wait_selector}")
                 try:
                     await page.wait_for_selector(wait_selector, timeout=wait_timeout * 1000)
-                    await self._take_screenshot(page, screenshot_dir, "05_selector_found")
                 except Exception as e:
                     logger.warning(f"Timeout waiting for selector {wait_selector} after click: {e}")
-                    await self._take_screenshot(page, screenshot_dir, "error_selector_timeout")
-                    return {
-                        "success": True,
-                        "warning": f"Selector {wait_selector} not found after click.",
-                        "error": None,
-                    }
-            return pydoll_res
-
-        # 2. Fallback to Playwright-native click/move logic
-        logger.info(f"pydoll solving failed ({pydoll_res['error']}). Falling back to Playwright-native solver...")
-        turnstile_frame = await self.find_turnstile_frame(page)
-        
-        await self._take_screenshot(page, screenshot_dir, "01_init")
-
-        if not turnstile_frame:
-            # Check for inline Cloudflare challenge elements (like "Verify you are human" buttons)
-            logger.info("No Turnstile frame found. Checking for inline Cloudflare challenge button...")
-            challenge_selectors = [
-                "button:has-text('Verify you are human')",
-                "input[type='button'][value='Verify you are human']",
-                "#challenge-stage button",
-                "#challenge-stage input[type='button']",
-                "#challenge-stage",
-            ]
-            
-            button_element = None
-            for selector in challenge_selectors:
-                try:
-                    loc = page.locator(selector).first
-                    if await loc.count() > 0 and await loc.is_visible():
-                        button_element = loc
-                        logger.info(f"Found inline Cloudflare challenge element matching selector: {selector}")
-                        break
-                except Exception:
-                    continue
-
-            if not button_element:
-                await self._take_screenshot(page, screenshot_dir, "error_frame_not_found")
-                return {"success": False, "error": "Cloudflare Turnstile frame and inline button not found."}
-
-            logger.info("Inline Cloudflare challenge detected. Attempting to click...")
-            await asyncio.sleep(self.solve_delay)
-            await self._take_screenshot(page, screenshot_dir, "02_after_delay")
-
-            try:
-                await button_element.scroll_into_view_if_needed()
-            except Exception as e:
-                logger.warning(f"Could not scroll inline element into view: {e}")
-
-            box = await button_element.bounding_box()
-            if not box:
-                await self._take_screenshot(page, screenshot_dir, "error_no_bounding_box")
-                return {"success": False, "error": "Could not retrieve bounding box of inline challenge element."}
-
-            await self._take_screenshot(page, screenshot_dir, "03_before_click")
-
-            click_x = box["x"] + (box["width"] / 2) + random.randint(-4, 4)
-            click_y = box["y"] + (box["height"] / 2) + random.randint(-4, 4)
-            logger.info(f"Moving to and clicking inline challenge button at ({click_x}, {click_y})")
-
-            try:
-                await self._human_move_and_click(page, click_x, click_y)
-                await self._take_screenshot(page, screenshot_dir, "04_after_click")
-
-                if wait_selector:
-                    logger.info(f"Waiting for selector: {wait_selector}")
-                    try:
-                        await page.wait_for_selector(wait_selector, timeout=wait_timeout * 1000)
-                        await self._take_screenshot(page, screenshot_dir, "05_selector_found")
-                    except Exception as e:
-                        logger.warning(f"Timeout waiting for selector {wait_selector} after click: {e}")
-                        await self._take_screenshot(page, screenshot_dir, "error_selector_timeout")
-                        return {
-                            "success": True,
-                            "warning": f"Selector {wait_selector} not found after click.",
-                            "error": None,
-                        }
-
-                await self._take_screenshot(page, screenshot_dir, "06_success")
-                return {"success": True, "error": None}
-            except Exception as e:
-                logger.error(f"Error clicking inline challenge button: {e}")
-                await self._take_screenshot(page, screenshot_dir, "error_exception")
-                return {"success": False, "error": str(e)}
-
-        logger.info("Cloudflare Turnstile challenge iframe detected. Attempting to solve...")
-
-        try:
-            logger.info("Waiting for Turnstile widget to fully load inside the frame...")
-            await turnstile_frame.wait_for_load_state("load", timeout=15000)
-            checkbox_locator = turnstile_frame.locator('input[type="checkbox"]')
-            await checkbox_locator.wait_for(state="attached", timeout=15000)
-            logger.info("Turnstile widget is fully loaded.")
-        except Exception as e:
-            logger.warning(f"Wait for Turnstile widget loading timed out or failed: {e}")
-
-        await asyncio.sleep(self.solve_delay)
-
-        await self._take_screenshot(page, screenshot_dir, "02_after_delay")
-
-        frame_el = await turnstile_frame.frame_element()
-        if not frame_el:
-            await self._take_screenshot(page, screenshot_dir, "error_no_frame_element")
-            return {"success": False, "error": "Could not retrieve frame element."}
-
-        try:
-            await frame_el.scroll_into_view_if_needed()
-        except Exception as e:
-            logger.warning(f"Could not scroll turnstile frame into view: {e}")
-
-        box = await frame_el.bounding_box()
-        if not box:
-            await self._take_screenshot(page, screenshot_dir, "error_no_bounding_box")
-            return {
-                "success": False,
-                "error": "Could not retrieve bounding box of turnstile frame.",
-            }
-
-        await self._take_screenshot(page, screenshot_dir, "03_before_click")
-
-        click_x = box["x"] + 30 + random.randint(-4, 4)
-        click_y = box["y"] + 32 + random.randint(-4, 4)
-        logger.info(f"Moving to and clicking Turnstile checkbox at ({click_x}, {click_y}) with human-like steps")
-
-        try:
-            await self._human_move_and_click(page, click_x, click_y)
-
-            await self._take_screenshot(page, screenshot_dir, "04_after_click")
-
-            # If a selector is provided, wait for it to confirm success/navigation
-            if wait_selector:
-                logger.info(f"Waiting for selector: {wait_selector}")
-                try:
-                    await page.wait_for_selector(
-                        wait_selector, timeout=wait_timeout * 1000
-                    )
-                    await self._take_screenshot(page, screenshot_dir, "05_selector_found")
-                except Exception as e:
-                    logger.warning(
-                        f"Timeout waiting for selector {wait_selector} after click: {e}"
-                    )
-                    await self._take_screenshot(page, screenshot_dir, "error_selector_timeout")
                     return {
                         "success": True,
                         "warning": f"Selector {wait_selector} not found after click.",
                         "error": None,
                     }
 
-            await self._take_screenshot(page, screenshot_dir, "06_success")
             return {"success": True, "error": None}
         except Exception as e:
-            logger.error(f"Error solving Turnstile: {e}")
-            await self._take_screenshot(page, screenshot_dir, "error_exception")
+            logger.error(f"[TurnstileSolver] Error solving Turnstile via SeleniumBase: {e}")
             return {"success": False, "error": str(e)}

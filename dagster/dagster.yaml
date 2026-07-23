@@ -39,10 +39,7 @@ run_launcher:
       - HF_HOME
       - USE_PROXY
       - PROXY_URL
-      - GOOGLE_APPLICATION_CREDENTIALS
       - DAGSTER_PIPES_DEBUG
-      - OLLAMA_BASE_URL
-      - OPENAI_API_KEY
       # Container resource limits
       - COEUS_SCRAPER_MEM_LIMIT
       - COEUS_SCRAPER_CPU_LIMIT

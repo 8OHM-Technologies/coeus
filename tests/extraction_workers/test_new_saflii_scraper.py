@@ -23,8 +23,8 @@ def test_check_page_state():
 
     # Apache / standard forbidden & not found errors (checked on page_title or h1_title)
     assert check_page_state("404 Not Found", "", "") == "NOT_FOUND"
-    assert check_page_state("", "403 Forbidden", "") == "NOT_FOUND"
-    assert check_page_state("", "", "you don't have permission to access this resource") == "NOT_FOUND"
+    assert check_page_state("", "403 Forbidden", "") == "BLOCKED"
+    assert check_page_state("", "", "you don't have permission to access this resource") == "BLOCKED"
 
     # Valid page
     assert check_page_state("SAFLII Judgments", "Constitutional Court", "Case details here...") == "OK"

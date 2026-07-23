@@ -1,33 +1,40 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # coeus-scraper — Scraper worker image
-#
-# Contains: Playwright/Chromium, extraction_workers/, dagster-pipes
-# Spawned dynamically by Dagster via PipesDockerClient for each scrape run.
 # ─────────────────────────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /app
-
 ENV PYTHONPATH="${PYTHONPATH}:/app"
-
-COPY requirements-scraper.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir -r requirements-scraper.txt
-
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN playwright install chromium
-RUN playwright install-deps chromium
-
 ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
 
+WORKDIR /app
+
+# 1. Non-interactive apt installation to bypass tzdata hanging prompts
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3-tk python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Copy dependencies
+COPY requirements-scraper.txt .
+
+# 3. Cache PyTorch and dependencies using the base image's pip
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip \
+    && pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements-scraper.txt
+
+# 4. Install matching browser binaries for playwright
+RUN playwright install chromium chrome
+
+# 4. Copy application layers
 COPY extraction_workers/ /app/extraction_workers/
-
 COPY dagster/pipes/scraper_entrypoint.py /app/main.py
-
 COPY misstcha/ /app/misstcha/
 
 RUN mkdir -p /app/scraping_data

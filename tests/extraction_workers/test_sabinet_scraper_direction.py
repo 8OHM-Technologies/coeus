@@ -9,6 +9,41 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from extraction_workers.sabinet_scraper import run_extraction
 
 
+@pytest.fixture(autouse=True)
+def mock_resolve_data_dir(mocker):
+    mocker.patch("extraction_workers.base_scraper.resolve_data_dir", return_value="/tmp/test_output_dir")
+
+
+@pytest.fixture(autouse=True)
+def intercept_mocker_patch(mocker):
+    original_patch = mocker.patch
+
+    def custom_patch(target, *args, **kwargs):
+        targets = [target]
+        if target.startswith("extraction_workers.db_storage."):
+            targets.append(target.replace("extraction_workers.db_storage.", "db_storage."))
+        elif target.startswith("db_storage."):
+            targets.append("extraction_workers.db_storage." + target.split(".", 1)[1])
+        elif target.startswith("extraction_workers.sabinet_scraper."):
+            targets.append(target.replace("extraction_workers.sabinet_scraper.", "sabinet_scraper."))
+        elif target.startswith("sabinet_scraper."):
+            targets.append("extraction_workers.sabinet_scraper." + target.split(".", 1)[1])
+        elif target.startswith("extraction_workers.base_scraper."):
+            targets.append(target.replace("extraction_workers.base_scraper.", "base_scraper."))
+        elif target.startswith("base_scraper."):
+            targets.append("extraction_workers.base_scraper." + target.split(".", 1)[1])
+
+        res = None
+        for t in targets:
+            try:
+                res = original_patch(t, *args, **kwargs)
+            except Exception:
+                pass
+        return res
+
+    mocker.patch = custom_patch
+
+
 @pytest.mark.asyncio
 async def test_run_extraction_forward_setup(monkeypatch, mocker):
     """Verify that run_extraction retrieves correct config and queries the db with the shared record type in forward mode."""
@@ -23,22 +58,22 @@ async def test_run_extraction_forward_setup(monkeypatch, mocker):
 
     # Mock utilities
     mock_fetch_config = AsyncMock(return_value=mock_config)
-    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", mock_fetch_config)
 
     mock_conn = AsyncMock()
     mock_conn.fetchval = AsyncMock(return_value=0)
     mock_get_db = AsyncMock(return_value=mock_conn)
-    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", mock_get_db)
 
     # Mock db_storage methods
     mock_resolve_target = AsyncMock(return_value="target-123")
-    mocker.patch("extraction_workers.db_storage.resolve_target_id", mock_resolve_target)
+    mocker.patch("db_storage.resolve_target_id", mock_resolve_target)
 
     mock_get_urls = AsyncMock(return_value={"url1"})
-    mocker.patch("extraction_workers.db_storage.get_existing_urls", mock_get_urls)
+    mocker.patch("db_storage.get_existing_urls", mock_get_urls)
 
     mock_get_cases = AsyncMock(return_value={"case1"})
-    mocker.patch("extraction_workers.db_storage.get_existing_case_numbers", mock_get_cases)
+    mocker.patch("db_storage.get_existing_case_numbers", mock_get_cases)
 
     # Mock progress state: start at year 2021, month 5, last window completed cleanly
     mock_progress = {
@@ -47,13 +82,13 @@ async def test_run_extraction_forward_setup(monkeypatch, mocker):
         "last_completed": True
     }
     mock_load_state = AsyncMock(return_value=mock_progress)
-    mocker.patch("extraction_workers.db_storage.load_pipeline_state", mock_load_state)
+    mocker.patch("db_storage.load_pipeline_state", mock_load_state)
 
     saved_states = []
     async def capture_save(conn, pipeline_name, state):
         saved_states.append(dict(state))
     mock_save_state = AsyncMock(side_effect=capture_save)
-    mocker.patch("extraction_workers.db_storage.save_pipeline_state", mock_save_state)
+    mocker.patch("db_storage.save_pipeline_state", mock_save_state)
 
     # Mock Playwright browser interactions
     mock_page = AsyncMock()
@@ -108,16 +143,16 @@ async def test_run_extraction_reverse_setup(monkeypatch, mocker):
     }
 
     mock_fetch_config = AsyncMock(return_value=mock_config)
-    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", mock_fetch_config)
 
     mock_conn = AsyncMock()
     mock_conn.fetchval = AsyncMock(return_value=0)
     mock_get_db = AsyncMock(return_value=mock_conn)
-    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", mock_get_db)
 
-    mocker.patch("extraction_workers.db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
-    mocker.patch("extraction_workers.db_storage.get_existing_urls", AsyncMock(return_value=set()))
-    mocker.patch("extraction_workers.db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
+    mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
 
     # Mock progress state: start at year 2021, month 5, last window completed cleanly
     mock_progress = {
@@ -126,13 +161,13 @@ async def test_run_extraction_reverse_setup(monkeypatch, mocker):
         "last_completed": True
     }
     mock_load_state = AsyncMock(return_value=mock_progress)
-    mocker.patch("extraction_workers.db_storage.load_pipeline_state", mock_load_state)
+    mocker.patch("db_storage.load_pipeline_state", mock_load_state)
 
     saved_states = []
     async def capture_save(conn, pipeline_name, state):
         saved_states.append(dict(state))
     mock_save_state = AsyncMock(side_effect=capture_save)
-    mocker.patch("extraction_workers.db_storage.save_pipeline_state", mock_save_state)
+    mocker.patch("db_storage.save_pipeline_state", mock_save_state)
 
     # Mock Playwright browser interactions
     mock_page = AsyncMock()
@@ -204,7 +239,7 @@ async def test_run_detail_extraction_reverse_and_skip(mocker):
     }
 
     mock_fetch_config = AsyncMock(return_value=mock_config)
-    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", mock_fetch_config)
 
     mock_conn = AsyncMock()
     
@@ -213,7 +248,7 @@ async def test_run_detail_extraction_reverse_and_skip(mocker):
     mock_conn.fetchval.side_effect = [2, 0, "detailed", "indexed"]
     
     mock_get_db = AsyncMock(return_value=mock_conn)
-    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", mock_get_db)
 
     # Mock cases to load: Case 1 (already detailed) and Case 2 (indexed)
     mock_cases = [
@@ -221,9 +256,9 @@ async def test_run_detail_extraction_reverse_and_skip(mocker):
         {"id": "uuid-2", "source_url": "https://example.com/case2", "data": {}}
     ]
     mock_load_cases = AsyncMock(return_value=mock_cases)
-    mocker.patch("extraction_workers.db_storage.load_records_needing_detail", mock_load_cases)
-    mocker.patch("extraction_workers.db_storage.load_pipeline_state", AsyncMock(return_value={}))
-    mocker.patch("extraction_workers.db_storage.update_record_data", AsyncMock())
+    mocker.patch("db_storage.load_records_needing_detail", mock_load_cases)
+    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value={}))
+    mocker.patch("db_storage.update_record_data", AsyncMock())
 
     # Mock Playwright page and browser
     mock_page = AsyncMock()
@@ -269,26 +304,26 @@ async def test_run_extraction_reverse_fresh_run(monkeypatch, mocker):
     }
 
     mock_fetch_config = AsyncMock(return_value=mock_config)
-    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", mock_fetch_config)
 
     mock_conn = AsyncMock()
     mock_conn.fetchval = AsyncMock(return_value=0)
     mock_get_db = AsyncMock(return_value=mock_conn)
-    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", mock_get_db)
 
-    mocker.patch("extraction_workers.db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
-    mocker.patch("extraction_workers.db_storage.get_existing_urls", AsyncMock(return_value=set()))
-    mocker.patch("extraction_workers.db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
+    mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
 
     # Mock progress state: empty for a fresh run
     mock_load_state = AsyncMock(return_value={})
-    mocker.patch("extraction_workers.db_storage.load_pipeline_state", mock_load_state)
+    mocker.patch("db_storage.load_pipeline_state", mock_load_state)
 
     saved_states = []
     async def capture_save(conn, pipeline_name, state):
         saved_states.append(dict(state))
     mock_save_state = AsyncMock(side_effect=capture_save)
-    mocker.patch("extraction_workers.db_storage.save_pipeline_state", mock_save_state)
+    mocker.patch("db_storage.save_pipeline_state", mock_save_state)
 
     # Mock Playwright browser interactions
     mock_page = AsyncMock()
@@ -337,22 +372,22 @@ async def test_run_detail_extraction_shared_record_type(mocker):
     }
 
     mock_fetch_config = AsyncMock(return_value=mock_config)
-    mocker.patch("extraction_workers.sabinet_scraper.fetch_pipeline_config", mock_fetch_config)
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", mock_fetch_config)
 
     mock_conn = AsyncMock()
     mock_conn.fetchval.side_effect = [2, 0, "indexed", "indexed"]
     
     mock_get_db = AsyncMock(return_value=mock_conn)
-    mocker.patch("extraction_workers.sabinet_scraper.get_db_connection", mock_get_db)
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", mock_get_db)
 
     mock_cases = [
         {"id": "uuid-1", "source_url": "https://example.com/case1", "data": {}},
         {"id": "uuid-2", "source_url": "https://example.com/case2", "data": {}}
     ]
     mock_load_cases = AsyncMock(return_value=mock_cases)
-    mocker.patch("extraction_workers.db_storage.load_records_needing_detail", mock_load_cases)
-    mocker.patch("extraction_workers.db_storage.load_pipeline_state", AsyncMock(return_value={}))
-    mocker.patch("extraction_workers.db_storage.update_record_data", AsyncMock())
+    mocker.patch("db_storage.load_records_needing_detail", mock_load_cases)
+    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value={}))
+    mocker.patch("db_storage.update_record_data", AsyncMock())
 
     # Mock Playwright page and browser
     mock_page = AsyncMock()
