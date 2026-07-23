@@ -99,6 +99,7 @@ def run_scraper(pipes: PipesContext) -> None:
         "ALLOW_INSECURE_HTTPS": str(allow_insecure_https),
         "ALLOW_INSECURE_REQUESTS": str(allow_insecure_requests),
         "USE_PROXY": str(use_proxy),
+        "PROXY_URL": os.getenv("PROXY_URL", ""),
         "EXTRACTION_PARAMS": extraction_params_raw,
         "OUTPUT_DIR": partition_dir,
         "PIPELINE_NAME": pipes.get_extra("pipeline_name") or partition_key,
