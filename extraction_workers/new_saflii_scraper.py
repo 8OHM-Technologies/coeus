@@ -321,7 +321,7 @@ class SafliiScraper(BaseScraper):
             self.playwright_instance,
             headless=self.headless,
             ignore_https_errors=self.config.get("allow_insecure_requests", False),
-            proxy_url=self.proxy_url,
+            proxy_url=self.proxy_url if self.use_proxy else None,
             viewport={"width": 1280, "height": 720},
         )
         

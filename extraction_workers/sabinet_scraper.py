@@ -193,7 +193,12 @@ class SabinetScraper(BaseScraper):
         async with async_playwright() as p:
             from utils.browser_helper import BrowserManager, dismiss_cookie_consent
             logger.info("[INFO] Launching browser for automated authentication state generation...")
-            manager = BrowserManager(p, headless=headless, viewport={"width": 1280, "height": 800})
+            manager = BrowserManager(
+                p,
+                headless=headless,
+                proxy_url=self.proxy_url if self.use_proxy else None,
+                viewport={"width": 1280, "height": 800},
+            )
             async with manager:
                 page = manager.page
                 context = manager.context
@@ -566,6 +571,7 @@ class SabinetScraper(BaseScraper):
                 headless=True,
                 ignore_https_errors=self.config.get("allow_insecure_https", False),
                 storage_state=db_storage_state,
+                proxy_url=self.proxy_url if self.use_proxy else None,
             )
             await self.browser_manager.start()
 

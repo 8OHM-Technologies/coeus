@@ -89,6 +89,7 @@ async def launch_browser_cdp(
     playwright: Playwright,
     *,
     headless: bool = True,
+    proxy_url: Optional[str] = None,
     extra_args: list[str] | None = None,
 ) -> tuple[Browser, subprocess.Popen, str]:
     """Launch Chrome via subprocess with CDP and connect Playwright to it.
@@ -121,6 +122,13 @@ async def launch_browser_cdp(
         "--disable-peer-connection-encryption",
         "--window-size=1280,720",
     ]
+
+    if proxy_url:
+        parsed_proxy = urllib.parse.urlparse(proxy_url)
+        server_url = f"{parsed_proxy.scheme}://{parsed_proxy.hostname}"
+        if parsed_proxy.port:
+            server_url += f":{parsed_proxy.port}"
+        chrome_args.append(f"--proxy-server={server_url}")
 
     if extra_args:
         chrome_args.extend(extra_args)
@@ -320,6 +328,7 @@ class BrowserManager:
             self.browser, self.chrome_proc, self.user_data_dir = await launch_browser_cdp(
                 self.playwright,
                 headless=self.headless,
+                proxy_url=self.proxy_url,
             )
             self.context, self.page = await create_browser_context(
                 self.browser,

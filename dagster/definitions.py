@@ -38,6 +38,28 @@ CONTAINER_DATA_DIR = "/app/data"
 DOCKER_NETWORK = os.getenv("COEUS_DOCKER_NETWORK", "8ohm-network")
 APPRISE_CONN_STRING = os.getenv("APPRISE_CONN_STRING")
 
+# Container limits (Pipes)
+SCRAPER_MEM_LIMIT = os.getenv("COEUS_SCRAPER_MEM_LIMIT", "1g")
+SCRAPER_CPU_LIMIT = os.getenv("COEUS_SCRAPER_CPU_LIMIT", "1.0")
+EXTRACTOR_MEM_LIMIT = os.getenv("COEUS_EXTRACTOR_MEM_LIMIT", "2g")
+EXTRACTOR_CPU_LIMIT = os.getenv("COEUS_EXTRACTOR_CPU_LIMIT", "1.5")
+
+
+def _parse_cpu_limit(cpu_limit_str: Optional[str]) -> Optional[int]:
+    if not cpu_limit_str or cpu_limit_str.lower() in ("0", "none", ""):
+        return None
+    try:
+        return int(float(cpu_limit_str) * 1e9)
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid CPU limit value: {cpu_limit_str}. CPU limiting disabled.")
+        return None
+
+
+def _parse_mem_limit(mem_limit_str: Optional[str]) -> Optional[str]:
+    if not mem_limit_str or mem_limit_str.lower() in ("0", "none", ""):
+        return None
+    return mem_limit_str
+
 
 
 # ---------------------------------------------------------------------------
@@ -257,18 +279,26 @@ def raw_scraped_pages(
         "pipeline_name": blueprint.get("name", ""),
     }
 
+    container_kwargs = {
+        "network": DOCKER_NETWORK,
+        "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+        "user": "root",
+        "auto_remove": True,
+        "shm_size": "2g",
+    }
+    scraper_mem = _parse_mem_limit(SCRAPER_MEM_LIMIT)
+    if scraper_mem:
+        container_kwargs["mem_limit"] = scraper_mem
+    scraper_nano_cpus = _parse_cpu_limit(SCRAPER_CPU_LIMIT)
+    if scraper_nano_cpus:
+        container_kwargs["nano_cpus"] = scraper_nano_cpus
+
     result = pipes_docker.run(
         context=context,
         image=SCRAPER_IMAGE,
         env=_build_container_env(),
         extras=extras,
-        container_kwargs={
-            "network": DOCKER_NETWORK,
-            "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
-            "user": "root",
-            "auto_remove": True,
-            "shm_size": "2g",
-        }
+        container_kwargs=container_kwargs,
     )
     return result.get_materialize_result()
 
@@ -317,16 +347,24 @@ def extracted_structured_data(
         "partition_key": context.partition_key,
     }
 
+    container_kwargs = {
+        "network": DOCKER_NETWORK,
+        "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+        "auto_remove": True,
+    }
+    extractor_mem = _parse_mem_limit(EXTRACTOR_MEM_LIMIT)
+    if extractor_mem:
+        container_kwargs["mem_limit"] = extractor_mem
+    extractor_nano_cpus = _parse_cpu_limit(EXTRACTOR_CPU_LIMIT)
+    if extractor_nano_cpus:
+        container_kwargs["nano_cpus"] = extractor_nano_cpus
+
     result = pipes_docker.run(
         context=context,
         image=EXTRACTOR_IMAGE,
         env=_build_container_env(),
         extras=extras,
-        container_kwargs={
-            "network": DOCKER_NETWORK,
-            "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
-            "auto_remove": True,
-        }
+        container_kwargs=container_kwargs,
     )
     return result.get_materialize_result()
 
@@ -355,17 +393,25 @@ def scrubbed_extracted_records(
     if shared_record_type:
         extras["shared_record_type"] = shared_record_type
 
+    container_kwargs = {
+        "network": DOCKER_NETWORK,
+        "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
+        "command": ["python", "/app/scrub_entrypoint.py"],
+        "auto_remove": True,
+    }
+    extractor_mem = _parse_mem_limit(EXTRACTOR_MEM_LIMIT)
+    if extractor_mem:
+        container_kwargs["mem_limit"] = extractor_mem
+    extractor_nano_cpus = _parse_cpu_limit(EXTRACTOR_CPU_LIMIT)
+    if extractor_nano_cpus:
+        container_kwargs["nano_cpus"] = extractor_nano_cpus
+
     result = pipes_docker.run(
         context=context,
         image=EXTRACTOR_IMAGE,
         env=_build_container_env(),
         extras=extras,
-        container_kwargs={
-            "network": DOCKER_NETWORK,
-            "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
-            "command": ["python", "/app/scrub_entrypoint.py"],
-            "auto_remove": True,
-        }
+        container_kwargs=container_kwargs,
     )
     return result.get_materialize_result()
 

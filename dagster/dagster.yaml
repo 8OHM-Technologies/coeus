@@ -37,6 +37,11 @@ run_launcher:
       # External AI / APIs
       - HF_TOKEN
       - HF_HOME
+      # Container resource limits
+      - COEUS_SCRAPER_MEM_LIMIT
+      - COEUS_SCRAPER_CPU_LIMIT
+      - COEUS_EXTRACTOR_MEM_LIMIT
+      - COEUS_EXTRACTOR_CPU_LIMIT
     network: 8ohm-network
     container_kwargs:
       auto_remove: true
