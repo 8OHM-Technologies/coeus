@@ -1,21 +1,19 @@
 import asyncio
 import os
+import queue
 import re
 import sys
 import urllib.parse
 from datetime import datetime, date as dt_date
+from typing import Optional
 
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Page
+from seleniumbase import SB
 
 from base_scraper import BaseScraper, setup_logger
 import db_storage
-from misstcha.turnstile import TurnstileSolver
-from utils.debug_helper import log_browser_proxy_ip
-from utils.utils import take_screenshot
 
 logger = setup_logger(__name__)
-turnstile_solver = TurnstileSolver()
 
 
 class BlockedException(Exception):
@@ -27,19 +25,23 @@ class BlockedException(Exception):
 # Pure Utility Helpers
 # ---------------------------------------------------------------------------
 
+def format_proxy_for_sb(proxy_url: Optional[str]) -> Optional[str]:
+    """Format standard proxy URL strings into SeleniumBase format (user:pass@host:port)."""
+    if not proxy_url:
+        return None
+    parsed = urllib.parse.urlparse(proxy_url)
+    sb_proxy = ""
+    if parsed.username and parsed.password:
+        sb_proxy += f"{parsed.username}:{parsed.password}@"
+    if parsed.hostname:
+        sb_proxy += parsed.hostname
+    if parsed.port:
+        sb_proxy += f":{parsed.port}"
+    return sb_proxy or None
+
+
 def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
-    """Determine the logical state of the page to detect blocks or dead links.
-
-    Args:
-        page_title: The page's <title> text.
-        h1_title: The page's first <h1> text.
-        body_text: The page's <body> inner text.
-
-    Returns:
-        "BLOCKED": if it's a Cloudflare/Turnstile challenge or 403 block page.
-        "NOT_FOUND": if it's a 404 error page.
-        "OK": if it's a valid content page.
-    """
+    """Determine the logical state of the page to detect blocks or dead links."""
     t_lower = (page_title or "").lower().strip()
     h_lower = (h1_title or "").lower().strip()
     b_lower = (body_text or "").lower().strip()
@@ -59,16 +61,14 @@ def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
         return "BLOCKED"
 
     if (
-        t_lower
-        in (
+        t_lower in (
             "not found",
             "page not found",
             "404 not found",
             "404 - not found",
             "404 error",
         )
-        or h_lower
-        in (
+        or h_lower in (
             "not found",
             "page not found",
             "404 not found",
@@ -81,82 +81,18 @@ def check_page_state(page_title: str, h1_title: str, body_text: str) -> str:
     return "OK"
 
 
-async def get_page_signals(page: Page) -> tuple[str, str, str]:
-    """Extract the title, h1, and body text from the current page for state checks."""
-    title = await page.title()
+def get_sb_page_signals(sb: SB) -> tuple[str, str, str]:
+    """Extract page title, first h1, and body text using SeleniumBase."""
+    title = sb.get_page_title() or ""
     try:
-        h1 = (
-            await page.locator("h1").first.inner_text()
-            if await page.locator("h1").count() > 0
-            else ""
-        )
+        h1 = sb.get_text("h1") if sb.is_element_present("h1") else ""
     except Exception:
         h1 = ""
     try:
-        body = (
-            await page.locator("body").inner_text()
-            if await page.locator("body").count() > 0
-            else ""
-        )
+        body = sb.get_text("body") if sb.is_element_present("body") else ""
     except Exception:
         body = ""
     return title, h1, body
-
-
-async def wait_for_page_load(page: Page, url_type: str = "page") -> str:
-    """Wait for the page to settle after a Turnstile challenge or navigation.
-
-    Polls for up to 30 seconds, checking both the page state and content-specific
-    signals to confirm the real page has loaded.
-
-    Args:
-        page: The Playwright page instance.
-        url_type: One of "start", "year", or "case" to check for specific content.
-
-    Returns:
-        "OK", "NOT_FOUND", or "TIMEOUT".
-    """
-    year_pattern = re.compile(r"^\d{4}$")
-    for poll_sec in range(30):
-        await asyncio.sleep(1)
-        try:
-            title, h1, body = await get_page_signals(page)
-        except Exception:
-            continue
-
-        state = check_page_state(title, h1, body)
-        if state == "NOT_FOUND":
-            return "NOT_FOUND"
-        if state == "BLOCKED":
-            continue
-
-        # Page is in OK state — verify the expected content is actually present
-        if url_type == "start":
-            anchors = await page.locator("a").all()
-            for a in anchors:
-                try:
-                    text = (await a.inner_text()).strip()
-                    if year_pattern.match(text):
-                        return "OK"
-                except Exception:
-                    pass
-        elif url_type == "year":
-            anchors = await page.locator("a").all()
-            for a in anchors:
-                try:
-                    href = await a.get_attribute("href")
-                    if href and href.endswith(".html") and not ("toc-" in href or "index.html" in href):
-                        return "OK"
-                except Exception:
-                    pass
-        elif url_type == "case":
-            if len(body.strip()) > 500:
-                return "OK"
-        else:
-            if not await turnstile_solver.find_turnstile_frame(page):
-                return "OK"
-
-    return "TIMEOUT"
 
 
 def parse_case_url(case_url: str, default_court: str = "SAFLII") -> tuple[str, str, str]:
@@ -170,23 +106,19 @@ def parse_case_url(case_url: str, default_court: str = "SAFLII") -> tuple[str, s
     return default_court, "unknown", "unknown"
 
 
-def extract_case_number_from_text(text: str) -> str | None:
-    """Extracts standard SAFLII case numbers or formal citations from strings."""
+def extract_case_number_from_text(text: str) -> Optional[str]:
+    """Extract standard SAFLII case numbers or formal citations from strings."""
     if not text:
         return None
 
-    # First, try to extract a parenthesized case number, stripping the parentheses
-    # e.g., "(JR2672/2021)" -> "JR2672/2021", "(1/2026)" -> "1/2026"
     match = re.search(r'\((?:\w+\s+)?(\w+/\d+)\)', text)
     if match:
         return match.group(1).strip()
 
-    # Second, check for citation style e.g., "[2026] ZACC 4"
     match = re.search(r'\[\d{4}\]\s+\w+\s+\d+', text)
     if match:
         return match.group(0).strip()
 
-    # Third, try standard fallback without parentheses
     match = re.search(r'\b\w+/\d+\b', text)
     if match:
         return match.group(0).strip()
@@ -204,7 +136,6 @@ class SafliiScraper(BaseScraper):
         super().__init__(pipeline_name)
         self.headless = headless
         
-        # Configuration parameters resolved during initialization
         self.start_url: str = ""
         self.start_year: int = 2000
         self.end_year: int = datetime.now().year
@@ -212,19 +143,15 @@ class SafliiScraper(BaseScraper):
         self.take_debug_screenshots: bool = False
         self.screenshots_dir: str = ""
         self.use_proxy: bool = False
-        self.proxy_url: str | None = None
+        self.proxy_url: Optional[str] = None
         
-        # Dynamic operational memory state across sub-processes
         self.case_urls: list[str] = []
         self.url_to_case_number: dict[str, str] = {}
 
-        # Concurrency control locks
         self.db_lock = asyncio.Lock()
-        self.turnstile_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         """Hydrate runtime variables, baseline tracking sets, and directory structures."""
-        # Hydrates self.conn, self.target_id, self.existing_urls, self.existing_case_numbers, and self.progress_state
         await super().initialize()
         
         self.start_url = self.config.get("start_url")
@@ -241,12 +168,11 @@ class SafliiScraper(BaseScraper):
         self.screenshots_dir = os.path.join(os.path.dirname(self.output_dir), "screenshots")
         os.makedirs(self.screenshots_dir, exist_ok=True)
         
-        # Hydrate internal proxies if present in config maps
         self.use_proxy = self.config.get("use_proxy", False)
         self.proxy_url = self.config.get("proxy_url")
         
         logger.info("==================================================")
-        logger.info(f"🚀 COEUS NEW SAFLII WORKER RUNNING ({self.pipeline_name})")
+        logger.info(f"🚀 COEUS SAFLII WORKER (SeleniumBase UC Mode) ({self.pipeline_name})")
         logger.info(f"Target Year Context Range Bounds: {self.start_year} - {self.end_year}")
         logger.info("==================================================")
 
@@ -254,369 +180,271 @@ class SafliiScraper(BaseScraper):
         """SAFLII bypasses login constraints via inline Cloudflare tokens. No-op implementation."""
         pass
 
-    async def handle_turnstile_challenge(self, page: Page, attempt_prefix: str, url_type: str = "page") -> str:
-        """Detect, solve, and verify Cloudflare Turnstile challenges.
+    def _navigate_and_handle_turnstile(
+        self,
+        sb: SB,
+        url: str,
+        attempt_prefix: str,
+    ) -> str:
+        """Open a URL with SeleniumBase UC reconnect and handle Turnstile challenges."""
+        logger.info(f"Navigating with UC reconnect to: {url} [{attempt_prefix}]")
+        sb.uc_open_with_reconnect(url, reconnect_time=2)
 
-        Uses the proven pattern: detect via targeted DOM signals → solve via
-        click → wait for actual page content to load.
+        try:
+            sb.uc_gui_handle_captcha()
+        except Exception as captcha_err:
+            logger.debug(f"Captcha auto-handler check finished: {captcha_err}")
 
-        Args:
-            page: The Playwright page instance.
-            attempt_prefix: A label for log messages (e.g. "start_url_attempt_1").
-            url_type: One of "start", "year", or "case" — passed to wait_for_page_load.
-
-        Returns:
-            The page state after resolution: "OK", "BLOCKED", or "NOT_FOUND".
-        """
-        title, h1, body = await get_page_signals(page)
+        title, h1, body = get_sb_page_signals(sb)
         state = check_page_state(title, h1, body)
 
-        if state == "BLOCKED":
-            async with self.turnstile_lock:
-                # Reload the page to check if another worker already cleared the Turnstile challenge
-                logger.info(f"Checking Turnstile cookie sharing via reload for [{attempt_prefix}]...")
-                try:
-                    await page.reload(timeout=8000)
-                except Exception:
-                    pass
-                title, h1, body = await get_page_signals(page)
-                state = check_page_state(title, h1, body)
-                if state != "BLOCKED":
-                    logger.info(f"✅ Bypassed Turnstile challenge for [{attempt_prefix}] via shared session cookies.")
-                    return state
-
-                logger.info(f"⚠️ Captcha challenge detected during [{attempt_prefix}]. Invoking Solver...")
-                try:
-                    await page.bring_to_front()
-                except Exception as e:
-                    logger.warning(f"Could not bring page to front: {e}")
-                solve_res = await turnstile_solver.solve(page, sb=self.browser_manager.chrome_proc, screenshot_dir=self.screenshots_dir)
-
-                if solve_res["success"]:
-                    load_result = await wait_for_page_load(page, url_type)
-                    if self.take_debug_screenshots:
-                        await take_screenshot(page, self.screenshots_dir, f"{attempt_prefix}_post_solve")
-
-                    if load_result == "TIMEOUT":
-                        logger.warning(f"Post-solve page load timed out for [{attempt_prefix}]. Attempting page reload to trigger cookie validation...")
-                        try:
-                            await page.reload(timeout=8000)
-                            load_result = await wait_for_page_load(page, url_type)
-                        except Exception as reload_err:
-                            logger.warning(f"Page reload failed: {reload_err}")
-
-                    if load_result == "TIMEOUT":
-                        # Re-check state — it may have partially loaded
-                        title, h1, body = await get_page_signals(page)
-                        state = check_page_state(title, h1, body)
-                    else:
-                        state = load_result  # "OK" or "NOT_FOUND"
-                else:
-                    logger.warning(f"Solver failed for [{attempt_prefix}]: {solve_res.get('error', 'unknown')}")
-                    await asyncio.sleep(2)
-                    # Re-check state in case it cleared anyway
-                    title, h1, body = await get_page_signals(page)
-                    state = check_page_state(title, h1, body)
+        if self.take_debug_screenshots:
+            screenshot_path = os.path.join(self.screenshots_dir, f"{attempt_prefix}.png")
+            try:
+                sb.save_screenshot(screenshot_path)
+            except Exception:
+                pass
 
         return state
 
-    async def indexing(self) -> None:
-        """Sub-process A: Harvest case entry indexes matching timeframe distribution constraints."""
-        self.playwright_instance = await async_playwright().start()
-        
-        from utils.browser_helper import BrowserManager
-        self.browser_manager = BrowserManager(
-            self.playwright_instance,
-            headless=self.headless,
-            ignore_https_errors=self.config.get("allow_insecure_requests", False),
-            proxy_url=self.proxy_url if self.use_proxy else None,
-            viewport={"width": 1280, "height": 720},
-        )
-        
-        page = await self.browser_manager.start()
-        await log_browser_proxy_ip(page, "Startup", self.use_proxy)
-
-        # 1. Gather Year Links
-        logger.info(f"Navigating to operational index anchor: {self.start_url}")
-        start_success = False
-        year_links = []
-        
-        for attempt in range(1, 4):
-            try:
-                await page.goto(self.start_url, timeout=30000)
-                if self.take_debug_screenshots:
-                    await take_screenshot(page, self.screenshots_dir, f"start_url_attempt_{attempt}_navigated")
-
-                state = await self.handle_turnstile_challenge(page, f"start_url_attempt_{attempt}", url_type="start")
-                if state == "BLOCKED":
-                    raise BlockedException("Cloudflare clearance execution timed out at index node context.")
-                elif state == "NOT_FOUND":
-                    raise Exception(f"Anchor endpoint missing or unreachable. State evaluated: {state}")
-
-                year_pattern = re.compile(r"^\d{4}$")
-                anchors = await page.locator("a").all()
-                for anchor in anchors:
-                    href = await anchor.get_attribute("href")
-                    text = (await anchor.inner_text()).strip()
-                    if href and year_pattern.match(text):
-                        year = int(text)
-                        if self.start_year <= year <= self.end_year:
-                            abs_url = urllib.parse.urljoin(self.start_url, href)
-                            year_links.append((year, abs_url))
-
-                if year_links:
-                    year_links = sorted(list(set(year_links)), key=lambda x: x[0])
-                    start_success = True
-                    break
-                else:
-                    raise Exception("No year index nodes isolated from element structures.")
-            except Exception as err:
-                logger.warning(f"Index access pass {attempt}/5 obstructed: {err}")
-                if self.take_debug_screenshots:
-                    await take_screenshot(page, self.screenshots_dir, f"start_url_attempt_{attempt}_error")
-                if attempt < 5:
-                    await asyncio.sleep(attempt * 5)
-
-        if not start_success:
-            logger.error("Failed to verify structural clearance benchmarks for base tracking arrays.")
-            sys.exit(1)
-
-        logger.info(f"Found {len(year_links)} years to process: {[y for y, _ in year_links]}")
-
-        # 2. Iterate through index vectors to isolate documents URLs
+    def _indexing_sync(self) -> tuple[list[str], dict[str, str]]:
+        """Synchronous indexing task running inside a dedicated SB UC context thread."""
+        sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         raw_case_urls = []
-        for year, year_url in year_links:
-            logger.info(f"Processing structural year context directory: {year} -> {year_url}")
-            await log_browser_proxy_ip(page, f"Year {year}", self.use_proxy)
+        url_to_case_map = {}
+
+        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True) as sb:
+            sb.set_window_size(1280, 720)
+            
+            # 1. Gather Year Links
+            logger.info(f"Navigating to operational index anchor: {self.start_url}")
+            year_links = []
+            start_success = False
 
             for attempt in range(1, 4):
                 try:
-                    await page.goto(year_url, timeout=30000)
-                    if self.take_debug_screenshots:
-                        await take_screenshot(page, self.screenshots_dir, f"year_{year}_attempt_{attempt}_navigated")
-
-                    state = await self.handle_turnstile_challenge(page, f"year_{year}_attempt_{attempt}", url_type="year")
+                    state = self._navigate_and_handle_turnstile(sb, self.start_url, f"start_url_attempt_{attempt}")
                     if state == "BLOCKED":
-                        raise BlockedException(f"Resource locks applied on year directory {year}.")
+                        raise BlockedException("Cloudflare clearance execution timed out at index node context.")
                     elif state == "NOT_FOUND":
-                        raise Exception(f"Target index {year_url} missing or returned error (state: {state}).")
+                        raise Exception(f"Anchor endpoint missing or unreachable. State evaluated: {state}")
 
-                    y_anchors = await page.locator("a").all()
-                    for y_anchor in y_anchors:
-                        href = await y_anchor.get_attribute("href")
-                        if not href:
-                            continue
-                        abs_url = urllib.parse.urljoin(year_url, href)
-                        parsed_url = urllib.parse.urlparse(abs_url)
-                        parts = [p for p in parsed_url.path.split("/") if p]
-                        
-                        if len(parts) >= 2:
-                            parent_dir, filename = parts[-2], parts[-1]
-                            if parent_dir.isdigit() and len(parent_dir) == 4 and filename.endswith(".html"):
-                                if self.start_year <= int(parent_dir) <= self.end_year:
-                                    if not ("toc-" in filename or filename == "index.html"):
-                                        text = await y_anchor.inner_text()
-                                        case_no = extract_case_number_from_text(text)
-                                        if case_no:
-                                            self.url_to_case_number[abs_url] = case_no
-                                        raw_case_urls.append(abs_url)
-                    break
-                except Exception as err:
-                    logger.warning(f"Error encountered isolating index structures for year {year} [Attempt {attempt}]: {err}")
-                    if self.take_debug_screenshots:
-                        await take_screenshot(page, self.screenshots_dir, f"year_{year}_attempt_{attempt}_error")
-                    if attempt == 5:
-                        logger.error(f"Terminated tracking bounds processing loops context for timeframe: {year}")
+                    soup = BeautifulSoup(sb.get_page_source(), "lxml")
+                    year_pattern = re.compile(r"^\d{4}$")
+                    
+                    for a_tag in soup.find_all("a"):
+                        href = a_tag.get("href")
+                        text = a_tag.get_text(strip=True)
+                        if href and year_pattern.match(text):
+                            year = int(text)
+                            if self.start_year <= year <= self.end_year:
+                                abs_url = urllib.parse.urljoin(self.start_url, href)
+                                year_links.append((year, abs_url))
+
+                    if year_links:
+                        year_links = sorted(list(set(year_links)), key=lambda x: x[0])
+                        start_success = True
+                        break
                     else:
-                        await asyncio.sleep(attempt * 10)
+                        raise Exception("No year index nodes isolated from element structures.")
+                except Exception as err:
+                    logger.warning(f"Index access pass {attempt}/3 obstructed: {err}")
+                    if attempt < 3:
+                        sb.sleep(attempt * 5)
 
-        self.case_urls = sorted(list(set(raw_case_urls)))
+            if not start_success:
+                logger.error("Failed to verify structural clearance benchmarks for base tracking arrays.")
+                sys.exit(1)
+
+            logger.info(f"Found {len(year_links)} years to process: {[y for y, _ in year_links]}")
+
+            # 2. Extract Document URLs from Year Directories
+            for year, year_url in year_links:
+                logger.info(f"Processing structural year context directory: {year} -> {year_url}")
+                for attempt in range(1, 4):
+                    try:
+                        state = self._navigate_and_handle_turnstile(sb, year_url, f"year_{year}_attempt_{attempt}")
+                        if state == "BLOCKED":
+                            raise BlockedException(f"Resource locks applied on year directory {year}.")
+                        elif state == "NOT_FOUND":
+                            raise Exception(f"Target index {year_url} missing or returned error (state: {state}).")
+
+                        soup = BeautifulSoup(sb.get_page_source(), "lxml")
+                        for a_tag in soup.find_all("a"):
+                            href = a_tag.get("href")
+                            if not href:
+                                continue
+                            abs_url = urllib.parse.urljoin(year_url, href)
+                            parsed_url = urllib.parse.urlparse(abs_url)
+                            parts = [p for p in parsed_url.path.split("/") if p]
+
+                            if len(parts) >= 2:
+                                parent_dir, filename = parts[-2], parts[-1]
+                                if parent_dir.isdigit() and len(parent_dir) == 4 and filename.endswith(".html"):
+                                    if self.start_year <= int(parent_dir) <= self.end_year:
+                                        if not ("toc-" in filename or filename == "index.html"):
+                                            case_no = extract_case_number_from_text(a_tag.get_text(strip=True))
+                                            if case_no:
+                                                url_to_case_map[abs_url] = case_no
+                                            raw_case_urls.append(abs_url)
+                        break
+                    except Exception as err:
+                        logger.warning(f"Error isolating index structures for year {year} [Attempt {attempt}]: {err}")
+                        if attempt < 3:
+                            sb.sleep(attempt * 5)
+
+        return sorted(list(set(raw_case_urls))), url_to_case_map
+
+    async def indexing(self) -> None:
+        """Sub-process A: Harvest case entry indexes matching timeframe distribution constraints."""
+        logger.info("Starting indexing stage via SeleniumBase UC thread...")
+        self.case_urls, self.url_to_case_number = await asyncio.to_thread(self._indexing_sync)
         logger.info(f"Sub-process A complete. Total downstream asset indexes harvested: {len(self.case_urls)}")
 
+    async def _save_record_to_db(self, case_url: str, record: dict, doc_date: dt_date) -> None:
+        """Thread-safe helper to write detailed scraped records to the database."""
+        async with self.db_lock:
+            await db_storage.upsert_scraped_record(
+                self.conn, self.target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
+            )
+
+    def _detailing_worker_thread(
+        self,
+        worker_id: int,
+        work_queue: queue.Queue,
+        loop: asyncio.AbstractEventLoop,
+        total_cases: int,
+    ) -> None:
+        """Synchronous thread running a dedicated SB UC instance for processing case items."""
+        sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
+        logger.info(f"[Worker {worker_id}] Initializing SeleniumBase UC browser session...")
+
+        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True) as sb:
+            sb.set_window_size(1280, 720)
+
+            while True:
+                try:
+                    item = work_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                idx, case_url = item
+                c_court, c_year, c_id = parse_case_url(case_url)
+                case_no = self.url_to_case_number.get(case_url)
+
+                # Pre-existing check against in-memory deduplication sets
+                if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
+                    logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Skipping pre-existing record: {case_url}")
+                    work_queue.task_done()
+                    continue
+
+                logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active -> {case_url}")
+                success = False
+
+                for attempt in range(1, 4):
+                    try:
+                        state = self._navigate_and_handle_turnstile(sb, case_url, f"worker_{worker_id}_case_{c_id}_att_{attempt}")
+                        if state == "BLOCKED":
+                            raise BlockedException(f"Turnstile block on asset: {c_id}")
+                        elif state == "NOT_FOUND":
+                            raise Exception(f"Resource missing (state: {state})")
+
+                        soup = BeautifulSoup(sb.get_page_source(), "lxml")
+                        center_div = soup.find("div", id="center")
+                        center_html = str(center_div) if center_div else ""
+
+                        h2_el = center_div.find("h2") if center_div else None
+                        title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title()
+
+                        if not case_no:
+                            case_no = extract_case_number_from_text(title)
+
+                        if case_no and case_no in self.existing_case_numbers:
+                            logger.info(f"[Worker {worker_id}] Duplicate signature isolated via late mapping: {case_no}")
+                            success = True
+                            break
+
+                        record = {
+                            "court": c_court,
+                            "year": c_year,
+                            "case_id": c_id,
+                            "title": title,
+                            "url": case_url,
+                            "center_content": center_html,
+                            "scraped_at": datetime.now().isoformat(),
+                            "worker_id": worker_id,
+                        }
+
+                        try:
+                            doc_date = dt_date(int(c_year), 1, 1)
+                        except Exception:
+                            doc_date = dt_date.today()
+
+                        # Dispatch async DB save back to the main event loop
+                        future = asyncio.run_coroutine_threadsafe(
+                            self._save_record_to_db(case_url, record, doc_date),
+                            loop
+                        )
+                        future.result()  # Wait for DB transaction to finish
+
+                        self.existing_urls.add(case_url)
+                        if case_no:
+                            self.existing_case_numbers.add(case_no)
+
+                        logger.info(f"[Worker {worker_id}] [+] Saved record: {c_court}_{c_year}_{c_id}")
+                        success = True
+                        break
+
+                    except BlockedException as be:
+                        logger.warning(f"[Worker {worker_id}] Blocked on case page {case_url} (attempt {attempt}/3): {be}")
+                        if attempt < 3:
+                            sb.sleep(attempt * 4)
+                    except Exception as err:
+                        logger.warning(f"[Worker {worker_id}] Processing error on case {c_id} [Attempt {attempt}]: {err}")
+                        if attempt < 3:
+                            sb.sleep(attempt * 4)
+
+                if success:
+                    sb.sleep(self.cooldown_seconds)
+
+                work_queue.task_done()
+
+        logger.info(f"[Worker {worker_id}] Thread execution complete.")
+
     async def detailing(self) -> None:
-        """Sub-process B: Perform deep enrichment processing on targeted file links."""
+        """Sub-process B: Perform deep enrichment processing using concurrent SB UC worker threads."""
         if not self.case_urls:
             logger.info("No remote indices staged for detailed processing pipelines.")
             return
 
         extraction_params = self.config.get("extraction_params", {})
-        concurrency = int(extraction_params.get("concurrency", 8))
-        logger.info(f"Starting concurrent detailing with {concurrency} workers...")
+        concurrency = int(extraction_params.get("concurrency", 4))
+        logger.info(f"Starting detailing with {concurrency} SeleniumBase UC worker threads...")
 
-        # Close the initial indexing page to free resources
-        if self.browser_manager.page:
-            try:
-                await self.browser_manager.page.close()
-            except Exception:
-                pass
-
-        queue = asyncio.Queue()
+        work_queue = queue.Queue()
         for idx, case_url in enumerate(self.case_urls, start=1):
-            await queue.put((idx, case_url))
+            work_queue.put((idx, case_url))
 
-        total_new = 0
+        loop = asyncio.get_running_loop()
+        total_cases = len(self.case_urls)
 
-        async def worker(worker_id: int):
-            nonlocal total_new
-            logger.info(f"Worker {worker_id} started.")
-            
-            # Create a dedicated context and page for this worker to ensure a different proxy IP
-            from utils.browser_helper import create_browser_context
-            context, page = await create_browser_context(
-                self.browser_manager.browser,
-                ignore_https_errors=self.config.get("allow_insecure_requests", False),
-                proxy_url=self.proxy_url if self.use_proxy else None,
-                viewport={"width": 1280, "height": 720},
+        # Launch worker threads
+        worker_tasks = [
+            asyncio.to_thread(
+                self._detailing_worker_thread,
+                worker_id=i,
+                work_queue=work_queue,
+                loop=loop,
+                total_cases=total_cases,
             )
-            
-            try:
-                while not queue.empty():
-                    try:
-                        idx, case_url = queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
+            for i in range(1, concurrency + 1)
+        ]
 
-                    c_court, c_year, c_id = parse_case_url(case_url)
-                    case_no = self.url_to_case_number.get(case_url)
-
-                    # Check against deduplication sets (read/write is safe in single-threaded event loop)
-                    if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
-                        logger.info(f"[Worker {worker_id}][{idx}/{len(self.case_urls)}] Skipping record entry (Pre-existing validation signature matches): {case_url}")
-                        queue.task_done()
-                        continue
-
-                    logger.info(f"[Worker {worker_id}][{idx}/{len(self.case_urls)}] Detailed enrichment active -> {case_url}")
-                    success = False
-
-                    for attempt in range(1, 4):
-                        try:
-                            await page.goto(case_url, timeout=30000)
-                            if self.take_debug_screenshots:
-                                await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_navigated")
-
-                            state = await self.handle_turnstile_challenge(page, f"case_{c_id}_attempt_{attempt}", url_type="case")
-                            if state == "BLOCKED":
-                                raise BlockedException(f"Challenge wall containment failure active on asset element: {c_id}")
-                            elif state == "NOT_FOUND":
-                                raise Exception(f"Target payload resource {case_url} not found (could be transient block/404).")
-
-                            html_content = await page.content()
-                            soup = BeautifulSoup(html_content, "lxml")
-                            center_div = soup.find("div", id="center")
-                            center_html = str(center_div) if center_div else ""
-
-                            h2_el = center_div.find("h2") if center_div else None
-                            title = h2_el.get_text(strip=True) if h2_el else await page.title()
-
-                            if not case_no:
-                                case_no = extract_case_number_from_text(title)
-
-                            if case_no and case_no in self.existing_case_numbers:
-                                logger.info(f"[Worker {worker_id}]  [~] Duplicate signature isolated via late mapping step for identifier: {case_no}")
-                                success = True
-                                break
-
-                            record = {
-                                "court": c_court,
-                                "year": c_year,
-                                "case_id": c_id,
-                                "title": title,
-                                "url": case_url,
-                                "center_content": center_html,
-                                "scraped_at": datetime.now().isoformat(),
-                                "worker_id": worker_id,
-                            }
-
-                            try:
-                                doc_date = dt_date(int(c_year), 1, 1)
-                            except Exception:
-                                doc_date = dt_date.today()
-
-                            # Push safely formatted record via database helper, protected by db_lock
-                            async with self.db_lock:
-                                await db_storage.upsert_scraped_record(
-                                    self.conn, self.target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
-                                )
-                            
-                            self.existing_urls.add(case_url)
-                            if case_no:
-                                self.existing_case_numbers.add(case_no)
-                            
-                            total_new += 1
-                            logger.info(f"[Worker {worker_id}]  [+] Unified structural database record written: {c_court}_{c_year}_{c_id}")
-                            success = True
-                            break
-
-                        except BlockedException as be:
-                            logger.warning(f"[Worker {worker_id}] Blocked on case page {case_url} (attempt {attempt}/5): {be}")
-                            if self.take_debug_screenshots:
-                                await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_blocked_error")
-                            if attempt < 5:
-                                await asyncio.sleep(attempt * 5)
-                        except Exception as err:
-                            err_msg = str(err).lower()
-                            if "closed" in err_msg or "connection" in err_msg:
-                                logger.error(f"[Worker {worker_id}] Browser connection lost: {err}. Attempting self-healing recovery...")
-                                async with self.db_lock:
-                                    if not self.browser_manager.browser or not self.browser_manager.browser.is_connected():
-                                        logger.warning(f"[Worker {worker_id}] Browser process is disconnected. Restarting BrowserManager...")
-                                        try:
-                                            await self.browser_manager.recycle()
-                                        except Exception as recycle_err:
-                                            logger.error(f"[Worker {worker_id}] Failed to recycle browser manager: {recycle_err}")
-                                try:
-                                    try:
-                                        await page.close()
-                                    except Exception:
-                                        pass
-                                    try:
-                                        await context.close()
-                                    except Exception:
-                                        pass
-                                    context, page = await create_browser_context(
-                                        self.browser_manager.browser,
-                                        ignore_https_errors=self.config.get("allow_insecure_requests", False),
-                                        proxy_url=self.proxy_url if self.use_proxy else None,
-                                        viewport={"width": 1280, "height": 720},
-                                    )
-                                except Exception as recreate_err:
-                                    logger.error(f"[Worker {worker_id}] Failed to recreate worker context/page: {recreate_err}")
-                                    await asyncio.sleep(5)
-                                continue
-
-                            logger.warning(f"[Worker {worker_id}] Enrichment payload extraction error on asset {c_id} [Attempt {attempt}]: {err}")
-                            if self.take_debug_screenshots:
-                                await take_screenshot(page, self.screenshots_dir, f"case_{c_id}_attempt_{attempt}_error")
-                            if attempt < 5:
-                                await asyncio.sleep(attempt * 5)
-
-                    if success:
-                        await asyncio.sleep(self.cooldown_seconds)
-                    queue.task_done()
-            finally:
-                try:
-                    await page.close()
-                except Exception:
-                    pass
-                try:
-                    await context.close()
-                except Exception:
-                    pass
-                logger.info(f"Worker {worker_id} stopped.")
-
-        # Run workers concurrently
-        workers = [asyncio.create_task(worker(i)) for i in range(1, concurrency + 1)]
-        await queue.join()
-        
-        # Cancel any idle worker tasks (should already be done, but to be safe)
-        for w in workers:
-            w.cancel()
-        await asyncio.gather(*workers, return_exceptions=True)
-
-        logger.info(f"✅ Scraping execution layer completely processed. Staged transactional commits: {total_new}")
+        await asyncio.gather(*worker_tasks)
+        logger.info("✅ Scraping execution layer completely processed.")
 
     async def extraction(self) -> None:
-        """Stage 2: Final post-processing, validation transformations, or metrics logging operations."""
+        """Stage 2: Post-processing and extraction metrics verification."""
         logger.info("Stage 2: Post-Scraping Data Extraction verification processes complete.")
 
 
@@ -627,7 +455,7 @@ class SafliiScraper(BaseScraper):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Coeus New SAFLII Scraper Refactored Instance")
+    parser = argparse.ArgumentParser(description="Coeus SAFLII Scraper (SeleniumBase UC Driver)")
     parser.add_argument(
         "--pipeline", "--pipeline_name", 
         required=True, 
@@ -637,7 +465,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--headless", 
         default="false", 
-        help="Orchestrate worker browser processes via headless virtual framing parameters (true/false)"
+        help="Orchestrate worker browser processes via headless mode (true/false)"
     )
     args = parser.parse_args()
 
