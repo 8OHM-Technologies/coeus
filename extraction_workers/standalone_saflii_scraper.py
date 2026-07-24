@@ -216,6 +216,14 @@ class SafliiScraper(BaseScraper):
             except Exception:
                 pass
 
+        # Wait for browser URL transition to commit to target resource endpoint (prevents stale DOM race conditions)
+        target_filename = url.split("/")[-1]
+        for _ in range(15):
+            curr_url = sb.get_current_url()
+            if target_filename in curr_url or curr_url == url:
+                break
+            sb.sleep(0.2)
+
         title, h1, body = get_sb_page_signals(sb)
         state = check_page_state(title, h1, body)
 
@@ -348,6 +356,11 @@ class SafliiScraper(BaseScraper):
                             raise BlockedException(f"Turnstile block on asset: {c_id}")
                         elif state == "NOT_FOUND":
                             raise Exception(f"Resource missing (state: {state})")
+
+                        target_filename = case_url.split("/")[-1]
+                        curr_url = sb.get_current_url()
+                        if target_filename not in curr_url and curr_url != case_url:
+                            raise Exception(f"Stale DOM race condition detected: active URL '{curr_url}' does not match target '{case_url}'")
 
                         soup = BeautifulSoup(sb.get_page_source(), "lxml")
                         center_div = soup.find("div", id="center")

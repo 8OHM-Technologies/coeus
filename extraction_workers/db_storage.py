@@ -18,6 +18,11 @@ import asyncpg
 
 logger = logging.getLogger(__name__)
 
+def json_dumps(data: Any) -> str:
+    """Serialize object to JSON string with default=str serialization."""
+    return json.dumps(data, default=str, ensure_ascii=False)
+
+
 # ---------------------------------------------------------------------------
 # Internal Utilities
 # ---------------------------------------------------------------------------
