@@ -68,17 +68,19 @@ class BaseScraper(ABC):
         self.progress_state = await db_storage.load_pipeline_state(
             self.conn, self.pipeline_name
         )
-        logger.info(f"Progress state loaded for execution footprint: {self.progress_state}")
+        logger.info(f"Progress state loaded: {self.progress_state}")
 
         # Hydrate proxy flags from pipeline config
         self.use_proxy = self.config.get("use_proxy", False)
         self.proxy_url = self.config.get("proxy_url")
 
-    async def save_progress(self, year: int, month: int, completed: bool = False) -> None:
+    async def save_progress(self, year: int, month: int = 0, completed: bool = False, **kwargs) -> None:
         """Persists rolling-window execution markers into database storage."""
         self.progress_state["last_year"] = year
         self.progress_state["last_month"] = month
         self.progress_state["last_completed"] = completed
+        for k, v in kwargs.items():
+            self.progress_state[k] = v
         await db_storage.save_pipeline_state(
             self.conn, self.pipeline_name, self.progress_state
         )
@@ -89,6 +91,12 @@ class BaseScraper(ABC):
             await self.conn.close()
             logger.info("Database connection gracefully terminated.")
 
+    async def scraping(self) -> None:
+        """Stage 1: Executes indexing discovery followed by item detailing."""
+        logger.info("Starting Stage 1: Scraping Process Pipeline...")
+        await self.indexing()
+        await self.detailing()
+
     @abstractmethod
     async def authenticate(self, headless: bool = False) -> None:
         """Handle structural authentication or session cookie persistence logic."""
@@ -96,24 +104,18 @@ class BaseScraper(ABC):
 
     @abstractmethod
     async def indexing(self) -> None:
-        """Sub-process A of Scraping: Build index / discover list components."""
+        """Stage 1: Sub-process A of Scraping: Build index / discover list components."""
         pass
 
     @abstractmethod
     async def detailing(self) -> None:
-        """Sub-process B of Scraping: Perform payload enrichment on specific entities."""
+        """Stage 1: Sub-process B of Scraping: Perform payload enrichment on specific entities."""
         pass
 
     @abstractmethod
     async def extraction(self) -> None:
         """Stage 2: Process, parse, structure, or validate raw acquired records."""
         pass
-
-    async def scraping(self) -> None:
-        """Stage 1: Executes indexing discovery followed by item detailing."""
-        logger.info("Starting Stage 1: Scraping Process Pipeline...")
-        await self.indexing()
-        await self.detailing()
 
     async def run(self) -> None:
         """Main execution wrapper coordinating overall lifecycle stages."""

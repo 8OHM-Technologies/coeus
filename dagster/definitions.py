@@ -255,11 +255,15 @@ def raw_scraped_pages(
     metadata = blueprint.get("metadata", {})
     extraction_params = phase2.get("extraction_params", {})
 
-    use_proxy: bool = (
-        to_bool(phase1.get("use_proxy"))
-        or to_bool(extraction_params.get("use_proxy"))
-        or to_bool(os.environ.get("USE_PROXY"))
-    )
+    # Respect pipeline-specific proxy configuration, fallback to environment default if not specified
+    use_proxy_val = phase1.get("use_proxy")
+    if use_proxy_val is None:
+        use_proxy_val = extraction_params.get("use_proxy")
+    
+    if use_proxy_val is not None:
+        use_proxy = to_bool(use_proxy_val)
+    else:
+        use_proxy = to_bool(os.environ.get("USE_PROXY", "false"))
 
     # Consolidate your configuration directly into the container extras payload
     extras = {

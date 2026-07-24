@@ -136,3 +136,38 @@ def test_extract_case_number_from_text():
     assert extract_case_number_from_text("Smith v State (123/15) (15 January 2026)") == "123/15"
     assert extract_case_number_from_text("No case number in here") is None
     assert extract_case_number_from_text("Date in paren (15 January 2026)") is None
+
+
+@pytest.mark.asyncio
+async def test_saflii_scraper_progress_state_years(mocker):
+    from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
+
+    mock_config = {
+        "start_url": "https://www.saflii.org/za/cases/ZALCJHB/1999",
+        "document_type": "awards",
+        "extraction_params": {}
+    }
+    mocker.patch("coeus.extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock())
+    mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
+    mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+
+    # Mock progress state loaded from DB with last_year=1999, last_completed=False
+    mock_progress = {
+        "last_year": 1999,
+        "court_code": "ZALCJHB",
+        "last_completed": False
+    }
+    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value=mock_progress))
+
+    scraper = SafliiScraper(pipeline_name="saflii_test")
+    await scraper.initialize()
+
+    # Verify that start_year is set to 1999 from progress_state, not defaulting to 2026
+    assert scraper.start_year == 1999
+    assert scraper.end_year == 2026
+    assert scraper.court_code == "ZALCJHB"
+
+

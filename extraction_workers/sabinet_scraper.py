@@ -242,7 +242,26 @@ class SabinetScraper(BaseScraper):
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         logger.info("[Auth] Launching browser for automated authentication state generation...")
 
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True) as sb:
+        use_xvfb = False
+        if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
+            use_xvfb = True
+        # Setup isolated profile path for auth to avoid collision
+        auth_profile_dir = os.path.join(
+            os.path.dirname(self.output_dir),
+            "profiles",
+            "auth"
+        )
+        os.makedirs(auth_profile_dir, exist_ok=True)
+
+        with SB(
+            uc=True,
+            headless=self.headless,
+            proxy=sb_proxy,
+            xvfb=use_xvfb,
+            test=True,
+            user_data_dir=auth_profile_dir,
+            multi_proxy=self.use_proxy
+        ) as sb:
             sb.set_window_size(1280, 800)
             self._navigate_with_reconnect(sb, scrape_url, label="Auth_Gate")
 
@@ -305,7 +324,26 @@ class SabinetScraper(BaseScraper):
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         total_new = 0
 
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True) as sb:
+        use_xvfb = False
+        if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
+            use_xvfb = True
+        # Setup isolated profile path for indexing to avoid collision
+        indexing_profile_dir = os.path.join(
+            os.path.dirname(self.output_dir),
+            "profiles",
+            "indexing"
+        )
+        os.makedirs(indexing_profile_dir, exist_ok=True)
+
+        with SB(
+            uc=True,
+            headless=self.headless,
+            proxy=sb_proxy,
+            xvfb=use_xvfb,
+            test=True,
+            user_data_dir=indexing_profile_dir,
+            multi_proxy=self.use_proxy
+        ) as sb:
             sb.set_window_size(1280, 800)
 
             # Load cookies if available
@@ -498,7 +536,26 @@ class SabinetScraper(BaseScraper):
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         logger.info(f"[Worker {worker_id}] Starting SB UC instance...")
 
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True) as sb:
+        use_xvfb = False
+        if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
+            use_xvfb = True
+        # Setup isolated profile path for this worker
+        worker_profile_dir = os.path.join(
+            os.path.dirname(self.output_dir),
+            "profiles",
+            f"worker_{worker_id}"
+        )
+        os.makedirs(worker_profile_dir, exist_ok=True)
+
+        with SB(
+            uc=True,
+            headless=self.headless,
+            proxy=sb_proxy,
+            xvfb=use_xvfb,
+            test=True,
+            user_data_dir=worker_profile_dir,
+            multi_proxy=self.use_proxy
+        ) as sb:
             sb.set_window_size(1280, 800)
 
             if os.path.exists(self.cookies_filepath):
@@ -566,6 +623,11 @@ class SabinetScraper(BaseScraper):
         if not cases:
             logger.info("✅ No structural rows require detailed asset parsing updates.")
             return
+
+        # Tell SeleniumBase we are running parallel threads to trigger internal locking mechanisms
+        import sys
+        if "-n" not in sys.argv:
+            sys.argv.append("-n")
 
         concurrency = int(extraction_params.get("concurrency", 4))
         logger.info(f"Starting concurrent detailing with {concurrency} SB UC workers...")

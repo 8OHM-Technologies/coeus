@@ -159,7 +159,8 @@ async def upsert_scraped_record(
         ON CONFLICT (source_url)
         DO UPDATE SET
             data        = EXCLUDED.data,
-            record_type = EXCLUDED.record_type
+            record_type = EXCLUDED.record_type,
+            status      = EXCLUDED.status
         """,
         uuid.uuid4(),
         target_id,
@@ -215,7 +216,8 @@ async def upsert_scraped_records_batch(
             ON CONFLICT (source_url)
             DO UPDATE SET
                 data        = EXCLUDED.data,
-                record_type = EXCLUDED.record_type
+                record_type = EXCLUDED.record_type,
+                status      = EXCLUDED.status
             """,
             batch_args,
         )
