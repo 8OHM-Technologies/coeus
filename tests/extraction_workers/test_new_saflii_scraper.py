@@ -52,7 +52,7 @@ def test_parse_case_url():
 
 @pytest.mark.asyncio
 async def test_wait_for_page_load_ok():
-    # Mock playwright page
+    # Mock driver page instance
     mock_page = AsyncMock()
     mock_page.title.return_value = "SAFLII Judgments"
     
