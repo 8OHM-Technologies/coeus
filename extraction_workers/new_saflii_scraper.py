@@ -295,8 +295,9 @@ class SafliiScraper(BaseScraper):
         sb: SB,
         url: str,
         attempt_prefix: str,
+        timeout: float = 15.0,
     ) -> str:
-        """Open a URL with fast single-window navigation and fallback to UC reconnect if blocked."""
+        """Open a URL with single-window navigation and wait for target URL commit and page load."""
         logger.info(f"Navigating to: {url} [{attempt_prefix}]")
 
         # 1. Clean up extra window handles if any accumulated to ensure window stability
@@ -316,7 +317,11 @@ class SafliiScraper(BaseScraper):
         except Exception:
             pass
 
-        # 2. Standard fast page open (reuses single window, memory efficient, avoids socket destruction)
+        # Parse target filename cleanly (ignoring trailing slashes)
+        path_parts = [p for p in urllib.parse.urlparse(url).path.split("/") if p]
+        target_filename = path_parts[-1] if path_parts else ""
+
+        # 2. Open URL via standard SeleniumBase open
         try:
             sb.open(url)
         except Exception as open_err:
@@ -326,28 +331,43 @@ class SafliiScraper(BaseScraper):
             except Exception:
                 pass
 
-        # Wait for browser URL transition to commit to target resource endpoint (prevents stale DOM race conditions)
-        target_filename = url.split("/")[-1]
-        for _ in range(15):
-            curr_url = sb.get_current_url()
-            if target_filename in curr_url or curr_url == url:
-                break
-            sb.sleep(0.2)
-
-        title, h1, body = get_sb_page_signals(sb)
-        state = check_page_state(title, h1, body)
-
-        # 3. Fallback to UC reconnect + CAPTCHA handling ONLY if blocked
-        if state == "BLOCKED":
-            logger.warning(f"Cloudflare hold page hit on {url}. Executing UC reconnect + captcha handler...")
+        # 3. Wait for browser URL transition to commit to target resource endpoint
+        navigated = False
+        max_attempts = max(1, int(timeout / 0.5))
+        for _ in range(max_attempts):
             try:
-                sb.uc_open_with_reconnect(url, reconnect_time=3)
-                sb.uc_gui_handle_captcha()
+                curr_url = sb.get_current_url()
+                if (target_filename and target_filename in curr_url) or curr_url == url:
+                    navigated = True
+                    break
             except Exception:
                 pass
-            sb.sleep(2)
-            title, h1, body = get_sb_page_signals(sb)
-            state = check_page_state(title, h1, body)
+            sb.sleep(0.5)
+
+        # 4. If standard open didn't commit to target URL within timeout, attempt UC reconnect fallback
+        if not navigated:
+            logger.warning(
+                f"URL transition slow/stuck for '{target_filename or url}' (current: '{sb.get_current_url()}'). "
+                f"Executing recovery reconnect..."
+            )
+            try:
+                sb.uc_open_with_reconnect(url, reconnect_time=3)
+            except Exception:
+                pass
+
+            # Wait up to 10 seconds post-reconnect for page load to finish
+            for _ in range(20):
+                try:
+                    curr_url = sb.get_current_url()
+                    if (target_filename and target_filename in curr_url) or curr_url == url:
+                        navigated = True
+                        break
+                except Exception:
+                    pass
+                sb.sleep(0.5)
+
+            if not navigated:
+                return "NAVIGATION_FAILED"
 
         if self.take_debug_screenshots and self.screenshots_dir:
             screenshot_path = os.path.join(self.screenshots_dir, f"{attempt_prefix}.png")
@@ -355,6 +375,9 @@ class SafliiScraper(BaseScraper):
                 sb.save_screenshot(screenshot_path)
             except Exception:
                 pass
+
+        title, h1, body = get_sb_page_signals(sb)
+        state = check_page_state(title, h1, body)
 
         return state
 
@@ -364,7 +387,8 @@ class SafliiScraper(BaseScraper):
         raw_case_urls = []
         url_to_case_map = {}
 
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True, xvfb=self.use_xvfb) as sb:
+        indexing_profile = "/tmp/saflii_indexing_profile"
+        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True, xvfb=self.use_xvfb, user_data_dir=indexing_profile) as sb:
             sb.set_window_size(1280, 720)
             
             # 1. Directly construct year directory URLs for the configured range (bypasses top-level redirect walls)
@@ -447,7 +471,8 @@ class SafliiScraper(BaseScraper):
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         logger.info(f"[Worker {worker_id}] Initializing SeleniumBase UC browser session...")
 
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True, xvfb=self.use_xvfb) as sb:
+        worker_profile = f"/tmp/saflii_worker_profile_{worker_id}"
+        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True, xvfb=self.use_xvfb, user_data_dir=worker_profile) as sb:
             sb.set_window_size(1280, 720)
 
             while True:
@@ -456,7 +481,12 @@ class SafliiScraper(BaseScraper):
                 except queue.Empty:
                     break
 
-                idx, case_url = item
+                if len(item) == 3:
+                    idx, case_url, pass_number = item
+                else:
+                    idx, case_url = item
+                    pass_number = 1
+
                 c_court, c_year, c_id = parse_case_url(case_url, default_court=self.court_code or "SAFLII")
                 case_no = self.url_to_case_number.get(case_url)
 
@@ -465,23 +495,20 @@ class SafliiScraper(BaseScraper):
                     work_queue.task_done()
                     continue
 
-                logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active -> {case_url}")
+                logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active [Pass {pass_number}/3] -> {case_url}")
                 success = False
 
                 for attempt in range(1, 4):
                     try:
                         state = self._navigate_and_handle_turnstile(
-                            sb, case_url, f"worker_{worker_id}_case_{c_id}_att_{attempt}"
+                            sb, case_url, f"worker_{worker_id}_case_{c_id}_pass_{pass_number}_att_{attempt}"
                         )
                         if state == "BLOCKED":
                             raise BlockedException(f"Turnstile block on asset: {c_id}")
                         elif state == "NOT_FOUND":
                             raise Exception(f"Resource missing (state: {state})")
-
-                        target_filename = case_url.split("/")[-1]
-                        curr_url = sb.get_current_url()
-                        if target_filename not in curr_url and curr_url != case_url:
-                            raise Exception(f"Stale DOM race condition detected: active URL '{curr_url}' does not match target '{case_url}'")
+                        elif state == "NAVIGATION_FAILED":
+                            raise Exception(f"Browser stuck on previous page, failed to navigate to target URL '{case_url}'")
 
                         soup = BeautifulSoup(sb.get_page_source(), "lxml")
                         center_div = (
@@ -551,12 +578,12 @@ class SafliiScraper(BaseScraper):
                         break
 
                     except BlockedException as be:
-                        logger.warning(f"[Worker {worker_id}] Blocked on case page {case_url} (attempt {attempt}/3): {be}")
+                        logger.warning(f"[Worker {worker_id}] Blocked on case page {case_url} (Pass {pass_number}, attempt {attempt}/3): {be}")
                         if attempt < 3:
                             sb.sleep(attempt * 4)
                     except Exception as err:
                         err_msg = str(err)
-                        logger.warning(f"[Worker {worker_id}] Processing error on case {c_id} [Attempt {attempt}]: {err}")
+                        logger.warning(f"[Worker {worker_id}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
                         if any(w in err_msg.lower() for w in ("no such window", "target window already closed", "web view not found", "invalid session id", "connection refused")):
                             logger.info(f"[Worker {worker_id}] Window or session connection disrupted. Recovering window handle...")
                             try:
@@ -575,6 +602,13 @@ class SafliiScraper(BaseScraper):
 
                 if success:
                     sb.sleep(self.cooldown_seconds + random.uniform(0.3, 0.9))
+                else:
+                    if pass_number < 3:
+                        logger.warning(f"[Worker {worker_id}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/3. Re-queueing for retry pass {pass_number + 1}...")
+                        work_queue.put((idx, case_url, pass_number + 1))
+                        sb.sleep(2)
+                    else:
+                        logger.error(f"[Worker {worker_id}] ❌ Case {c_id} ({case_url}) permanently failed after 3 retry passes.")
 
                 work_queue.task_done()
 
