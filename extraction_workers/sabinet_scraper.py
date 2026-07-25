@@ -3,6 +3,7 @@ import calendar
 import os
 import queue
 import re
+import shutil
 import sys
 import time
 import urllib.parse
@@ -247,11 +248,8 @@ class SabinetScraper(BaseScraper):
         if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
             use_xvfb = True
         # Setup isolated profile path for auth to avoid collision
-        auth_profile_dir = os.path.join(
-            os.path.dirname(self.output_dir),
-            "profiles",
-            "auth"
-        )
+        auth_profile_dir = "/tmp/sabinet_auth_profile"
+        shutil.rmtree(auth_profile_dir, ignore_errors=True)
         os.makedirs(auth_profile_dir, exist_ok=True)
 
         with SB(
@@ -261,7 +259,8 @@ class SabinetScraper(BaseScraper):
             xvfb=use_xvfb,
             test=True,
             user_data_dir=auth_profile_dir,
-            multi_proxy=self.use_proxy
+            multi_proxy=self.use_proxy,
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage"
         ) as sb:
             sb.set_window_size(1280, 800)
             self._navigate_with_reconnect(sb, scrape_url, label="Auth_Gate")
@@ -329,11 +328,8 @@ class SabinetScraper(BaseScraper):
         if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
             use_xvfb = True
         # Setup isolated profile path for indexing to avoid collision
-        indexing_profile_dir = os.path.join(
-            os.path.dirname(self.output_dir),
-            "profiles",
-            "indexing"
-        )
+        indexing_profile_dir = "/tmp/sabinet_indexing_profile"
+        shutil.rmtree(indexing_profile_dir, ignore_errors=True)
         os.makedirs(indexing_profile_dir, exist_ok=True)
 
         with SB(
@@ -343,7 +339,8 @@ class SabinetScraper(BaseScraper):
             xvfb=use_xvfb,
             test=True,
             user_data_dir=indexing_profile_dir,
-            multi_proxy=self.use_proxy
+            multi_proxy=self.use_proxy,
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage"
         ) as sb:
             sb.set_window_size(1280, 800)
 
@@ -547,16 +544,15 @@ class SabinetScraper(BaseScraper):
         if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
             use_xvfb = True
         # Setup isolated profile path for this worker
-        worker_profile_dir = os.path.join(
-            os.path.dirname(self.output_dir),
-            "profiles",
-            f"worker_{worker_id}"
-        )
-        os.makedirs(worker_profile_dir, exist_ok=True)
+        worker_profile_dir = f"/tmp/sabinet_worker_profile_{worker_id}"
 
         max_init_retries = 3
         for attempt in range(1, max_init_retries + 1):
             try:
+                # Ensure the profile directory is completely fresh for this attempt to avoid stale SingletonLock
+                shutil.rmtree(worker_profile_dir, ignore_errors=True)
+                os.makedirs(worker_profile_dir, exist_ok=True)
+
                 with SB(
                     uc=True,
                     headless=self.headless,
@@ -564,7 +560,8 @@ class SabinetScraper(BaseScraper):
                     xvfb=use_xvfb,
                     test=True,
                     user_data_dir=worker_profile_dir,
-                    multi_proxy=self.use_proxy
+                    multi_proxy=self.use_proxy,
+                    chromium_arg="--no-sandbox,--disable-dev-shm-usage"
                 ) as sb:
                     sb.set_window_size(1280, 800)
 

@@ -388,7 +388,15 @@ class SafliiScraper(BaseScraper):
         url_to_case_map = {}
 
         indexing_profile = "/tmp/saflii_indexing_profile"
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True, xvfb=self.use_xvfb, user_data_dir=indexing_profile) as sb:
+        with SB(
+            uc=True,
+            headless=self.headless,
+            proxy=sb_proxy,
+            test=True,
+            xvfb=self.use_xvfb,
+            user_data_dir=indexing_profile,
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage"
+        ) as sb:
             sb.set_window_size(1280, 720)
             
             # 1. Directly construct year directory URLs for the configured range (bypasses top-level redirect walls)
@@ -472,7 +480,15 @@ class SafliiScraper(BaseScraper):
         logger.info(f"[Worker {worker_id}] Initializing SeleniumBase UC browser session...")
 
         worker_profile = f"/tmp/saflii_worker_profile_{worker_id}"
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True, xvfb=self.use_xvfb, user_data_dir=worker_profile) as sb:
+        with SB(
+            uc=True,
+            headless=self.headless,
+            proxy=sb_proxy,
+            test=True,
+            xvfb=self.use_xvfb,
+            user_data_dir=worker_profile,
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage"
+        ) as sb:
             sb.set_window_size(1280, 720)
 
             while True:

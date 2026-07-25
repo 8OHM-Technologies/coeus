@@ -32,6 +32,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # 4. Install matching browser binaries for playwright
 RUN playwright install chromium chrome
 
+# 5. Pre-install SeleniumBase drivers into the image
+RUN sbase install uc_driver && sbase install chromedriver
+
 # 4. Copy application layers
 COPY extraction_workers/ /app/extraction_workers/
 COPY dagster/pipes/scraper_entrypoint.py /app/main.py
