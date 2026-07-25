@@ -4,6 +4,7 @@ import os
 import queue
 import re
 import sys
+import time
 import urllib.parse
 from datetime import datetime, date
 from typing import Any, Optional
@@ -536,6 +537,12 @@ class SabinetScraper(BaseScraper):
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         logger.info(f"[Worker {worker_id}] Starting SB UC instance...")
 
+        # Stagger worker startup to avoid race conditions during concurrent Chrome process creation
+        if worker_id > 1:
+            stagger_delay = (worker_id - 1) * 2.0
+            logger.info(f"[Worker {worker_id}] Staggering startup by {stagger_delay:.1f}s...")
+            time.sleep(stagger_delay)
+
         use_xvfb = False
         if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
             use_xvfb = True
@@ -547,68 +554,82 @@ class SabinetScraper(BaseScraper):
         )
         os.makedirs(worker_profile_dir, exist_ok=True)
 
-        with SB(
-            uc=True,
-            headless=self.headless,
-            proxy=sb_proxy,
-            xvfb=use_xvfb,
-            test=True,
-            user_data_dir=worker_profile_dir,
-            multi_proxy=self.use_proxy
-        ) as sb:
-            sb.set_window_size(1280, 800)
+        max_init_retries = 3
+        for attempt in range(1, max_init_retries + 1):
+            try:
+                with SB(
+                    uc=True,
+                    headless=self.headless,
+                    proxy=sb_proxy,
+                    xvfb=use_xvfb,
+                    test=True,
+                    user_data_dir=worker_profile_dir,
+                    multi_proxy=self.use_proxy
+                ) as sb:
+                    sb.set_window_size(1280, 800)
 
-            if os.path.exists(self.cookies_filepath):
-                sb.open("https://discover.sabinet.co.za/")
-                sb.load_cookies(name=self.cookies_filepath)
+                    if os.path.exists(self.cookies_filepath):
+                        sb.open("https://discover.sabinet.co.za/")
+                        sb.load_cookies(name=self.cookies_filepath)
 
-            while True:
-                try:
-                    case_item = work_queue.get_nowait()
-                except queue.Empty:
-                    break
+                    while True:
+                        try:
+                            case_item = work_queue.get_nowait()
+                        except queue.Empty:
+                            break
 
-                record_id = case_item["id"]
-                url = case_item["source_url"]
+                        record_id = case_item["id"]
+                        url = case_item["source_url"]
 
-                logger.info(f"[Worker {worker_id}] Processing detail payload -> {url}")
-                try:
-                    self._navigate_with_reconnect(sb, url, label=f"Worker_{worker_id}")
-                    sb.sleep(1)
+                        logger.info(f"[Worker {worker_id}] Processing detail payload -> {url}")
+                        try:
+                            self._navigate_with_reconnect(sb, url, label=f"Worker_{worker_id}")
+                            sb.sleep(1)
 
-                    detail_res = sb.execute_script(_EXTRACT_DETAIL_JS) or {}
-                    metadata = detail_res.get("metadata", {})
+                            detail_res = sb.execute_script(_EXTRACT_DETAIL_JS) or {}
+                            metadata = detail_res.get("metadata", {})
 
-                    payload = {
-                        "details_scraped_at": datetime.now().isoformat(),
-                        "auth_ok": detail_res.get("auth_ok", False),
-                        "content_loaded": detail_res.get("content_loaded", False),
-                        **metadata,
-                    }
+                            payload = {
+                                "details_scraped_at": datetime.now().isoformat(),
+                                "auth_ok": detail_res.get("auth_ok", False),
+                                "content_loaded": detail_res.get("content_loaded", False),
+                                **metadata,
+                            }
 
-                    # Thread-safe database update
-                    async def update_db():
-                        async with self.db_lock:
-                            await self.conn.execute(
-                                """
-                                UPDATE extracted_records
-                                SET data = data || $1::jsonb,
-                                    status = 'detailed',
-                                    processed_at = NOW()
-                                WHERE id = $2
-                                """,
-                                db_storage.json_dumps(payload),
-                                record_id,
-                            )
+                            # Thread-safe database update
+                            async def update_db():
+                                async with self.db_lock:
+                                    await self.conn.execute(
+                                        """
+                                        UPDATE extracted_records
+                                        SET data = data || $1::jsonb,
+                                            status = 'detailed',
+                                            processed_at = NOW()
+                                        WHERE id = $2
+                                        """,
+                                        db_storage.json_dumps(payload),
+                                        record_id,
+                                    )
 
-                    future = asyncio.run_coroutine_threadsafe(update_db(), loop)
-                    future.result()
+                            future = asyncio.run_coroutine_threadsafe(update_db(), loop)
+                            future.result()
 
-                    logger.info(f"[Worker {worker_id}] [+] Details saved for record {record_id}")
-                except Exception as err:
-                    logger.warning(f"[Worker {worker_id}] Detail extraction error on {url}: {err}")
+                            logger.info(f"[Worker {worker_id}] [+] Details saved for record {record_id}")
+                        except Exception as err:
+                            logger.warning(f"[Worker {worker_id}] Detail extraction error on {url}: {err}")
 
-                work_queue.task_done()
+                        work_queue.task_done()
+
+                # Normal exit from SB context (queue empty)
+                break
+            except Exception as init_err:
+                logger.warning(
+                    f"[Worker {worker_id}] Driver session creation attempt {attempt}/{max_init_retries} failed: {init_err}"
+                )
+                if attempt < max_init_retries:
+                    time.sleep(3 * attempt)
+                else:
+                    logger.error(f"[Worker {worker_id}] Exhausted driver creation retries.")
 
         logger.info(f"[Worker {worker_id}] Thread completed.")
 
