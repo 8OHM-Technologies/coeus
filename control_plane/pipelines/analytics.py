@@ -33,14 +33,15 @@ def calculate_uptime_and_rate(timestamps):
             "scrape_rate_per_hour": 0.0
         }
 
-    # Sort timestamps in ascending order
-    timestamps.sort()
+    # Ensure all timestamps are timezone-aware (assumes UTC if naive) and sort
+    aware_timestamps = [make_aware(ts) for ts in timestamps]
+    aware_timestamps.sort()
 
     uptime_seconds = 0.0
     active_scraped_count = 0
 
-    for i in range(1, len(timestamps)):
-        diff = (timestamps[i] - timestamps[i-1]).total_seconds()
+    for i in range(1, len(aware_timestamps)):
+        diff = (aware_timestamps[i] - aware_timestamps[i-1]).total_seconds()
         if diff <= 120.0:  # 2 minutes threshold
             uptime_seconds += diff
             active_scraped_count += 1
@@ -51,7 +52,7 @@ def calculate_uptime_and_rate(timestamps):
 
     return {
         "uptime_seconds": uptime_seconds,
-        "total_scraped": len(timestamps),
+        "total_scraped": len(aware_timestamps),
         "active_scraped_count": active_scraped_count,
         "scrape_rate": rate,
         "scrape_rate_per_hour": rate * 3600
