@@ -313,6 +313,12 @@ def update_pipeline_analytics():
         overall_metrics = calculate_uptime_and_rate(pipe_data['all']['overall'])
         overall_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['all']['workers'].items()}
 
+        # Override total_scraped inside metric calculations with the true all-time counts from database aggregation
+        totals = overall_totals.get(name, {"total_indexed": 0, "total_detailed": 0, "total_records": 0})
+        overall_metrics["total_scraped"] = totals["total_records"]
+        indexed_metrics["total_scraped"] = totals["total_indexed"]
+        detailed_metrics["total_scraped"] = totals["total_detailed"]
+
         # 7-day wall-clock rate (includes downtime)
         recent_all = [ts for ts in pipe_data['all']['overall'] if make_aware(ts) >= seven_days_ago]
         recent_indexed = [ts for ts in pipe_data['indexed']['overall'] if make_aware(ts) >= seven_days_ago]
