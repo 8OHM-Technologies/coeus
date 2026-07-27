@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
-from django.db.models import Count
+from django.db.models import Count, Q
 from extracted_data.models import ExtractedRecord
+
 from .models import PipelineConfiguration, ScrapingPipelineMetrics
 
 
@@ -245,11 +246,63 @@ def update_pipeline_analytics():
     # 4. Compute metrics and update databases
     results = {}
     for name in all_scraper_names:
-        pipe_data = data_by_scraper.get(name, {
-            'indexed': {'overall': [], 'workers': {}},
-            'detailed': {'overall': [], 'workers': {}},
-            'all': {'overall': [], 'workers': {}}
-        })
+        pipe_data = data_by_scraper.get(name)
+
+        # If no recent records found for this scraper type, perform a fallback query to load its latest 5,000 records.
+        # This allows us to display worker lists and historical uptime/rates for inactive pipelines without loading all history.
+        if not pipe_data:
+            config_names = [cfg_name for cfg_name, st_name in pipeline_to_scraper_type.items() if st_name == name]
+            query_names = list(set(config_names + [name]))
+            
+            fallback_qs = ExtractedRecord.objects.filter(
+                Q(target__entity__name__in=query_names) | Q(record_type__in=query_names)
+            ).order_by('-extracted_at')[:5000].values(
+                'id',
+                'record_type',
+                'status',
+                'extracted_at',
+                'target__entity__name',
+                'data__worker_id',
+                'data__scraped_at',
+                'data__details_scraped_at',
+                'data__index_scraped_at'
+            )
+
+            pipe_data = {
+                'indexed': {'overall': [], 'workers': {}},
+                'detailed': {'overall': [], 'workers': {}},
+                'all': {'overall': [], 'workers': {}}
+            }
+
+            for r in fallback_qs:
+                ts = None
+                for key in ('data__details_scraped_at', 'data__scraped_at', 'data__index_scraped_at'):
+                    val = r.get(key)
+                    if val:
+                        ts = parse_iso_datetime(val)
+                        if ts:
+                            break
+                if not ts:
+                    ts = r.get('extracted_at')
+                if not ts:
+                    continue
+
+                worker_id = r.get('data__worker_id')
+                worker_key = str(worker_id) if worker_id is not None else 'unknown'
+                status = r.get('status') or 'indexed'
+
+                def append_to_stage(stage):
+                    stage['overall'].append(ts)
+                    if worker_key not in stage['workers']:
+                        stage['workers'][worker_key] = []
+                    stage['workers'][worker_key].append(ts)
+
+                if status == 'indexed':
+                    append_to_stage(pipe_data['indexed'])
+                elif status == 'detailed':
+                    append_to_stage(pipe_data['detailed'])
+
+                append_to_stage(pipe_data['all'])
 
         indexed_metrics = calculate_uptime_and_rate(pipe_data['indexed']['overall'])
         indexed_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['indexed']['workers'].items()}
