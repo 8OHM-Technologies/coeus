@@ -667,16 +667,18 @@ class SabinetScraper(BaseScraper):
         work_queue = queue.Queue()
         loop = asyncio.get_running_loop()
         
-        # Start the worker threads
+        # Start the worker threads — must use create_task() so they begin executing
+        # immediately. Without it, the coroutines are just objects in a list and the
+        # feed loop's work_queue.join() would deadlock (no consumers running).
         worker_tasks = [
-            asyncio.to_thread(
+            asyncio.create_task(asyncio.to_thread(
                 self._detailing_worker_thread,
                 worker_id=i,
                 work_queue=work_queue,
                 loop=loop,
                 db_record_type=db_record_type,
                 total_cases=total_cases,
-            )
+            ))
             for i in range(1, concurrency + 1)
         ]
 
