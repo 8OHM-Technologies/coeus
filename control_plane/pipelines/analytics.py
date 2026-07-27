@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
+from django.db.models import Count
 from extracted_data.models import ExtractedRecord
 from .models import PipelineConfiguration, ScrapingPipelineMetrics
+
 
 def parse_iso_datetime(val):
     """Parses ISO format datetime strings, handling the 'Z' offset suffix."""
@@ -120,20 +122,65 @@ def calculate_last_hour_intervals(timestamps, now=None, interval_minutes=5, inde
 def update_pipeline_analytics():
     """
     Aggregates records from the extracted_records table, calculates metrics
-    per pipeline and per worker, differentiating between indexing and detailing stages.
+    per scraper type and per worker, differentiating between indexing and detailing stages.
     Saves the results to the db.
     """
-    # 1. Fetch all configurations
-    pipelines = PipelineConfiguration.objects.all()
-    pipeline_configs = {p.name: p for p in pipelines}
+    # 1. Fetch all configurations with scraper types to map config name -> scraper type name
+    pipelines = PipelineConfiguration.objects.select_related('scraper_type').all()
+    pipeline_to_scraper_type = {p.name: p.scraper_type.name for p in pipelines if p.scraper_type}
+
+    # Sum/combine configured concurrency per scraper type
+    scraper_type_concurrencies = {}
+    for p in pipelines:
+        if p.scraper_type:
+            st_name = p.scraper_type.name
+            concurrency = (p.extraction_params or {}).get('concurrency')
+            if concurrency is not None:
+                try:
+                    c_int = int(concurrency)
+                    scraper_type_concurrencies[st_name] = scraper_type_concurrencies.get(st_name, 0) + c_int
+                except (ValueError, TypeError):
+                    pass
 
     # 7-day wall-clock window
     now = datetime.now(dt_timezone.utc)
     seven_days_ago = now - timedelta(days=7)
     SEVEN_DAYS_SECONDS = 7 * 24 * 3600  # 604800
 
-    # 2. Query only the light fields from ExtractedRecord (avoid loading massive HTML content)
-    records = ExtractedRecord.objects.values(
+    # 2. Query all-time counts grouped by target entity, record type, and status.
+    # Grouping is extremely fast and avoids loading all historical rows in Django memory.
+    all_time_counts = ExtractedRecord.objects.values(
+        'target__entity__name', 'record_type', 'status'
+    ).annotate(count=Count('id'))
+
+    overall_totals = {}
+    for item in all_time_counts:
+        entity_name = item['target__entity__name']
+        record_type = item['record_type']
+        status = item['status'] or 'indexed'
+        count = item['count']
+
+        record_pipeline_name = entity_name or record_type or 'Unknown'
+        scraper_type_name = pipeline_to_scraper_type.get(record_pipeline_name, record_pipeline_name)
+
+        if scraper_type_name not in overall_totals:
+            overall_totals[scraper_type_name] = {
+                "total_indexed": 0,
+                "total_detailed": 0,
+                "total_records": 0
+            }
+
+        if status == 'indexed':
+            overall_totals[scraper_type_name]['total_indexed'] += count
+        elif status == 'detailed':
+            overall_totals[scraper_type_name]['total_detailed'] += count
+        
+        overall_totals[scraper_type_name]['total_records'] += count
+
+    # 3. Query only recent records (last 7 days) to calculate detailed uptime and rate.
+    recent_records = ExtractedRecord.objects.filter(
+        extracted_at__gte=seven_days_ago
+    ).values(
         'id',
         'record_type',
         'status',
@@ -145,11 +192,12 @@ def update_pipeline_analytics():
         'data__index_scraped_at'
     )
 
-    # 3. Group timestamps by pipeline, stage, and worker in memory
-    data_by_pipeline = {}
-
-    for r in records:
-        pipeline_name = r['target__entity__name'] or r['record_type'] or 'Unknown'
+    data_by_scraper = {}
+    for r in recent_records:
+        entity_name = r['target__entity__name']
+        record_type = r['record_type']
+        record_pipeline_name = entity_name or record_type or 'Unknown'
+        scraper_type_name = pipeline_to_scraper_type.get(record_pipeline_name, record_pipeline_name)
         
         # Resolve timestamp
         ts = None
@@ -169,14 +217,14 @@ def update_pipeline_analytics():
         worker_key = str(worker_id) if worker_id is not None else 'unknown'
         status = r.get('status') or 'indexed'
 
-        if pipeline_name not in data_by_pipeline:
-            data_by_pipeline[pipeline_name] = {
+        if scraper_type_name not in data_by_scraper:
+            data_by_scraper[scraper_type_name] = {
                 'indexed': {'overall': [], 'workers': {}},
                 'detailed': {'overall': [], 'workers': {}},
                 'all': {'overall': [], 'workers': {}}
             }
 
-        pipe_data = data_by_pipeline[pipeline_name]
+        scraper_data = data_by_scraper[scraper_type_name]
 
         def append_to_stage(stage):
             stage['overall'].append(ts)
@@ -185,15 +233,24 @@ def update_pipeline_analytics():
             stage['workers'][worker_key].append(ts)
 
         if status == 'indexed':
-            append_to_stage(pipe_data['indexed'])
+            append_to_stage(scraper_data['indexed'])
         elif status == 'detailed':
-            append_to_stage(pipe_data['detailed'])
+            append_to_stage(scraper_data['detailed'])
 
-        append_to_stage(pipe_data['all'])
+        append_to_stage(scraper_data['all'])
+
+    # Determine all unique scraper names to populate
+    all_scraper_names = set(pipeline_to_scraper_type.values()) | set(overall_totals.keys()) | set(data_by_scraper.keys())
 
     # 4. Compute metrics and update databases
     results = {}
-    for name, pipe_data in data_by_pipeline.items():
+    for name in all_scraper_names:
+        pipe_data = data_by_scraper.get(name, {
+            'indexed': {'overall': [], 'workers': {}},
+            'detailed': {'overall': [], 'workers': {}},
+            'all': {'overall': [], 'workers': {}}
+        })
+
         indexed_metrics = calculate_uptime_and_rate(pipe_data['indexed']['overall'])
         indexed_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['indexed']['workers'].items()}
 
@@ -241,19 +298,16 @@ def update_pipeline_analytics():
                 "detailing": detailed_workers.get(w, {})
             }
 
-        config = pipeline_configs.get(name)
-        configured_concurrency = None
-        if config:
-            configured_concurrency = (config.extraction_params or {}).get('concurrency')
+        configured_concurrency = scraper_type_concurrencies.get(name)
 
         metrics_payload = {
             "pipeline_name": name,
             "configured_concurrency": configured_concurrency,
-            "overall_totals": {
-                "total_indexed": len(pipe_data['indexed']['overall']),
-                "total_detailed": len(pipe_data['detailed']['overall']),
-                "total_records": len(pipe_data['all']['overall'])
-            },
+            "overall_totals": overall_totals.get(name, {
+                "total_indexed": 0,
+                "total_detailed": 0,
+                "total_records": 0
+            }),
             "overall": overall_metrics,
             "indexing": indexed_metrics,
             "detailing": detailed_metrics,
@@ -263,7 +317,12 @@ def update_pipeline_analytics():
         }
         results[name] = metrics_payload
 
-        # Save to database
+    # Delete obsolete metrics from database
+    active_names = list(results.keys())
+    ScrapingPipelineMetrics.objects.exclude(pipeline_name__in=active_names).delete()
+
+    # Save to database
+    for name, metrics_payload in results.items():
         ScrapingPipelineMetrics.objects.update_or_create(
             pipeline_name=name,
             defaults={"metrics": metrics_payload}

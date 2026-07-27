@@ -83,10 +83,11 @@ def test_update_pipeline_analytics_e2e():
     results = update_pipeline_analytics()
     
     # Verify results
-    assert pipeline_name in results
-    metrics = results[pipeline_name]
+    assert "new_saflii" in results
+    metrics = results["new_saflii"]
     assert metrics["overall_totals"]["total_detailed"] == 3
     
     # Confirm metrics were saved in DB
-    saved_metrics = ScrapingPipelineMetrics.objects.get(pipeline_name=pipeline_name)
+    saved_metrics = ScrapingPipelineMetrics.objects.get(pipeline_name="new_saflii")
     assert saved_metrics.metrics == metrics
+

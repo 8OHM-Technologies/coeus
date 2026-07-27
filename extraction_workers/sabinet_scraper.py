@@ -583,7 +583,7 @@ class SabinetScraper(BaseScraper):
 
                         logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Processing detail payload -> {url}")
                         try:
-                            self._navigate_with_reconnect(sb, url, label=f"Worker_{worker_id}")
+                            self._navigate_with_reconnect(sb, url, label=f"Worker {worker_id}")
                             sb.sleep(1)
 
                             detail_res = sb.execute_script(_EXTRACT_DETAIL_JS) or {}
