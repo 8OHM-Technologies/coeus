@@ -92,7 +92,9 @@ class BaseScraper(ABC):
             logger.info("Database connection gracefully terminated.")
 
     async def scraping(self) -> None:
-        """Stage 1: Executes indexing discovery followed by item detailing."""
+        """
+        Executes Stage 1 of the pipeline: Scraping (Indexing and Detailing)
+        """
         logger.info("Starting Stage 1: Scraping Process Pipeline...")
         await self.indexing()
         await self.detailing()
@@ -104,17 +106,26 @@ class BaseScraper(ABC):
 
     @abstractmethod
     async def indexing(self) -> None:
-        """Stage 1: Sub-process A of Scraping: Build index / discover list components."""
+        """
+        Executes Stage 1A of the pipeline: Indexing
+        """
+        logger.info("Starting Stage 1A: Indexing Process Pipeline...")
         pass
 
     @abstractmethod
     async def detailing(self) -> None:
-        """Stage 1: Sub-process B of Scraping: Perform payload enrichment on specific entities."""
+        """
+        Executes Stage 1B of the pipeline: Detailing
+        """
+        logger.info("Starting Stage 1B: Detailing Process Pipeline...")
         pass
 
     @abstractmethod
     async def extraction(self) -> None:
-        """Stage 2: Process, parse, structure, or validate raw acquired records."""
+        """
+        Executes Stage 2 of the pipeline: Extraction
+        """
+        logger.info("Starting Stage 2: Extraction Process Pipeline...")
         pass
 
     async def run(self) -> None:
@@ -122,12 +133,11 @@ class BaseScraper(ABC):
         try:
             await self.initialize()
             
-            # Execute Engine Lifecycle
             await self.scraping()
             await self.extraction()
             
         except Exception as err:
-            logger.exception(f"Fatal disruption occurred during framework lifecycle run: {err}")
+            logger.exception(f"Fatal exception occurred: {err}")
             raise err
         finally:
             await self.cleanup()

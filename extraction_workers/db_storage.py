@@ -238,6 +238,9 @@ async def load_records_needing_detail(
     conn: asyncpg.Connection,
     record_type: str,
     sort_desc: bool = False,
+    limit: int | None = None,
+    exclude_ids: list[uuid.UUID] | None = None,
+    include_data: bool = True,
 ) -> list[dict[str, Any]]:
     """Return records that have a ``source_url`` but haven't been detail-scraped yet.
 
@@ -245,23 +248,38 @@ async def load_records_needing_detail(
     or if it is a legacy record where ``status`` is NULL and it doesn't have ``details_scraped_at``.
     """
     order = "DESC" if sort_desc else "ASC"
-    rows = await conn.fetch(
+    select_clause = "id, source_url, data" if include_data else "id, source_url"
+    
+    query_parts = [
         f"""
-        SELECT id, source_url, data
+        SELECT {select_clause}
         FROM extracted_records
         WHERE record_type = $1
           AND source_url IS NOT NULL
           AND (status = 'indexed' OR (status IS NULL AND (data->>'details_scraped_at') IS NULL))
-        ORDER BY extracted_at {order}
-        """,
-        record_type,
-    )
+        """
+    ]
+    params = [record_type]
+
+    if exclude_ids:
+        query_parts.append(f"  AND NOT (id = ANY(${len(params) + 1}::uuid[]))")
+        params.append(exclude_ids)
+
+    query_parts.append(f"ORDER BY extracted_at {order}")
+
+    if limit is not None:
+        query_parts.append(f"LIMIT {limit}")
+
+    query = "\n".join(query_parts)
+    rows = await conn.fetch(query, *params)
     
     results = []
     for row in rows:
-        data = row["data"]
-        if isinstance(data, str):
-            data = json.loads(data)
+        data = None
+        if include_data:
+            data = row["data"]
+            if isinstance(data, str):
+                data = json.loads(data)
         results.append({
             "id": row["id"],
             "source_url": row["source_url"],

@@ -457,9 +457,9 @@ class SafliiScraper(BaseScraper):
             self.case_urls = []
             return
 
-        logger.info("Starting indexing stage via SeleniumBase UC thread...")
+        logger.info(f"[Stage 1A start] Starting indexing stage via SeleniumBase UC thread...")
         self.case_urls, self.url_to_case_number = await asyncio.to_thread(self._indexing_sync)
-        logger.info(f"Sub-process A complete. Total downstream asset indexes harvested: {len(self.case_urls)}")
+        logger.info(f"[Stage 1A complete] Total downstream asset indexes harvested: {len(self.case_urls)}")
 
     async def _save_record_to_db(self, case_url: str, record: dict, doc_date: dt_date) -> None:
         """Thread-safe helper to write detailed scraped records to the database."""
@@ -476,6 +476,7 @@ class SafliiScraper(BaseScraper):
         total_cases: int,
     ) -> None:
         """Synchronous thread running a dedicated SB UC instance for processing case items."""
+        logger.info("[Stage 1B start] Starting detailing stage via SeleniumBase UC thread...")
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         logger.info(f"[Worker {worker_id}] Initializing SeleniumBase UC browser session...")
 
@@ -542,7 +543,7 @@ class SafliiScraper(BaseScraper):
                             case_no = extract_case_number_from_text(title)
 
                         if case_no and case_no in self.existing_case_numbers:
-                            logger.info(f"[Worker {worker_id}] Duplicate signature isolated via late mapping: {case_no}")
+                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Duplicate signature isolated via late mapping: {case_no}")
                             success = True
                             break
 
@@ -589,19 +590,19 @@ class SafliiScraper(BaseScraper):
                         if case_no:
                             self.existing_case_numbers.add(case_no)
 
-                        logger.info(f"[Worker {worker_id}] [+] Saved record: {c_court}_{c_year}_{c_id}")
+                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] [+] Saved record: {c_court}_{c_year}_{c_id}")
                         success = True
                         break
 
                     except BlockedException as be:
-                        logger.warning(f"[Worker {worker_id}] Blocked on case page {case_url} (Pass {pass_number}, attempt {attempt}/3): {be}")
+                        logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Blocked on case page {case_url} (Pass {pass_number}, attempt {attempt}/3): {be}")
                         if attempt < 3:
                             sb.sleep(attempt * 4)
                     except Exception as err:
                         err_msg = str(err)
-                        logger.warning(f"[Worker {worker_id}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
+                        logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
                         if any(w in err_msg.lower() for w in ("no such window", "target window already closed", "web view not found", "invalid session id", "connection refused")):
-                            logger.info(f"[Worker {worker_id}] Window or session connection disrupted. Recovering window handle...")
+                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Window or session connection disrupted. Recovering window handle...")
                             try:
                                 handles = sb.driver.window_handles
                                 if handles:
@@ -620,11 +621,11 @@ class SafliiScraper(BaseScraper):
                     sb.sleep(self.cooldown_seconds + random.uniform(0.3, 0.9))
                 else:
                     if pass_number < 3:
-                        logger.warning(f"[Worker {worker_id}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/3. Re-queueing for retry pass {pass_number + 1}...")
+                        logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/3. Re-queueing for retry pass {pass_number + 1}...")
                         work_queue.put((idx, case_url, pass_number + 1))
                         sb.sleep(2)
                     else:
-                        logger.error(f"[Worker {worker_id}] ❌ Case {c_id} ({case_url}) permanently failed after 3 retry passes.")
+                        logger.error(f"[Worker {worker_id}][{idx}/{total_cases}] ❌ Case {c_id} ({case_url}) permanently failed after 3 retry passes.")
 
                 work_queue.task_done()
 
@@ -633,12 +634,12 @@ class SafliiScraper(BaseScraper):
     async def detailing(self) -> None:
         """Sub-process B: Perform deep enrichment processing using concurrent SB UC worker threads."""
         if not self.case_urls:
-            logger.info("No remote indices staged for detailed processing pipelines.")
+            logger.info("No indices staged for detailed processing pipelines.")
             return
 
         extraction_params = self.config.get("extraction_params", {})
         concurrency = int(extraction_params.get("concurrency", 4))
-        logger.info(f"Starting detailing with {concurrency} SeleniumBase UC worker threads...")
+        logger.info(f"[Stage 1B start] Starting detailing with {concurrency} SeleniumBase UC worker threads...")
 
         work_queue = queue.Queue()
         for idx, case_url in enumerate(self.case_urls, start=1):
@@ -668,31 +669,13 @@ class SafliiScraper(BaseScraper):
             total_cases=total_cases,
             completed=True,
         )
-        logger.info("✅ Scraping execution layer completely processed.")
+        logger.info("[Stage 1B complete] ✅ Scraping execution layer completely processed.")
 
     async def extraction(self) -> None:
         """Stage 2: Post-processing and extraction metrics verification."""
-        logger.info("Stage 2: Post-Scraping Data Extraction verification processes complete.")
-
-
-# Legacy standalone helper function for backward compatibility
-def run_saflii_pipeline(
-    court_code: str = "ZALCJHB",
-    year: int = 2026,
-    headless: bool = False,
-    use_xvfb: bool = True,
-    pipeline_name: str = "saflii_pipeline",
-) -> List[Dict[str, Any]]:
-    """Legacy helper running SafliiScraper synchronously."""
-    scraper = SafliiScraper(
-        pipeline_name=pipeline_name,
-        court_code=court_code,
-        year=year,
-        headless=headless,
-        use_xvfb=use_xvfb,
-    )
-    asyncio.run(scraper.run())
-    return []
+        logger.info("[Stage 2 start] Post-Scraping Data Extraction and Processing.")
+        logger.info("[Stage 2 complete] Post-Scraping Data Extraction and Processing complete.")
+        pass
 
 
 # ---------------------------------------------------------------------------

@@ -204,6 +204,7 @@ class SabinetScraper(BaseScraper):
         self.proxy_url: Optional[str] = None
         self.cookies_filepath: str = ""
         self.db_lock = asyncio.Lock()
+        self.failed_ids = []
 
     async def initialize(self) -> None:
         """Hydrate configuration variables and session state references."""
@@ -529,6 +530,7 @@ class SabinetScraper(BaseScraper):
         work_queue: queue.Queue,
         loop: asyncio.AbstractEventLoop,
         db_record_type: str,
+        total_cases: int,
     ) -> None:
         """Thread executing detailed item extractions via an isolated SB UC instance."""
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
@@ -570,15 +572,16 @@ class SabinetScraper(BaseScraper):
                         sb.load_cookies(name=self.cookies_filepath)
 
                     while True:
-                        try:
-                            case_item = work_queue.get_nowait()
-                        except queue.Empty:
+                        item = work_queue.get()
+                        if item is None:
+                            work_queue.task_done()
                             break
 
+                        idx, case_item = item
                         record_id = case_item["id"]
                         url = case_item["source_url"]
 
-                        logger.info(f"[Worker {worker_id}] Processing detail payload -> {url}")
+                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Processing detail payload -> {url}")
                         try:
                             self._navigate_with_reconnect(sb, url, label=f"Worker_{worker_id}")
                             sb.sleep(1)
@@ -611,13 +614,14 @@ class SabinetScraper(BaseScraper):
                             future = asyncio.run_coroutine_threadsafe(update_db(), loop)
                             future.result()
 
-                            logger.info(f"[Worker {worker_id}] [+] Details saved for record {record_id}")
+                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] [+] Details saved for record {record_id}")
                         except Exception as err:
-                            logger.warning(f"[Worker {worker_id}] Detail extraction error on {url}: {err}")
+                            logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Detail extraction error on {url}: {err}")
+                            self.failed_ids.append(record_id)
 
                         work_queue.task_done()
 
-                # Normal exit from SB context (queue empty)
+                # Normal exit from SB context (queue empty / sentinel received)
                 break
             except Exception as init_err:
                 logger.warning(
@@ -637,8 +641,18 @@ class SabinetScraper(BaseScraper):
         index_pipeline_name = extraction_params.get("index_pipeline_name") or re.sub(r'_(details?)$', '', self.pipeline_name)
         db_record_type = extraction_params.get("shared_record_type") or index_pipeline_name
 
-        cases = await db_storage.load_records_needing_detail(self.conn, db_record_type, sort_desc=reverse_direction)
-        if not cases:
+        # Count total records needing detailing upfront
+        total_cases = await self.conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM extracted_records
+            WHERE record_type = $1
+              AND source_url IS NOT NULL
+              AND (status = 'indexed' OR (status IS NULL AND (data->>'details_scraped_at') IS NULL))
+            """,
+            db_record_type,
+        )
+        if total_cases == 0:
             logger.info("✅ No structural rows require detailed asset parsing updates.")
             return
 
@@ -648,13 +662,12 @@ class SabinetScraper(BaseScraper):
             sys.argv.append("-n")
 
         concurrency = int(extraction_params.get("concurrency", 4))
-        logger.info(f"Starting concurrent detailing with {concurrency} SB UC workers...")
+        logger.info(f"Starting concurrent detailing with {concurrency} SB UC workers for {total_cases} cases...")
 
         work_queue = queue.Queue()
-        for case_item in cases:
-            work_queue.put(case_item)
-
         loop = asyncio.get_running_loop()
+        
+        # Start the worker threads
         worker_tasks = [
             asyncio.to_thread(
                 self._detailing_worker_thread,
@@ -662,11 +675,44 @@ class SabinetScraper(BaseScraper):
                 work_queue=work_queue,
                 loop=loop,
                 db_record_type=db_record_type,
+                total_cases=total_cases,
             )
             for i in range(1, concurrency + 1)
         ]
 
-        await asyncio.gather(*worker_tasks)
+        # Feed the queue in batches of 500 to keep memory consumption low
+        batch_size = 500
+        processed_count = 0
+        
+        try:
+            while True:
+                cases = await db_storage.load_records_needing_detail(
+                    self.conn,
+                    db_record_type,
+                    sort_desc=reverse_direction,
+                    limit=batch_size,
+                    exclude_ids=self.failed_ids if self.failed_ids else None,
+                    include_data=False,
+                )
+                if not cases:
+                    break
+
+                # Add cases to the queue with absolute index
+                for case_item in cases:
+                    processed_count += 1
+                    work_queue.put((processed_count, case_item))
+
+                # Wait for the workers to process all items in this batch
+                await asyncio.to_thread(work_queue.join)
+                
+        finally:
+            # Send None sentinels to signal all worker threads to stop
+            for _ in range(concurrency):
+                work_queue.put(None)
+                
+            # Wait for all workers to shut down cleanly
+            await asyncio.gather(*worker_tasks)
+
         logger.info("✅ Detailing stage complete.")
 
     async def extraction(self) -> None:
