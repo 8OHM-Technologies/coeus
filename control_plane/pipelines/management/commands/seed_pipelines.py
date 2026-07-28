@@ -107,8 +107,8 @@ class Command(BaseCommand):
         # Shared credentials/params for SAFLII
         saflii_extraction_params = {
             "use_proxy": "false",
-            "concurrency": 8,
-            "cooldown_seconds": 1.5,
+            "concurrency": 2,
+            "cooldown_seconds": 1,
         }
 
         # Seed SAFLII Labour Court - Appeals
@@ -128,7 +128,7 @@ class Command(BaseCommand):
                 "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
-                "target_table": "",
+                "target_table": "extracted_records",
                 "extraction_params": saflii_extraction_params
             }
         )
@@ -150,7 +150,7 @@ class Command(BaseCommand):
                 "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
-                "target_table": "",
+                "target_table": "extracted_records",
                 "extraction_params": saflii_extraction_params
             }
         )
@@ -172,7 +172,7 @@ class Command(BaseCommand):
                 "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
-                "target_table": "",
+                "target_table": "extracted_records",
                 "extraction_params": saflii_extraction_params
             }
         )
@@ -194,7 +194,7 @@ class Command(BaseCommand):
                 "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
-                "target_table": "",
+                "target_table": "extracted_records",
                 "extraction_params": saflii_extraction_params
             }
         )
@@ -216,7 +216,7 @@ class Command(BaseCommand):
                 "llm_engine": local_llm,
                 "pydantic_schema_name": "",
                 "extraction_instructions": "",
-                "target_table": "",
+                "target_table": "extracted_records",
                 "extraction_params": saflii_extraction_params
             }
         )
@@ -240,8 +240,8 @@ class Command(BaseCommand):
                 "extraction_instructions": "Extract court details.",
                 "extraction_params": {
                     "shared_record_type": "sabinet_ccma",
-                    "concurrency": 8,
-                    "cooldown_seconds": 2.0
+                    "concurrency": 2,
+                    "cooldown_seconds": 1
                 }
             }
         )
@@ -267,8 +267,8 @@ class Command(BaseCommand):
                 "extraction_params": {
                     "shared_record_type": "sabinet_ccma",
                     "reverse_direction": True,
-                    "concurrency": 8,
-                    "cooldown_seconds": 2.0
+                    "concurrency": 2,
+                    "cooldown_seconds": 1
                 }
             }
         )
