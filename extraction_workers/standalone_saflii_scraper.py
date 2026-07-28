@@ -4,7 +4,7 @@ import queue
 import re
 import sys
 import urllib.parse
-from datetime import datetime, date as dt_date
+from datetime import datetime, date as dt_date, timezone
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -384,7 +384,7 @@ class SafliiScraper(BaseScraper):
                             "title": title,
                             "url": case_url,
                             "center_content": center_html,
-                            "scraped_at": datetime.now().isoformat(),
+                            "scraped_at": datetime.now(timezone.utc).isoformat(),
                             "worker_id": worker_id,
                         }
 

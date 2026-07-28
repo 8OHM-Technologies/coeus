@@ -7,7 +7,7 @@ import shutil
 import sys
 import time
 import urllib.parse
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Any, Optional
 
 from bs4 import BeautifulSoup
@@ -451,7 +451,7 @@ class SabinetScraper(BaseScraper):
                             if url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
                                 continue
 
-                            item_data["index_scraped_at"] = datetime.now().isoformat()
+                            item_data["index_scraped_at"] = datetime.now(timezone.utc).isoformat()
                             records_to_upsert.append(item_data)
                             if url:
                                 self.existing_urls.add(url)
@@ -521,7 +521,7 @@ class SabinetScraper(BaseScraper):
 
         logger.info(f"✅ Indexing complete. Scraped index updates total: {total_new}")
         self.progress_state["fully_complete"] = True
-        self.progress_state["completed_at"] = datetime.now().isoformat()
+        self.progress_state["completed_at"] = datetime.now(timezone.utc).isoformat()
         await db_storage.save_pipeline_state(self.conn, self.pipeline_name, self.progress_state)
 
     def _detailing_worker_thread(
@@ -590,7 +590,7 @@ class SabinetScraper(BaseScraper):
                             metadata = detail_res.get("metadata", {})
 
                             payload = {
-                                "details_scraped_at": datetime.now().isoformat(),
+                                "details_scraped_at": datetime.now(timezone.utc).isoformat(),
                                 "auth_ok": detail_res.get("auth_ok", False),
                                 "content_loaded": detail_res.get("content_loaded", False),
                                 **metadata,

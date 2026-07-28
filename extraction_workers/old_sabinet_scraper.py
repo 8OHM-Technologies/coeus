@@ -2,7 +2,7 @@ import asyncio
 import calendar
 import re
 import sys
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Any
 from playwright.async_api import async_playwright, Page
 
@@ -543,7 +543,7 @@ class SabinetScraper(BaseScraper):
                         if url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
                             continue
 
-                        item_data["index_scraped_at"] = datetime.now().isoformat()
+                        item_data["index_scraped_at"] = datetime.now(timezone.utc).isoformat()
                         records_to_upsert.append(item_data)
                         if url: self.existing_urls.add(url)
                         if case_no: self.existing_case_numbers.add(case_no)
@@ -590,7 +590,7 @@ class SabinetScraper(BaseScraper):
 
         logger.info(f"✅ Indexing complete. Scraped index updates total: {total_new}")
         self.progress_state["fully_complete"] = True
-        self.progress_state["completed_at"] = datetime.now().isoformat()
+        self.progress_state["completed_at"] = datetime.now(timezone.utc).isoformat()
         await db_storage.save_pipeline_state(self.conn, self.pipeline_name, self.progress_state)
 
     async def detailing(self) -> None:
@@ -763,7 +763,7 @@ class SabinetScraper(BaseScraper):
 
                             for key, value in metadata.items():
                                 data_payload[key] = value
-                            data_payload["details_scraped_at"] = datetime.now().isoformat()
+                            data_payload["details_scraped_at"] = datetime.now(timezone.utc).isoformat()
                             data_payload["worker_id"] = worker_id
 
                             async with self.db_lock:

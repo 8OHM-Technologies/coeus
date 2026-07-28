@@ -7,7 +7,7 @@ import random
 import re
 import sys
 import urllib.parse
-from datetime import datetime, date as dt_date
+from datetime import datetime, date as dt_date, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup
@@ -556,7 +556,7 @@ class SafliiScraper(BaseScraper):
                             "case_number": case_no,
                             "center_content": center_html,
                             "full_text": center_div.get_text(separator="\n", strip=True) if center_div else "",
-                            "scraped_at": datetime.now().isoformat(),
+                            "scraped_at": datetime.now(timezone.utc).isoformat(),
                             "worker_id": worker_id,
                         }
 
