@@ -17,10 +17,16 @@ def parse_iso_datetime(val):
         return None
 
 def make_aware(ts):
-    """Ensure a timestamp is timezone-aware (assumes UTC if naive)."""
+    """Ensure a timestamp is timezone-aware (UTC).
+
+    Naive timestamps from the scrapers (via datetime.now().isoformat()) are in
+    local time, NOT UTC. Python's astimezone() on a naive datetime correctly
+    interprets it as the system local time and converts to UTC — unlike
+    replace(tzinfo=utc) which would incorrectly assume the naive value is UTC.
+    """
     if ts.tzinfo is None:
-        return ts.replace(tzinfo=dt_timezone.utc)
-    return ts
+        return ts.astimezone(dt_timezone.utc)
+    return ts.astimezone(dt_timezone.utc)
 
 def calculate_uptime_and_rate(timestamps):
     """
