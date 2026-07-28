@@ -12,6 +12,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup
 from seleniumbase import SB
+from seleniumbase.core.browser_launcher import (
+    uc_gui_click_captcha as _uc_gui_click_captcha,
+    uc_gui_handle_captcha as _uc_gui_handle_captcha,
+)
 
 try:
     from .base_scraper import BaseScraper, setup_logger
@@ -331,14 +335,15 @@ class SafliiScraper(BaseScraper):
         path_parts = [p for p in urllib.parse.urlparse(url).path.split("/") if p]
         target_filename = path_parts[-1] if path_parts else ""
 
-        # 2. Open URL via uc_open_with_reconnect (stealth UC mode — primary path for Turnstile bypass)
-        # Standard sb.open() is identifiable by Cloudflare; UC reconnect mode evades detection.
+        # 2. Open URL via sb.open() — in SeleniumBase UC mode this already activates CDP stealth
+        # mode automatically ("open() in UC Mode now always activates CDP Mode"). Using
+        # uc_open_with_reconnect as primary was crashing sessions by disconnecting CDP for too long.
         try:
-            sb.uc_open_with_reconnect(url, reconnect_time=3)
+            sb.open(url)
         except Exception as open_err:
-            logger.warning(f"uc_open_with_reconnect failed on {url} ({open_err}); falling back to sb.open...")
+            logger.warning(f"sb.open failed on {url} ({open_err}); attempting uc_open_with_reconnect fallback...")
             try:
-                sb.open(url)
+                sb.uc_open_with_reconnect(url, reconnect_time=1)
             except Exception:
                 pass
 
@@ -397,7 +402,7 @@ class SafliiScraper(BaseScraper):
             # Attempt 1: UC GUI captcha click (simulates human mouse interaction on the Turnstile widget)
             solved = False
             try:
-                sb.uc_gui_click_captcha()
+                _uc_gui_click_captcha(sb.driver)
                 sb.sleep(3)
                 title, h1, body = get_sb_page_signals(sb)
                 state = check_page_state(title, h1, body)
@@ -405,12 +410,12 @@ class SafliiScraper(BaseScraper):
                     logger.info(f"[{attempt_prefix}] Turnstile solved via uc_gui_click_captcha (state: {state})")
                     solved = True
             except Exception as captcha_err:
-                logger.debug(f"[{attempt_prefix}] uc_gui_click_captcha failed: {captcha_err}")
+                logger.warning(f"[{attempt_prefix}] uc_gui_click_captcha failed: {captcha_err}")
 
             # Attempt 2: UC GUI handle captcha (broader handler — iframe-aware)
             if not solved:
                 try:
-                    sb.uc_gui_handle_captcha()
+                    _uc_gui_handle_captcha(sb.driver)
                     sb.sleep(3)
                     title, h1, body = get_sb_page_signals(sb)
                     state = check_page_state(title, h1, body)
@@ -418,13 +423,14 @@ class SafliiScraper(BaseScraper):
                         logger.info(f"[{attempt_prefix}] Turnstile solved via uc_gui_handle_captcha (state: {state})")
                         solved = True
                 except Exception as captcha_err:
-                    logger.debug(f"[{attempt_prefix}] uc_gui_handle_captcha failed: {captcha_err}")
+                    logger.warning(f"[{attempt_prefix}] uc_gui_handle_captcha failed: {captcha_err}")
 
-            # Attempt 3: UC reconnect + re-open with longer reconnect window as last resort
+            # Attempt 3: UC reconnect + re-open with short reconnect window as last resort
+            # (reconnect_time=1 avoids crashing the Chrome session in multithreaded contexts)
             if not solved:
                 try:
                     logger.info(f"[{attempt_prefix}] Attempting UC reconnect fallback to breach Turnstile...")
-                    sb.uc_open_with_reconnect(url, reconnect_time=5)
+                    sb.uc_open_with_reconnect(url, reconnect_time=1)
                     sb.sleep(3)
                     title, h1, body = get_sb_page_signals(sb)
                     state = check_page_state(title, h1, body)
@@ -607,7 +613,7 @@ class SafliiScraper(BaseScraper):
                                     sb.uc_open_with_reconnect(case_url, reconnect_time=5)
                                     sb.sleep(3)
                                     try:
-                                        sb.uc_gui_handle_captcha()
+                                        _uc_gui_handle_captcha(sb.driver)
                                         sb.sleep(2)
                                     except Exception:
                                         pass
@@ -693,7 +699,14 @@ class SafliiScraper(BaseScraper):
                     except Exception as err:
                         err_msg = str(err)
                         logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
-                        if any(w in err_msg.lower() for w in ("no such window", "target window already closed", "web view not found", "invalid session id", "connection refused")):
+                        _fatal_session_keywords = (
+                            "no such window",
+                            "target window already closed",
+                            "web view not found",
+                            "invalid session id",
+                            "connection refused",
+                        )
+                        if any(w in err_msg.lower() for w in _fatal_session_keywords):
                             logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Window or session connection disrupted. Recovering window handle...")
                             try:
                                 handles = sb.driver.window_handles
@@ -703,9 +716,14 @@ class SafliiScraper(BaseScraper):
                                     sb.open("about:blank")
                             except Exception:
                                 try:
-                                    sb.uc_open_with_reconnect("about:blank", reconnect_time=2)
-                                except Exception:
-                                    pass
+                                    sb.uc_open_with_reconnect("about:blank", reconnect_time=1)
+                                except Exception as fatal_err:
+                                    logger.error(
+                                        f"[Worker {worker_id}][{idx}/{total_cases}] "
+                                        f"Browser session unrecoverable ({fatal_err}). Terminating worker thread."
+                                    )
+                                    work_queue.task_done()
+                                    return  # Exit worker thread — SB context manager handles cleanup
                         if attempt < 3:
                             sb.sleep(attempt * 3)
 
