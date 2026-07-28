@@ -59,22 +59,32 @@ def check_page_state(page_title: str = "", h1_title: str = "", body_text: str = 
     ):
         return "BLOCKED"
 
+    # Only match EXPLICIT 404 error page titles — not titles that merely contain
+    # the string "404" (e.g. a real case titled "ZALCJHB 404 [2025]" is NOT a 404 page).
+    _NOT_FOUND_TITLES = {
+        "not found",
+        "page not found",
+        "404 not found",
+        "404 - not found",
+        "404 error",
+        "error 404",
+        "http 404",
+        "404",
+    }
+    _NOT_FOUND_H1 = {
+        "not found",
+        "page not found",
+        "404 not found",
+        "404 - not found",
+        "404 error",
+        "404",
+    }
     if (
-        t_lower in (
-            "not found",
-            "page not found",
-            "404 not found",
-            "404 - not found",
-            "404 error",
-        )
-        or h_lower in (
-            "not found",
-            "page not found",
-            "404 not found",
-            "404 - not found",
-            "404 error",
-        )
-        or "404" in t_lower
+        t_lower in _NOT_FOUND_TITLES
+        or h_lower in _NOT_FOUND_H1
+        or "404 not found" in t_lower
+        or "404 error" in t_lower
+        or "page not found" in t_lower
     ):
         return "NOT_FOUND"
 
@@ -297,7 +307,7 @@ class SafliiScraper(BaseScraper):
         attempt_prefix: str,
         timeout: float = 15.0,
     ) -> str:
-        """Open a URL with single-window navigation and wait for target URL commit and page load."""
+        """Open a URL with single-window navigation, wait for URL commit, and attempt Turnstile solving."""
         logger.info(f"Navigating to: {url} [{attempt_prefix}]")
 
         # 1. Clean up extra window handles if any accumulated to ensure window stability
@@ -321,13 +331,14 @@ class SafliiScraper(BaseScraper):
         path_parts = [p for p in urllib.parse.urlparse(url).path.split("/") if p]
         target_filename = path_parts[-1] if path_parts else ""
 
-        # 2. Open URL via standard SeleniumBase open
+        # 2. Open URL via uc_open_with_reconnect (stealth UC mode — primary path for Turnstile bypass)
+        # Standard sb.open() is identifiable by Cloudflare; UC reconnect mode evades detection.
         try:
-            sb.open(url)
+            sb.uc_open_with_reconnect(url, reconnect_time=3)
         except Exception as open_err:
-            logger.warning(f"Standard open failed on {url} ({open_err}); attempting uc_open_with_reconnect...")
+            logger.warning(f"uc_open_with_reconnect failed on {url} ({open_err}); falling back to sb.open...")
             try:
-                sb.uc_open_with_reconnect(url, reconnect_time=2)
+                sb.open(url)
             except Exception:
                 pass
 
@@ -369,15 +380,75 @@ class SafliiScraper(BaseScraper):
             if not navigated:
                 return "NAVIGATION_FAILED"
 
-        if self.take_debug_screenshots and self.screenshots_dir:
-            screenshot_path = os.path.join(self.screenshots_dir, f"{attempt_prefix}.png")
-            try:
-                sb.save_screenshot(screenshot_path)
-            except Exception:
-                pass
-
+        # 5. Evaluate current page state
         title, h1, body = get_sb_page_signals(sb)
         state = check_page_state(title, h1, body)
+
+        # 6. If blocked by Turnstile, actively attempt to solve the challenge before returning
+        if state == "BLOCKED":
+            logger.info(f"[{attempt_prefix}] Turnstile/Cloudflare wall detected — attempting challenge solve...")
+
+            if self.take_debug_screenshots and self.screenshots_dir:
+                try:
+                    sb.save_screenshot(os.path.join(self.screenshots_dir, f"{attempt_prefix}_blocked_pre.png"))
+                except Exception:
+                    pass
+
+            # Attempt 1: UC GUI captcha click (simulates human mouse interaction on the Turnstile widget)
+            solved = False
+            try:
+                sb.uc_gui_click_captcha()
+                sb.sleep(3)
+                title, h1, body = get_sb_page_signals(sb)
+                state = check_page_state(title, h1, body)
+                if state not in ("BLOCKED",):
+                    logger.info(f"[{attempt_prefix}] Turnstile solved via uc_gui_click_captcha (state: {state})")
+                    solved = True
+            except Exception as captcha_err:
+                logger.debug(f"[{attempt_prefix}] uc_gui_click_captcha failed: {captcha_err}")
+
+            # Attempt 2: UC GUI handle captcha (broader handler — iframe-aware)
+            if not solved:
+                try:
+                    sb.uc_gui_handle_captcha()
+                    sb.sleep(3)
+                    title, h1, body = get_sb_page_signals(sb)
+                    state = check_page_state(title, h1, body)
+                    if state not in ("BLOCKED",):
+                        logger.info(f"[{attempt_prefix}] Turnstile solved via uc_gui_handle_captcha (state: {state})")
+                        solved = True
+                except Exception as captcha_err:
+                    logger.debug(f"[{attempt_prefix}] uc_gui_handle_captcha failed: {captcha_err}")
+
+            # Attempt 3: UC reconnect + re-open with longer reconnect window as last resort
+            if not solved:
+                try:
+                    logger.info(f"[{attempt_prefix}] Attempting UC reconnect fallback to breach Turnstile...")
+                    sb.uc_open_with_reconnect(url, reconnect_time=5)
+                    sb.sleep(3)
+                    title, h1, body = get_sb_page_signals(sb)
+                    state = check_page_state(title, h1, body)
+                    if state not in ("BLOCKED",):
+                        logger.info(f"[{attempt_prefix}] Turnstile breached via uc_open_with_reconnect (state: {state})")
+                        solved = True
+                except Exception as reconnect_err:
+                    logger.debug(f"[{attempt_prefix}] uc_open_with_reconnect fallback failed: {reconnect_err}")
+
+            if not solved:
+                logger.warning(f"[{attempt_prefix}] All Turnstile solve attempts failed. Returning BLOCKED.")
+
+            if self.take_debug_screenshots and self.screenshots_dir:
+                try:
+                    sb.save_screenshot(os.path.join(self.screenshots_dir, f"{attempt_prefix}_blocked_post.png"))
+                except Exception:
+                    pass
+
+        else:
+            if self.take_debug_screenshots and self.screenshots_dir:
+                try:
+                    sb.save_screenshot(os.path.join(self.screenshots_dir, f"{attempt_prefix}.png"))
+                except Exception:
+                    pass
 
         return state
 
@@ -523,7 +594,28 @@ class SafliiScraper(BaseScraper):
                         if state == "BLOCKED":
                             raise BlockedException(f"Turnstile block on asset: {c_id}")
                         elif state == "NOT_FOUND":
-                            raise Exception(f"Resource missing (state: {state})")
+                            # NOT_FOUND after a Turnstile interaction often means the challenge partially
+                            # resolved but landed on an error page — treat as a recoverable block on
+                            # non-final attempts by using a UC reconnect + captcha solve cycle.
+                            if attempt < 3:
+                                logger.warning(
+                                    f"[Worker {worker_id}][{idx}/{total_cases}] NOT_FOUND on case {c_id} "
+                                    f"[Pass {pass_number}, attempt {attempt}] — may be Turnstile misclassification. "
+                                    f"Attempting UC reconnect solve before next attempt..."
+                                )
+                                try:
+                                    sb.uc_open_with_reconnect(case_url, reconnect_time=5)
+                                    sb.sleep(3)
+                                    try:
+                                        sb.uc_gui_handle_captcha()
+                                        sb.sleep(2)
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    pass
+                                raise BlockedException(f"NOT_FOUND (possible Turnstile misclassification) on asset: {c_id}")
+                            else:
+                                raise Exception(f"Resource missing (state: {state})")
                         elif state == "NAVIGATION_FAILED":
                             raise Exception(f"Browser stuck on previous page, failed to navigate to target URL '{case_url}'")
 
