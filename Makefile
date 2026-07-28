@@ -2,7 +2,7 @@
 export GITHUB_ACCESS_TOKEN
 
 # Define phony targets so Make doesn't look for actual files with these names
-.PHONY: up down status logs dagster stop-dagster publish
+.PHONY: up down status logs dagster stop-dagster publish prod-up prod-down prod-pull portable-pull portable-up portable-down portable-restart
 
 # Default tag for Docker images built and published locally
 TAG ?= latest
@@ -13,24 +13,56 @@ TAG ?= latest
 
 pull:
 	echo $(GITHUB_ACCESS_TOKEN) | docker login ghcr.io -u 8ohm-tiaanf --password-stdin
+	docker compose pull
 	docker pull ghcr.io/8ohm-technologies/coeus-scraper:latest
 	docker pull ghcr.io/8ohm-technologies/coeus-extractor:latest
 
-# Spin up all containers in the background
+# Spin up all containers (full down → pull → up to ensure image changes take effect)
 up:
-	docker compose up -d --build
-	docker compose build coeus-scraper coeus-extractor
+	docker compose down
+	docker compose pull
+	docker compose up -d
 
 # Tear down all containers, networks, and volumes
 down:
 	docker compose down
 
+prod-pull:
+	echo $(GITHUB_ACCESS_TOKEN) | docker login ghcr.io -u 8ohm-tiaanf --password-stdin
+	docker compose -f docker-compose.prod.yml pull
+	docker pull ghcr.io/8ohm-technologies/coeus-scraper:latest
+	docker pull ghcr.io/8ohm-technologies/coeus-extractor:latest
+
+# Full down → pull → up for prod (ensures updated images are used)
 prod-up:
-	docker compose -f docker-compose.prod.yml up -d --build
+	docker compose -f docker-compose.prod.yml down
+	docker compose -f docker-compose.prod.yml pull
+	docker compose -f docker-compose.prod.yml up -d
 
 # Tear down all containers, networks, and volumes
 prod-down:
 	docker compose -f docker-compose.prod.yml down
+
+# Pull latest images for the portable stack
+portable-pull:
+	echo $(GITHUB_ACCESS_TOKEN) | docker login ghcr.io -u 8ohm-tiaanf --password-stdin
+	docker compose -f docker-compose.portable.yml pull
+	docker pull ghcr.io/8ohm-technologies/coeus-scraper:latest
+	docker pull ghcr.io/8ohm-technologies/coeus-extractor:latest
+
+# Full down → pull → up for portable (ensures updated images are used)
+portable-up:
+	docker compose -f docker-compose.portable.yml down
+	docker compose -f docker-compose.portable.yml pull
+	docker compose -f docker-compose.portable.yml up -d
+
+# Tear down the portable stack
+portable-down:
+	docker compose -f docker-compose.portable.yml down
+
+# Restart all portable services without a full down (quick refresh)
+portable-restart:
+	docker compose -f docker-compose.portable.yml restart
 
 # Spin up all containers in the background no build
 up-no-build:
