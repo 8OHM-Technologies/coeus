@@ -24,34 +24,7 @@ version: "3.8"
 services:
 
   # ---------------------------------------------------------
-  # 1. PostgreSQL DB
-  # ---------------------------------------------------------
-  postgres:
-    image: postgres:17-alpine
-    container_name: postgres
-    restart: unless-stopped
-    command: >
-      postgres -c shared_buffers=256MB -c work_mem=16MB -c maintenance_work_mem=64MB -c max_connections=50 -c effective_cache_size=768MB
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
-    networks:
-      - 8ohm-network
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ---------------------------------------------------------
-  # 2. Redis Cache
+  # 1. Redis Cache
   # ---------------------------------------------------------
   redis:
     image: redis:7-alpine
@@ -63,14 +36,11 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------
-  # 3. Django Application Backend (Control Plane)
+  # 2. Django Application Backend (Control Plane)
   # ---------------------------------------------------------
   control-plane:
     image: ghcr.io/8ohm-technologies/coeus-app:latest
     container_name: coeus-control-plane
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
     env_file:
       - .env
@@ -82,14 +52,11 @@ services:
       - 8ohm-network
 
   # ---------------------------------------------------------
-  # 4.1 Dagster Worker
+  # 3.1 Dagster Worker
   # ---------------------------------------------------------
   dagster-worker:
     image: ghcr.io/8ohm-technologies/coeus-dagster-worker:latest
     container_name: dagster-worker
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
     env_file:
       - .env
@@ -108,14 +75,12 @@ services:
       - 8ohm-network
 
   # ---------------------------------------------------------
-  # 4.2 Dagster Webserver
+  # 3.2 Dagster Webserver
   # ---------------------------------------------------------
   dagster-webserver:
     image: ghcr.io/8ohm-technologies/coeus-dagster-webserver:latest
     container_name: dagster-webserver
     depends_on:
-      postgres:
-        condition: service_healthy
       dagster-worker:
         condition: service_started
     restart: unless-stopped
@@ -138,14 +103,12 @@ services:
       - 8ohm-network
 
   # ---------------------------------------------------------
-  # 4.3 Dagster Daemon
+  # 3.3 Dagster Daemon
   # ---------------------------------------------------------
   dagster-daemon:
     image: ghcr.io/8ohm-technologies/coeus-dagster-daemon:latest
     container_name: dagster-daemon
     depends_on:
-      postgres:
-        condition: service_healthy
       dagster-worker:
         condition: service_started
     restart: on-failure
@@ -164,9 +127,6 @@ services:
       - /tmp/io_manager_storage:/tmp/io_manager_storage
     networks:
       - 8ohm-network
-
-volumes:
-  postgres_data:
 
 networks:
   8ohm-network:
