@@ -27,7 +27,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 DEBUG = os.environ.get("DEBUG", "False").lower() in {"1", "true", "yes", "on"}
 
 ALLOWED_HOSTS = [
-    "92.4.152.23",
+    "100.118.113.80",
     "coeus-control-plane",
     "localhost",
     "127.0.0.1",
