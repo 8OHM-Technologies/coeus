@@ -5,7 +5,7 @@ import pytest
 # Ensure extraction_workers is importable
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../extraction_workers")))
 
-from utils.ppi_scrub import Scrub
+from utils.pii_scrub import Scrub
 
 
 def test_scrub_names():

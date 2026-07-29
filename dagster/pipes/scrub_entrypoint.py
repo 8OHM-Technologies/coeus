@@ -18,7 +18,7 @@ from dagster_pipes import PipesContext, open_dagster_pipes
 
 # Ensure we can import extraction_workers
 sys.path.append("/app")
-from extraction_workers.utils.ppi_scrub import Scrub
+from extraction_workers.utils.pii_scrub import Scrub
 from extraction_workers.db import get_db_connection
 
 logging.basicConfig(
