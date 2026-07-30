@@ -322,10 +322,11 @@ class SabinetScraper(BaseScraper):
         resume_month: int,
         db_record_type: str,
         loop: asyncio.AbstractEventLoop,
-    ) -> int:
+    ) -> tuple[int, bool]:
         """Synchronous indexing loop running in a dedicated SeleniumBase UC thread."""
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         total_new = 0
+        skipped_any = False
 
         use_xvfb = False
         if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
@@ -411,10 +412,50 @@ class SabinetScraper(BaseScraper):
 
                     # Apply date filtering
                     try:
+                        # Detect and handle Turnstile/Cloudflare challenge if blocked
+                        title_val = sb.get_page_title()
+                        title = (title_val if isinstance(title_val, str) else "").lower()
+                        body = ""
+                        try:
+                            if sb.is_element_present("body"):
+                                body_val = sb.get_text("body")
+                                body = (body_val if isinstance(body_val, str) else "").lower()
+                        except Exception:
+                            pass
+                        
+                        is_blocked = (
+                            "just a moment" in title
+                            or "cloudflare" in title
+                            or "security verification" in title
+                            or "verify you are human" in body
+                            or "turnstile" in body
+                            or "403 forbidden" in title
+                        )
+                        
+                        if is_blocked:
+                            logger.warning("🛡️ Cloudflare Turnstile block detected. Attempting to solve captcha...")
+                            try:
+                                sb.uc_gui_handle_captcha()
+                                sb.sleep(3)
+                            except Exception as captcha_err:
+                                logger.warning(f"Captcha auto-handler failed: {captcha_err}")
+
+                        # Check if Date From is visible, and if not, trigger page reset/reconnect recovery
+                        if not sb.is_element_visible('input[placeholder="Date From"]'):
+                            logger.warning("⚠️ Date From element not visible. Resetting page and re-navigating to start_url...")
+                            self._navigate_with_reconnect(sb, start_url, label="Date_Filter_Recovery")
+                            self._setup_search_page(sb, start_url)
+                            sb.sleep(2)
+
+                        # Ensure Advanced Search is open if needed
                         if not sb.is_element_visible('input[placeholder="Date From"]'):
                             if sb.is_element_present('button:contains("Advanced Search")'):
                                 sb.uc_click('button:contains("Advanced Search")')
-                                sb.sleep(1)
+                                sb.sleep(2)
+
+                        # Final verification before typing
+                        if not sb.is_element_visible('input[placeholder="Date From"]'):
+                            raise RuntimeError("Date From selector is still not visible after Turnstile check and page reload.")
 
                         sb.type('input[placeholder="Date From"]', date_from)
                         sb.type('input[placeholder="Date To"]', date_to)
@@ -432,9 +473,17 @@ class SabinetScraper(BaseScraper):
                         sb.sleep(2)
                     except Exception as adv_err:
                         logger.warning(f"Error applying date filters: {adv_err}. Skipping window.")
+                        skipped_any = True
                         continue
 
                     if not sb.is_element_present('.ant-list-item'):
+                        # Even if no results are found, this month is processed successfully.
+                        # Save progress so we don't repeat this month on subsequent runs.
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.save_progress(year, month, completed=False),
+                            loop
+                        )
+                        future.result()
                         continue
 
                     # Process pages within window
@@ -493,7 +542,14 @@ class SabinetScraper(BaseScraper):
                     total_new += window_new
                     sb.sleep(1)
 
-        return total_new
+                    # Save progress for successfully completed month
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.save_progress(year, month, completed=False),
+                        loop
+                    )
+                    future.result()
+
+        return total_new, skipped_any
 
     async def indexing(self) -> None:
         """Sub-process A: Extracts records utilizing programmatic rolling timeframe parameters."""
@@ -512,7 +568,7 @@ class SabinetScraper(BaseScraper):
         resume_month = 0 if incremental else self.progress_state.get("last_month", 0)
 
         loop = asyncio.get_running_loop()
-        total_new = await asyncio.to_thread(
+        total_new, skipped_any = await asyncio.to_thread(
             self._indexing_sync,
             start_url,
             reverse_direction,
@@ -524,9 +580,13 @@ class SabinetScraper(BaseScraper):
         )
 
         logger.info(f"✅ Indexing complete. Scraped index updates total: {total_new}")
-        self.progress_state["fully_complete"] = True
-        self.progress_state["completed_at"] = datetime.now(timezone.utc).isoformat()
-        await db_storage.save_pipeline_state(self.conn, self.pipeline_name, self.progress_state)
+        if not skipped_any:
+            self.progress_state["fully_complete"] = True
+            self.progress_state["completed_at"] = datetime.now(timezone.utc).isoformat()
+            await db_storage.save_pipeline_state(self.conn, self.pipeline_name, self.progress_state)
+            logger.info("✅ Progress state set to fully complete.")
+        else:
+            logger.warning("⚠️ Some timeframe windows were skipped due to errors. Progress state NOT set to fully complete.")
 
     def _detailing_worker_thread(
         self,
