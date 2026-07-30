@@ -197,8 +197,8 @@ class SabinetScraper(BaseScraper):
     and concurrent detailed item extraction.
     """
 
-    def __init__(self, pipeline_name: str, headless: bool = False):
-        super().__init__(pipeline_name)
+    def __init__(self, pipeline_name: str, headless: bool = False, skip_stages: Optional[str] = None):
+        super().__init__(pipeline_name, skip_stages=skip_stages)
         self.headless = headless
         self.use_proxy: bool = False
         self.proxy_url: Optional[str] = None
@@ -264,6 +264,8 @@ class SabinetScraper(BaseScraper):
             chromium_arg="--no-sandbox,--disable-dev-shm-usage"
         ) as sb:
             sb.set_window_size(1280, 800)
+            sb.driver.set_page_load_timeout(30)
+            sb.driver.set_script_timeout(30)
             self._navigate_with_reconnect(sb, scrape_url, label="Auth_Gate")
 
             logger.info("🔐 Triggering security workflow context drawer...")
@@ -344,6 +346,8 @@ class SabinetScraper(BaseScraper):
             chromium_arg="--no-sandbox,--disable-dev-shm-usage"
         ) as sb:
             sb.set_window_size(1280, 800)
+            sb.driver.set_page_load_timeout(30)
+            sb.driver.set_script_timeout(30)
 
             # Load cookies if available
             if os.path.exists(self.cookies_filepath):
@@ -566,6 +570,8 @@ class SabinetScraper(BaseScraper):
                     chromium_arg="--no-sandbox,--disable-dev-shm-usage"
                 ) as sb:
                     sb.set_window_size(1280, 800)
+                    sb.driver.set_page_load_timeout(30)
+                    sb.driver.set_script_timeout(30)
 
                     if os.path.exists(self.cookies_filepath):
                         sb.open("https://discover.sabinet.co.za/")
@@ -740,8 +746,18 @@ if __name__ == "__main__":
         default="true",
         help="Run browser in headless mode (true/false)"
     )
+    parser.add_argument(
+        "--skip_stages",
+        default=None,
+        help="Comma-separated stage numbers to skip, e.g. '1' or '1,2'. "
+             "Stage 1=Indexing, Stage 2=Detailing, Stage 3=Extraction."
+    )
     args = parser.parse_args()
 
     headless_value = args.headless.lower() == "true"
-    scraper = SabinetScraper(pipeline_name=args.pipeline_name, headless=headless_value)
+    scraper = SabinetScraper(
+        pipeline_name=args.pipeline_name,
+        headless=headless_value,
+        skip_stages=args.skip_stages,
+    )
     asyncio.run(scraper.run())

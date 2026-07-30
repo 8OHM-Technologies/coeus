@@ -227,8 +227,9 @@ class SafliiScraper(BaseScraper):
         year: Optional[int] = None,
         headless: bool = False,
         use_xvfb: bool = True,
+        skip_stages: Optional[str] = None,
     ):
-        super().__init__(pipeline_name)
+        super().__init__(pipeline_name, skip_stages=skip_stages)
         self.court_code: Optional[str] = court_code
         self.year: Optional[int] = year
         self.headless: bool = headless
@@ -475,6 +476,8 @@ class SafliiScraper(BaseScraper):
             chromium_arg="--no-sandbox,--disable-dev-shm-usage"
         ) as sb:
             sb.set_window_size(1280, 720)
+            sb.driver.set_page_load_timeout(30)
+            sb.driver.set_script_timeout(30)
             
             # 1. Directly construct year directory URLs for the configured range (bypasses top-level redirect walls)
             logger.info(f"Constructing year directory indices for court '{self.court_code}' across years {self.start_year}..{self.end_year}")
@@ -568,6 +571,8 @@ class SafliiScraper(BaseScraper):
             chromium_arg="--no-sandbox,--disable-dev-shm-usage"
         ) as sb:
             sb.set_window_size(1280, 720)
+            sb.driver.set_page_load_timeout(30)
+            sb.driver.set_script_timeout(30)
 
             while True:
                 try:
@@ -672,7 +677,7 @@ class SafliiScraper(BaseScraper):
 
                         # Dispatch async progress state save
                         current_y = int(c_year) if c_year.isdigit() else self.start_year
-                        asyncio.run_coroutine_threadsafe(
+                        future_prog = asyncio.run_coroutine_threadsafe(
                             self.save_progress(
                                 year=current_y,
                                 court_code=self.court_code,
@@ -683,6 +688,7 @@ class SafliiScraper(BaseScraper):
                             ),
                             loop
                         )
+                        future_prog.result()
 
                         self.existing_urls.add(case_url)
                         if case_no:
@@ -743,11 +749,33 @@ class SafliiScraper(BaseScraper):
 
     async def detailing(self) -> None:
         """Sub-process B: Perform deep enrichment processing using concurrent SB UC worker threads."""
-        if not self.case_urls:
-            logger.info("No indices staged for detailed processing pipelines.")
-            return
-
         extraction_params = self.config.get("extraction_params", {})
+        db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
+
+        if not self.case_urls:
+            if self.STAGE_INDEXING in self.skip_stages:
+                # Indexing was skipped — load pending case URLs directly from the database
+                # so detailing can proceed without a prior in-memory indexing run.
+                logger.info(
+                    "Indexing stage was skipped; loading pending case URLs from the database..."
+                )
+                db_records = await db_storage.load_records_needing_detail(
+                    self.conn,
+                    db_record_type,
+                    sort_desc=False,
+                    limit=None,
+                    include_data=False,
+                )
+                if db_records:
+                    self.case_urls = [r["source_url"] for r in db_records if r.get("source_url")]
+                    logger.info(f"Loaded {len(self.case_urls)} pending URLs from the database.")
+                else:
+                    logger.info("No pending records found in the database. Nothing to detail.")
+                    return
+            else:
+                logger.info("No indices staged for detailed processing pipelines.")
+                return
+
         concurrency = int(extraction_params.get("concurrency", 4))
         logger.info(f"[Stage 1B start] Starting detailing with {concurrency} SeleniumBase UC worker threads...")
 
@@ -821,6 +849,12 @@ if __name__ == "__main__":
         default="true",
         help="Run browser with Xvfb display (true/false)",
     )
+    parser.add_argument(
+        "--skip_stages",
+        default=None,
+        help="Comma-separated stage numbers to skip, e.g. '1' or '1,2'. "
+             "Stage 1=Indexing, Stage 2=Detailing, Stage 3=Extraction."
+    )
     args = parser.parse_args()
 
     headless_value = args.headless.lower() == "true"
@@ -832,6 +866,7 @@ if __name__ == "__main__":
         year=args.year,
         headless=headless_value,
         use_xvfb=use_xvfb_value,
+        skip_stages=args.skip_stages,
     )
     
     asyncio.run(scraper.run())

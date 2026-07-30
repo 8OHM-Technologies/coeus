@@ -1,7 +1,7 @@
 import os
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Set, Optional
+from typing import Dict, Any, Set, Optional, FrozenSet
 
 import db_storage
 from utils.utils import fetch_pipeline_config, resolve_data_dir
@@ -18,12 +18,28 @@ class BaseScraper(ABC):
     and exposes standard lifecycle stages compatible with SeleniumBase UC Mode.
     """
 
-    def __init__(self, pipeline_name: str):
+    # -------------------------------------------------------------------------
+    # Pipeline Stage Numbers
+    # -------------------------------------------------------------------------
+    #  Stage 1 — Indexing   (harvests/indexes record URLs into the database)
+    #  Stage 2 — Detailing  (enriches indexed records with detailed metadata)
+    #  Stage 3 — Extraction (post-processing / downstream extraction step)
+    # -------------------------------------------------------------------------
+    STAGE_INDEXING: int = 1
+    STAGE_DETAILING: int = 2
+    STAGE_EXTRACTION: int = 3
+
+    def __init__(self, pipeline_name: str, skip_stages: Optional[str] = None):
         self.pipeline_name: str = pipeline_name
         self.env: Dict[str, str] = dict(os.environ)
         self.config: Dict[str, Any] = {}
         self.output_dir: str = ""
-        
+
+        # Pipeline Stage Control
+        # Accepts a comma-separated string of stage numbers to skip, e.g. "1" or "1,2".
+        # Parsed into a frozenset of ints for fast O(1) membership checks at runtime.
+        self.skip_stages: FrozenSet[int] = self._parse_skip_stages(skip_stages)
+
         # Database & Deduplication State
         self.conn = None
         self.target_id: Any = None
@@ -31,10 +47,31 @@ class BaseScraper(ABC):
         self.existing_case_numbers: Set[str] = set()
         self.progress_state: Dict[str, Any] = {}
         self.db_lock = asyncio.Lock()
-        
+
         # Proxy Configuration
         self.use_proxy: bool = False
         self.proxy_url: Optional[str] = None
+
+    @staticmethod
+    def _parse_skip_stages(skip_stages: Optional[str]) -> FrozenSet[int]:
+        """Parse a comma-separated string of stage numbers into a frozenset of ints.
+
+        Examples::
+
+            _parse_skip_stages("1")    -> frozenset({1})
+            _parse_skip_stages("1,2")  -> frozenset({1, 2})
+            _parse_skip_stages(None)   -> frozenset()
+        """
+        if not skip_stages:
+            return frozenset()
+        result: Set[int] = set()
+        for token in skip_stages.split(","):
+            token = token.strip()
+            if token.isdigit():
+                result.add(int(token))
+            elif token:
+                logger.warning(f"Invalid skip_stages token ignored: '{token}'")
+        return frozenset(result)
 
     async def initialize(self) -> None:
         """Initializes configs, resolves output paths, and sets up database baselines."""
@@ -81,9 +118,10 @@ class BaseScraper(ABC):
         self.progress_state["last_completed"] = completed
         for k, v in kwargs.items():
             self.progress_state[k] = v
-        await db_storage.save_pipeline_state(
-            self.conn, self.pipeline_name, self.progress_state
-        )
+        async with self.db_lock:
+            await db_storage.save_pipeline_state(
+                self.conn, self.pipeline_name, self.progress_state
+            )
 
     async def cleanup(self) -> None:
         """Ensures database connections terminate cleanly on shutdown."""
@@ -93,11 +131,22 @@ class BaseScraper(ABC):
 
     async def scraping(self) -> None:
         """
-        Executes Stage 1 of the pipeline: Scraping (Indexing and Detailing)
+        Executes Stage 1 of the pipeline: Scraping (Indexing and Detailing).
+
+        Individual sub-stages can be bypassed via ``skip_stages``:
+          - Stage 1 (indexing)  is skipped when ``1`` is in ``self.skip_stages``.
+          - Stage 2 (detailing) is skipped when ``2`` is in ``self.skip_stages``.
         """
         logger.info("Starting Stage 1: Scraping Process Pipeline...")
-        await self.indexing()
-        await self.detailing()
+        if self.STAGE_INDEXING in self.skip_stages:
+            logger.info("⏭  Stage 1 (Indexing) skipped via skip_stages configuration.")
+        else:
+            await self.indexing()
+
+        if self.STAGE_DETAILING in self.skip_stages:
+            logger.info("⏭  Stage 2 (Detailing) skipped via skip_stages configuration.")
+        else:
+            await self.detailing()
 
     @abstractmethod
     async def authenticate(self, headless: bool = False) -> None:
@@ -129,13 +178,29 @@ class BaseScraper(ABC):
         pass
 
     async def run(self) -> None:
-        """Main execution wrapper coordinating overall lifecycle stages."""
+        """Main execution wrapper coordinating overall lifecycle stages.
+
+        Stages skipped via ``self.skip_stages``:
+          - Stage 1 (indexing)  — skip_stages includes ``1``
+          - Stage 2 (detailing) — skip_stages includes ``2``
+          - Stage 3 (extraction)— skip_stages includes ``3``
+
+        Skipping *all* scraping sub-stages (1 and 2) causes ``scraping()`` to
+        be called but both inner steps are no-ops, which is functionally
+        equivalent to going straight to extraction.
+        """
+        if self.skip_stages:
+            logger.info(f"🔧 Pipeline skip_stages active: {sorted(self.skip_stages)}")
         try:
             await self.initialize()
-            
+
             await self.scraping()
-            await self.extraction()
-            
+
+            if self.STAGE_EXTRACTION in self.skip_stages:
+                logger.info("⏭  Stage 3 (Extraction) skipped via skip_stages configuration.")
+            else:
+                await self.extraction()
+
         except Exception as err:
             logger.exception(f"Fatal exception occurred: {err}")
             raise err
