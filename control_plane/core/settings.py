@@ -99,6 +99,14 @@ DATABASES = {
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "super_secret_password").strip("'\""),
         "HOST": os.environ.get("POSTGRES_HOST", "localhost").strip("'\""),
         "PORT": os.environ.get("POSTGRES_PORT", "5432").strip("'\""),
+    },
+    "oracle": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("OC_POSTGRES_DB", "coeus").strip("'\""),
+        "USER": os.environ.get("OC_POSTGRES_USER", "postgres").strip("'\""),
+        "PASSWORD": os.environ.get("OC_POSTGRES_PASSWORD", "super_secret_password").strip("'\""),
+        "HOST": os.environ.get("OC_POSTGRES_HOST", "localhost").strip("'\""),
+        "PORT": os.environ.get("OC_POSTGRES_PORT", "5432").strip("'\""),
     }
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

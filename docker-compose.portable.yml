@@ -33,10 +33,10 @@ services:
     command: >
       postgres -c shared_buffers=256MB -c work_mem=16MB -c maintenance_work_mem=64MB -c max_connections=50 -c effective_cache_size=768MB
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES}
+      POSTGRES_USER: ${OC_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${OC_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${OC_POSTGRES_DB}
+      POSTGRES_MULTIPLE_DATABASES: ${OC_POSTGRES_MULTIPLE_DATABASES}
     ports:
       - "5432:5432"
     volumes:
@@ -45,7 +45,7 @@ services:
     networks:
       - 8ohm-network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      test: [ "CMD-SHELL", "pg_isready -U $${OC_POSTGRES_USER} -d $${OC_POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5

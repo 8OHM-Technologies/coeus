@@ -412,50 +412,45 @@ class SabinetScraper(BaseScraper):
 
                     # Apply date filtering
                     try:
-                        # Detect and handle Turnstile/Cloudflare challenge if blocked
-                        title_val = sb.get_page_title()
-                        title = (title_val if isinstance(title_val, str) else "").lower()
-                        body = ""
-                        try:
-                            if sb.is_element_present("body"):
-                                body_val = sb.get_text("body")
-                                body = (body_val if isinstance(body_val, str) else "").lower()
-                        except Exception:
-                            pass
-                        
-                        is_blocked = (
-                            "just a moment" in title
-                            or "cloudflare" in title
-                            or "security verification" in title
-                            or "verify you are human" in body
-                            or "turnstile" in body
-                            or "403 forbidden" in title
-                        )
-                        
-                        if is_blocked:
-                            logger.warning("🛡️ Cloudflare Turnstile block detected. Attempting to solve captcha...")
-                            try:
-                                sb.uc_gui_handle_captcha()
-                                sb.sleep(3)
-                            except Exception as captcha_err:
-                                logger.warning(f"Captcha auto-handler failed: {captcha_err}")
-
-                        # Check if Date From is visible, and if not, trigger page reset/reconnect recovery
                         if not sb.is_element_visible('input[placeholder="Date From"]'):
-                            logger.warning("⚠️ Date From element not visible. Resetting page and re-navigating to start_url...")
-                            self._navigate_with_reconnect(sb, start_url, label="Date_Filter_Recovery")
-                            self._setup_search_page(sb, start_url)
-                            sb.sleep(2)
+                            # Try to click the Advanced Search button using multiple selector candidates
+                            advanced_search_selectors = [
+                                'button:contains("Advanced Search")',
+                                'button:contains("Advanced search")',
+                                '#search-col-4 button',
+                            ]
+                            clicked_adv = False
+                            for selector in advanced_search_selectors:
+                                if sb.is_element_visible(selector):
+                                    logger.info(f"Clicking advanced search button with selector: {selector}")
+                                    try:
+                                        sb.uc_click(selector)
+                                        sb.sleep(1)
+                                        if sb.is_element_visible('input[placeholder="Date From"]'):
+                                            clicked_adv = True
+                                            break
+                                    except Exception as click_err:
+                                        logger.warning(f"Failed to click advanced search via {selector}: {click_err}")
 
-                        # Ensure Advanced Search is open if needed
-                        if not sb.is_element_visible('input[placeholder="Date From"]'):
-                            if sb.is_element_present('button:contains("Advanced Search")'):
-                                sb.uc_click('button:contains("Advanced Search")')
+                            # If not clicked or not visible, perform a page setup reload to reset SPA/page state
+                            if not clicked_adv and not sb.is_element_visible('input[placeholder="Date From"]'):
+                                logger.warning("⚠️ Date From element not visible. Resetting page to recover layout state...")
+                                self._setup_search_page(sb, start_url)
                                 sb.sleep(2)
+                                for selector in advanced_search_selectors:
+                                    if sb.is_element_visible(selector):
+                                        logger.info(f"Clicking advanced search button after reload: {selector}")
+                                        try:
+                                            sb.uc_click(selector)
+                                            sb.sleep(1)
+                                            if sb.is_element_visible('input[placeholder="Date From"]'):
+                                                break
+                                        except Exception:
+                                            pass
 
                         # Final verification before typing
                         if not sb.is_element_visible('input[placeholder="Date From"]'):
-                            raise RuntimeError("Date From selector is still not visible after Turnstile check and page reload.")
+                            raise RuntimeError("Date From selector is still not visible after trying Advanced Search and page reload.")
 
                         sb.type('input[placeholder="Date From"]', date_from)
                         sb.type('input[placeholder="Date To"]', date_to)
