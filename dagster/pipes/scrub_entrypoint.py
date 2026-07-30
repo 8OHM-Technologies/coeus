@@ -12,6 +12,7 @@ import json
 import logging
 import asyncio
 import asyncpg
+import uuid
 from datetime import datetime
 
 from dagster_pipes import PipesContext, open_dagster_pipes
@@ -61,7 +62,7 @@ async def run_scrub(pipes: PipesContext) -> None:
 
         # Fetch records that need scrubbing
         records_to_scrub = await conn.fetch(
-            "SELECT id, data FROM extracted_records WHERE record_type = $1 AND cleaned_at IS NULL ORDER BY extracted_at ASC",
+            "SELECT id, data FROM extracted_records WHERE record_type = $1 AND status = 'detailed' AND cleaned_at IS NULL ORDER BY scraped_at ASC",
             record_type_to_scrub
         )
 
@@ -84,14 +85,26 @@ async def run_scrub(pipes: PipesContext) -> None:
             # Scrub the data dictionary recursively
             scrubbed_data = pii_scrubber.scrub_dict(data)
 
-            # Save back to database and set cleaned_at
+            # Save to scrubbed_records table (upsert on conflict of extracted_record_id)
+            await conn.execute(
+                """
+                INSERT INTO scrubbed_records (id, extracted_record_id, data, created_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (extracted_record_id)
+                DO UPDATE SET data = EXCLUDED.data
+                """,
+                str(uuid.uuid4()),
+                record_id,
+                json.dumps(scrubbed_data, ensure_ascii=False)
+            )
+
+            # Update the extracted_records entry's cleaned_at datetime
             await conn.execute(
                 """
                 UPDATE extracted_records
-                SET data = $1, cleaned_at = NOW()
-                WHERE id = $2
+                SET cleaned_at = NOW()
+                WHERE id = $1
                 """,
-                json.dumps(scrubbed_data, ensure_ascii=False),
                 record_id
             )
 

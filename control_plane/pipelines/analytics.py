@@ -186,12 +186,12 @@ def update_pipeline_analytics():
 
     # 3. Query only recent records (last 7 days) to calculate detailed uptime and rate.
     recent_records = ExtractedRecord.objects.filter(
-        extracted_at__gte=seven_days_ago
+        scraped_at__gte=seven_days_ago
     ).values(
         'id',
         'record_type',
         'status',
-        'extracted_at',
+        'scraped_at',
         'target__entity__name',
         'data__worker_id',
         'data__scraped_at',
@@ -215,7 +215,7 @@ def update_pipeline_analytics():
                 if ts:
                     break
         if not ts:
-            ts = r.get('extracted_at')
+            ts = r.get('scraped_at')
 
         if not ts:
             continue
@@ -262,11 +262,11 @@ def update_pipeline_analytics():
             
             fallback_qs = ExtractedRecord.objects.filter(
                 Q(target__entity__name__in=query_names) | Q(record_type__in=query_names)
-            ).order_by('-extracted_at')[:5000].values(
+            ).order_by('-scraped_at')[:5000].values(
                 'id',
                 'record_type',
                 'status',
-                'extracted_at',
+                'scraped_at',
                 'target__entity__name',
                 'data__worker_id',
                 'data__scraped_at',
@@ -289,7 +289,7 @@ def update_pipeline_analytics():
                         if ts:
                             break
                 if not ts:
-                    ts = r.get('extracted_at')
+                    ts = r.get('scraped_at')
                 if not ts:
                     continue
 

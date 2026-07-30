@@ -158,7 +158,7 @@ async def upsert_scraped_record(
         """
         INSERT INTO extracted_records (
             id, target_id, document_date, record_type,
-            data, source_url, status, extracted_at
+            data, source_url, status, scraped_at
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         ON CONFLICT (source_url)
@@ -215,7 +215,7 @@ async def upsert_scraped_records_batch(
             """
             INSERT INTO extracted_records (
                 id, target_id, document_date, record_type,
-                data, source_url, status, extracted_at
+                data, source_url, status, scraped_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
             ON CONFLICT (source_url)
@@ -265,7 +265,7 @@ async def load_records_needing_detail(
         query_parts.append(f"  AND NOT (id = ANY(${len(params) + 1}::uuid[]))")
         params.append(exclude_ids)
 
-    query_parts.append(f"ORDER BY extracted_at {order}")
+    query_parts.append(f"ORDER BY scraped_at {order}")
 
     if limit is not None:
         query_parts.append(f"LIMIT {limit}")

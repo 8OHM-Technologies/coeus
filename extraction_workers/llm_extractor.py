@@ -277,7 +277,7 @@ async def upsert_record(
             """
             INSERT INTO extracted_records (
                 id, target_id, document_date, record_type,
-                data, requires_human_review, review_reason, source_url, extracted_at
+                data, requires_human_review, review_reason, source_url, scraped_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             ON CONFLICT (target_id, document_date, record_type)
@@ -474,7 +474,7 @@ async def run_extraction(pipeline_name: str, schema_name: str) -> None:
                     "year": record.get("year", ""),
                     "case_id": record.get("case_id", ""),
                     **schema_instance.model_dump(mode="json"),
-                    "extracted_at": datetime.now().isoformat(),
+                    "scraped_at": datetime.now().isoformat(),
                 }
                 extracted_results.append(extracted_record)
                 if dedup_key:

@@ -73,9 +73,9 @@ class ExtractedRecord(models.Model):
     requires_human_review = models.BooleanField(default=False, null=True)
     review_reason = models.TextField(blank=True, null=True)
     source_url = models.TextField(blank=True, null=True, unique=True)
-    extracted_at = models.DateTimeField(auto_now_add=True)
+    scraped_at = models.DateTimeField(auto_now_add=True)
     cleaned_at = models.DateTimeField(auto_now_add=False, null=True)
-    processed_at = models.DateTimeField(auto_now_add=False, null=True)
+    detailed_at = models.DateTimeField(auto_now_add=False, null=True)
     status = models.CharField(
         max_length=20,
         choices=Statusses.choices,
@@ -89,3 +89,27 @@ class ExtractedRecord(models.Model):
 
     def __str__(self) -> str:
         return f"{self.target} | {self.record_type} ({self.document_date})"
+
+
+class ScrubbedRecord(models.Model):
+    """
+    Stores scrubbed (cleaned PII) data associated with an ExtractedRecord.
+    Maps to the 'scrubbed_records' table.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    extracted_record = models.ForeignKey(
+        ExtractedRecord,
+        on_delete=models.CASCADE,
+        unique=True,
+        related_name="scrubbed_records",
+    )
+    data = models.JSONField(help_text="Cleaned JSON data (PII removed).")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = "scrubbed_records"
+
+    def __str__(self) -> str:
+        return f"Scrubbed | {self.extracted_record.id}"

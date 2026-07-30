@@ -513,33 +513,95 @@ sabinet_scrubbing_job = dg.define_asset_job(
     selection=dg.AssetSelection.assets("scrubbed_extracted_records"),
 )
 
+general_scrubbing_job = dg.define_asset_job(
+    name="general_scrubbing_job",
+    selection=dg.AssetSelection.assets("scrubbed_extracted_records"),
+)
 
-@dg.asset_sensor(
+
+def get_db_conn():
+    import psycopg2
+
+    def clean_val(v):
+        if not v:
+            return v
+        v = v.strip()
+        for sep in (" #", "\t#"):
+            if sep in v:
+                v = v.split(sep, 1)[0]
+                break
+        return v.strip("'\"").strip()
+
+    db_host = clean_val(os.environ.get("POSTGRES_HOST", "localhost"))
+    db_user = clean_val(os.environ.get("POSTGRES_USER", "postgres"))
+    db_pass = clean_val(os.environ.get("POSTGRES_PASSWORD", "super_secret_password"))
+    db_name = clean_val(os.environ.get("POSTGRES_DB", "coeus"))
+    db_port = clean_val(os.environ.get("POSTGRES_PORT", "5432"))
+
+    return psycopg2.connect(
+        host=db_host,
+        user=db_user,
+        password=db_pass,
+        database=db_name,
+        port=int(db_port)
+    )
+
+
+@dg.sensor(
     name="raw_scraped_pages_sensor",
-    asset_key=dg.AssetKey("raw_scraped_pages"),
-    job=downstream_extraction_scrubbing_job,
+    minimum_interval_seconds=60,
+    job=general_scrubbing_job,
     default_status=dg.DefaultSensorStatus.RUNNING,
 )
-def raw_scraped_pages_sensor(
-    context: dg.SensorEvaluationContext,
-    asset_event: dg.EventLogEntry,
-):
-    partition_key = asset_event.dagster_event.partition
-    
-    # Check if this partition is Sabinet
-    blueprint = get_blueprint_for_partition(partition_key)
-    if blueprint and blueprint.get("scraper_type") == "sabinet":
-        context.log.info(f"Skipping default downstream trigger for Sabinet partition '{partition_key}'.")
+def raw_scraped_pages_sensor(context: dg.SensorEvaluationContext):
+    try:
+        conn = get_db_conn()
+    except Exception as e:
+        context.log.error(f"Failed to connect to database in raw_scraped_pages_sensor: {e}")
         return
 
-    context.log.info(
-        f"raw_scraped_pages materialized for partition '{partition_key}'. "
-        f"Triggering downstream extraction and scrubbing job."
-    )
-    return dg.RunRequest(
-        run_key=f"downstream_{context.cursor}_{partition_key}",
-        partition_key=partition_key,
-    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT DISTINCT record_type FROM extracted_records WHERE status = 'detailed' AND cleaned_at IS NULL"
+            )
+            rows = cursor.fetchall()
+    except Exception as e:
+        context.log.error(f"Failed to query database in raw_scraped_pages_sensor: {e}")
+        return
+    finally:
+        conn.close()
+
+    if not rows:
+        return
+
+    # Fetch blueprints to match record_type to partition key
+    blueprints = fetch_blueprints()
+    run_requests = []
+
+    for row in rows:
+        record_type = row[0]
+        partition_key = None
+        for bp in blueprints:
+            p_id = str(bp.get("pipeline_id"))
+            extraction_params = (bp.get("phase_2_extraction") or {}).get("extraction_params") or {}
+            shared_rec_type = extraction_params.get("shared_record_type")
+            if p_id == record_type or shared_rec_type == record_type:
+                partition_key = p_id
+                break
+
+        if not partition_key:
+            partition_key = record_type
+
+        context.log.info(f"Found detailed, uncleaned records for record_type '{record_type}'. Triggering scrubbing for partition '{partition_key}'.")
+        run_requests.append(
+            dg.RunRequest(
+                run_key=f"scrub_{record_type}_{int(time.time() / 60)}",
+                partition_key=partition_key,
+            )
+        )
+
+    return dg.SensorResult(run_requests=run_requests)
 
 
 @dg.sensor(
@@ -670,7 +732,8 @@ defs = dg.Definitions(
     ],
     jobs=[
         downstream_extraction_scrubbing_job,
-        sabinet_scrubbing_job
+        sabinet_scrubbing_job,
+        general_scrubbing_job
     ],
     sensors=[
         coeus_blueprint_sensor,

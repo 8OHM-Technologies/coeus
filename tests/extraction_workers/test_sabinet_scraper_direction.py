@@ -27,14 +27,14 @@ async def test_load_records_needing_detail_sorting():
     await load_records_needing_detail(mock_conn, "test_pipeline", sort_desc=False)
     mock_conn.fetch.assert_called_once()
     query = mock_conn.fetch.call_args[0][0]
-    assert "ORDER BY extracted_at ASC" in query
+    assert "ORDER BY scraped_at ASC" in query
 
     # 2. Reverse mode (DESC)
     mock_conn.fetch.reset_mock()
     await load_records_needing_detail(mock_conn, "test_pipeline", sort_desc=True)
     mock_conn.fetch.assert_called_once()
     query = mock_conn.fetch.call_args[0][0]
-    assert "ORDER BY extracted_at DESC" in query
+    assert "ORDER BY scraped_at DESC" in query
 
 
 @pytest.mark.asyncio
@@ -56,7 +56,7 @@ async def test_load_records_needing_detail_params():
     query = mock_conn.fetch.call_args[0][0]
     params = mock_conn.fetch.call_args[0][1:]
 
-    assert "ORDER BY extracted_at DESC" in query
+    assert "ORDER BY scraped_at DESC" in query
     assert "LIMIT 10" in query
     assert "AND NOT (id = ANY($2::uuid[]))" in query
     assert "SELECT id, source_url" in query
@@ -253,14 +253,19 @@ async def test_detailing_batch_loop(mocker):
     mocker.patch("extraction_workers.sabinet_scraper.db_storage.load_records_needing_detail", mock_load)
 
     processed_items = []
-    def mock_worker(self, worker_id, work_queue, loop, db_record_type, total_cases):
-        while True:
-            item = work_queue.get()
-            if item is None:
+    def mock_worker(*args, **kwargs):
+        try:
+            work_queue = kwargs.get("work_queue")
+            while True:
+                item = work_queue.get()
+                if item is None:
+                    work_queue.task_done()
+                    break
+                processed_items.append(item)
                 work_queue.task_done()
-                break
-            processed_items.append(item)
-            work_queue.task_done()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
 
     mocker.patch.object(SabinetScraper, "_detailing_worker_thread", side_effect=mock_worker)
 

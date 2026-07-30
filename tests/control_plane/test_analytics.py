@@ -68,7 +68,7 @@ def test_update_pipeline_analytics_e2e():
         }
     )
     
-    # Record 3: No scraped_at timestamps, should fall back to extracted_at (timezone-aware)
+    # Record 3: No scraped_at timestamps, should fall back to scraped_at (timezone-aware)
     ExtractedRecord.objects.create(
         target=target,
         document_date=date(2026, 1, 1),

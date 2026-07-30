@@ -665,7 +665,7 @@ class SabinetScraper(BaseScraper):
                                         UPDATE extracted_records
                                         SET data = data || $1::jsonb,
                                             status = 'detailed',
-                                            processed_at = NOW()
+                                            detailed_at = NOW()
                                         WHERE id = $2
                                         """,
                                         db_storage.json_dumps(payload),
