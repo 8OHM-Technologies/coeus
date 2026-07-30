@@ -116,6 +116,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+    pull_policy: build
     depends_on:
       - postgres
     restart: unless-stopped
@@ -208,6 +209,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.scraper
+    pull_policy: build
     env_file:
       - .env
     profiles:
@@ -218,6 +220,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.extractor
+    pull_policy: build
     env_file:
       - .env
     profiles:
