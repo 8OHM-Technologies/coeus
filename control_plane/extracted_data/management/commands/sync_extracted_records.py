@@ -1,4 +1,5 @@
 import logging
+from typing import Dict, Tuple
 from django.core.management.base import BaseCommand
 from django.db import connections, OperationalError
 from extracted_data.models import Entity, ExtractedRecord, Target, Statusses
@@ -6,24 +7,16 @@ from extracted_data.models import Entity, ExtractedRecord, Target, Statusses
 logger = logging.getLogger(__name__)
 
 
-def resolve_dest_target(src_target: Target, dest_db: str) -> Target:
-    """
-    Given a Target object from the source database, resolve or create the corresponding
-    Entity and Target objects in the destination database by natural key matching.
-    """
-    src_entity = src_target.entity
-    dest_entity, _ = Entity.objects.using(dest_db).get_or_create(
-        name=src_entity.name,
-        defaults={"identifier": src_entity.identifier},
-    )
-
-    dest_target, _ = Target.objects.using(dest_db).get_or_create(
-        entity=dest_entity,
-        target_name=src_target.target_name,
-        defaults={"location": src_target.location},
-    )
-
-    return dest_target
+def chunked_iterable(iterable, chunk_size):
+    """Yield successive chunks from an iterable."""
+    chunk = []
+    for item in iterable:
+        chunk.append(item)
+        if len(chunk) >= chunk_size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk
 
 
 class Command(BaseCommand):
@@ -82,6 +75,24 @@ class Command(BaseCommand):
             )
             return
 
+        target_cache: Dict[Tuple[str, str, str], Target] = {}
+
+        def get_cached_dest_target(src_target: Target, dest_db: str) -> Target:
+            src_entity = src_target.entity
+            key = (dest_db, src_entity.name, src_target.target_name)
+            if key not in target_cache:
+                dest_entity, _ = Entity.objects.using(dest_db).get_or_create(
+                    name=src_entity.name,
+                    defaults={"identifier": src_entity.identifier},
+                )
+                dest_target, _ = Target.objects.using(dest_db).get_or_create(
+                    entity=dest_entity,
+                    target_name=src_target.target_name,
+                    defaults={"location": src_target.location},
+                )
+                target_cache[key] = dest_target
+            return target_cache[key]
+
         counts = {
             "oc_to_master_inserted": 0,
             "oc_to_master_updated": 0,
@@ -92,12 +103,22 @@ class Command(BaseCommand):
         # 1. Sync OC (oracle) -> Master (default)
         if direction in ("both", "oc_to_master"):
             self.stdout.write("Syncing records from OC ('oracle') to Master ('default')...")
-            self.sync_oc_to_master(batch_size=batch_size, dry_run=dry_run, counts=counts)
+            self.sync_oc_to_master(
+                batch_size=batch_size,
+                dry_run=dry_run,
+                counts=counts,
+                get_cached_dest_target=get_cached_dest_target,
+            )
 
         # 2. Sync Master (default) -> OC (oracle)
         if direction in ("both", "master_to_oc"):
             self.stdout.write("Syncing state from Master ('default') back to OC ('oracle')...")
-            self.sync_master_to_oc(batch_size=batch_size, dry_run=dry_run, counts=counts)
+            self.sync_master_to_oc(
+                batch_size=batch_size,
+                dry_run=dry_run,
+                counts=counts,
+                get_cached_dest_target=get_cached_dest_target,
+            )
 
         self.stdout.write(self.style.SUCCESS("Synchronization process finished."))
         self.stdout.write(
@@ -108,10 +129,11 @@ class Command(BaseCommand):
             f"  - Master -> OC Stubs Created: {counts['master_to_oc_stubs_inserted']}"
         )
 
-    def sync_oc_to_master(self, batch_size: int, dry_run: bool, counts: dict):
+    def sync_oc_to_master(self, batch_size: int, dry_run: bool, counts: dict, get_cached_dest_target):
         """
         Move/Sync records from OC ('oracle') database into Master ('default') database.
         Natural key matching is performed on 'source_url'.
+        Uses bulk set queries and bulk creation/updates for high performance.
         """
         oc_qs = (
             ExtractedRecord.objects.using("oracle")
@@ -120,76 +142,95 @@ class Command(BaseCommand):
             .exclude(source_url="")
         )
 
-        for oc_rec in oc_qs.iterator(chunk_size=batch_size):
-            source_url = oc_rec.source_url
-            master_rec = (
-                ExtractedRecord.objects.using("default")
-                .filter(source_url=source_url)
-                .first()
-            )
+        total_count = oc_qs.count()
+        self.stdout.write(f"Found {total_count} total records in OC ('oracle').")
+        if total_count == 0:
+            return
 
-            if not master_rec:
-                # Record does not exist in master DB -> Insert record into master
-                if not dry_run:
-                    dest_target = resolve_dest_target(oc_rec.target, dest_db="default")
-                    ExtractedRecord.objects.using("default").create(
-                        target=dest_target,
-                        document_date=oc_rec.document_date,
-                        record_type=oc_rec.record_type,
-                        data=oc_rec.data,
-                        requires_human_review=oc_rec.requires_human_review,
-                        review_reason=oc_rec.review_reason,
-                        source_url=oc_rec.source_url,
-                        scraped_at=oc_rec.scraped_at,
-                        cleaned_at=oc_rec.cleaned_at,
-                        detailed_at=oc_rec.detailed_at,
-                        status=oc_rec.status,
+        processed_count = 0
+        for batch in chunked_iterable(oc_qs.iterator(chunk_size=batch_size), batch_size):
+            batch_urls = [rec.source_url for rec in batch if rec.source_url]
+            if not batch_urls:
+                continue
+
+            # Query existing master records for this batch in 1 query
+            master_map = {
+                rec.source_url: rec
+                for rec in ExtractedRecord.objects.using("default").filter(source_url__in=batch_urls)
+            }
+
+            to_create = []
+            to_update = []
+
+            for oc_rec in batch:
+                master_rec = master_map.get(oc_rec.source_url)
+                if not master_rec:
+                    dest_target = get_cached_dest_target(oc_rec.target, "default")
+                    to_create.append(
+                        ExtractedRecord(
+                            target=dest_target,
+                            document_date=oc_rec.document_date,
+                            record_type=oc_rec.record_type,
+                            data=oc_rec.data,
+                            requires_human_review=oc_rec.requires_human_review,
+                            review_reason=oc_rec.review_reason,
+                            source_url=oc_rec.source_url,
+                            scraped_at=oc_rec.scraped_at,
+                            cleaned_at=oc_rec.cleaned_at,
+                            detailed_at=oc_rec.detailed_at,
+                            status=oc_rec.status,
+                        )
                     )
-                counts["oc_to_master_inserted"] += 1
-                logger.info(f"Inserted record into master: {source_url}")
+                else:
+                    should_update = False
+                    if master_rec.status != Statusses.DETAILED and oc_rec.status == Statusses.DETAILED:
+                        should_update = True
+                    elif master_rec.detailed_at is None and oc_rec.detailed_at is not None:
+                        should_update = True
 
-            else:
-                # Record exists in master DB -> Check if master should be updated
-                # E.g., master is indexed and OC is detailed, or OC has detailed_at set
-                should_update = False
-
-                if master_rec.status != Statusses.DETAILED and oc_rec.status == Statusses.DETAILED:
-                    should_update = True
-                elif master_rec.detailed_at is None and oc_rec.detailed_at is not None:
-                    should_update = True
-
-                if should_update:
-                    if not dry_run:
+                    if should_update:
                         master_rec.data = oc_rec.data
                         master_rec.status = oc_rec.status
                         master_rec.detailed_at = oc_rec.detailed_at or master_rec.detailed_at
                         master_rec.cleaned_at = oc_rec.cleaned_at or master_rec.cleaned_at
-                        master_rec.requires_human_review = (
-                            oc_rec.requires_human_review
-                            if oc_rec.requires_human_review is not None
-                            else master_rec.requires_human_review
-                        )
+                        if oc_rec.requires_human_review is not None:
+                            master_rec.requires_human_review = oc_rec.requires_human_review
                         if oc_rec.review_reason:
                             master_rec.review_reason = oc_rec.review_reason
+                        to_update.append(master_rec)
 
-                        master_rec.save(
-                            using="default",
-                            update_fields=[
-                                "data",
-                                "status",
-                                "detailed_at",
-                                "cleaned_at",
-                                "requires_human_review",
-                                "review_reason",
-                            ],
-                        )
-                    counts["oc_to_master_updated"] += 1
-                    logger.info(f"Updated record in master ({oc_rec.status}): {source_url}")
+            if to_create:
+                if not dry_run:
+                    ExtractedRecord.objects.using("default").bulk_create(to_create, batch_size=batch_size)
+                counts["oc_to_master_inserted"] += len(to_create)
 
-    def sync_master_to_oc(self, batch_size: int, dry_run: bool, counts: dict):
+            if to_update:
+                if not dry_run:
+                    ExtractedRecord.objects.using("default").bulk_update(
+                        to_update,
+                        fields=[
+                            "data",
+                            "status",
+                            "detailed_at",
+                            "cleaned_at",
+                            "requires_human_review",
+                            "review_reason",
+                        ],
+                        batch_size=batch_size,
+                    )
+                counts["oc_to_master_updated"] += len(to_update)
+
+            processed_count += len(batch)
+            self.stdout.write(
+                f"  Processed {processed_count}/{total_count} OC records... "
+                f"(Inserted: {counts['oc_to_master_inserted']}, Updated: {counts['oc_to_master_updated']})"
+            )
+
+    def sync_master_to_oc(self, batch_size: int, dry_run: bool, counts: dict, get_cached_dest_target):
         """
         Sync state from Master ('default') database back to OC ('oracle') database.
         Does NOT transfer the heavy 'data' payload to keep transfers efficient.
+        Uses bulk set queries and bulk creation/updates for high performance.
         """
         master_qs = (
             ExtractedRecord.objects.using("default")
@@ -198,66 +239,86 @@ class Command(BaseCommand):
             .exclude(source_url="")
         )
 
-        for master_rec in master_qs.iterator(chunk_size=batch_size):
-            source_url = master_rec.source_url
-            oc_rec = (
-                ExtractedRecord.objects.using("oracle")
-                .filter(source_url=source_url)
-                .first()
-            )
+        total_count = master_qs.count()
+        self.stdout.write(f"Found {total_count} total records in Master ('default').")
+        if total_count == 0:
+            return
 
-            if oc_rec:
-                # Record exists in OC -> Update status/dates on OC without replacing OC data
-                needs_update = False
-                if oc_rec.status != master_rec.status:
-                    needs_update = True
-                elif master_rec.detailed_at and not oc_rec.detailed_at:
-                    needs_update = True
-                elif master_rec.cleaned_at and not oc_rec.cleaned_at:
-                    needs_update = True
+        processed_count = 0
+        for batch in chunked_iterable(master_qs.iterator(chunk_size=batch_size), batch_size):
+            batch_urls = [rec.source_url for rec in batch if rec.source_url]
+            if not batch_urls:
+                continue
 
-                if needs_update:
-                    if not dry_run:
+            # Query existing OC records for this batch in 1 query
+            oc_map = {
+                rec.source_url: rec
+                for rec in ExtractedRecord.objects.using("oracle").filter(source_url__in=batch_urls)
+            }
+
+            stubs_to_create = []
+            oc_to_update = []
+
+            for master_rec in batch:
+                oc_rec = oc_map.get(master_rec.source_url)
+                if oc_rec:
+                    needs_update = False
+                    if oc_rec.status != master_rec.status:
+                        needs_update = True
+                    elif master_rec.detailed_at and not oc_rec.detailed_at:
+                        needs_update = True
+                    elif master_rec.cleaned_at and not oc_rec.cleaned_at:
+                        needs_update = True
+
+                    if needs_update:
                         oc_rec.status = master_rec.status
                         oc_rec.detailed_at = master_rec.detailed_at or oc_rec.detailed_at
                         oc_rec.cleaned_at = master_rec.cleaned_at or oc_rec.cleaned_at
-                        oc_rec.requires_human_review = (
-                            master_rec.requires_human_review
-                            if master_rec.requires_human_review is not None
-                            else oc_rec.requires_human_review
-                        )
+                        if master_rec.requires_human_review is not None:
+                            oc_rec.requires_human_review = master_rec.requires_human_review
                         if master_rec.review_reason:
                             oc_rec.review_reason = master_rec.review_reason
-
-                        oc_rec.save(
-                            using="oracle",
-                            update_fields=[
-                                "status",
-                                "detailed_at",
-                                "cleaned_at",
-                                "requires_human_review",
-                                "review_reason",
-                            ],
+                        oc_to_update.append(oc_rec)
+                else:
+                    dest_target = get_cached_dest_target(master_rec.target, "oracle")
+                    stubs_to_create.append(
+                        ExtractedRecord(
+                            target=dest_target,
+                            document_date=master_rec.document_date,
+                            record_type=master_rec.record_type,
+                            data={},  # Lightweight stub payload - efficient transfer
+                            requires_human_review=master_rec.requires_human_review,
+                            review_reason=master_rec.review_reason,
+                            source_url=master_rec.source_url,
+                            scraped_at=master_rec.scraped_at,
+                            cleaned_at=master_rec.cleaned_at,
+                            detailed_at=master_rec.detailed_at,
+                            status=master_rec.status,
                         )
-                    counts["master_to_oc_updated"] += 1
-                    logger.info(f"Updated status in OC database: {source_url}")
-
-            else:
-                # Record does not exist in OC -> Insert lightweight stub record in OC
-                if not dry_run:
-                    dest_target = resolve_dest_target(master_rec.target, dest_db="oracle")
-                    ExtractedRecord.objects.using("oracle").create(
-                        target=dest_target,
-                        document_date=master_rec.document_date,
-                        record_type=master_rec.record_type,
-                        data={},  # Lightweight stub payload
-                        requires_human_review=master_rec.requires_human_review,
-                        review_reason=master_rec.review_reason,
-                        source_url=master_rec.source_url,
-                        scraped_at=master_rec.scraped_at,
-                        cleaned_at=master_rec.cleaned_at,
-                        detailed_at=master_rec.detailed_at,
-                        status=master_rec.status,
                     )
-                counts["master_to_oc_stubs_inserted"] += 1
-                logger.info(f"Created stub record in OC database: {source_url}")
+
+            if stubs_to_create:
+                if not dry_run:
+                    ExtractedRecord.objects.using("oracle").bulk_create(stubs_to_create, batch_size=batch_size)
+                counts["master_to_oc_stubs_inserted"] += len(stubs_to_create)
+
+            if oc_to_update:
+                if not dry_run:
+                    ExtractedRecord.objects.using("oracle").bulk_update(
+                        oc_to_update,
+                        fields=[
+                            "status",
+                            "detailed_at",
+                            "cleaned_at",
+                            "requires_human_review",
+                            "review_reason",
+                        ],
+                        batch_size=batch_size,
+                    )
+                counts["master_to_oc_updated"] += len(oc_to_update)
+
+            processed_count += len(batch)
+            self.stdout.write(
+                f"  Processed {processed_count}/{total_count} Master records... "
+                f"(Stubs Created: {counts['master_to_oc_stubs_inserted']}, Updated: {counts['master_to_oc_updated']})"
+            )

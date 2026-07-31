@@ -98,11 +98,10 @@ class ScrubbedRecord(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    extracted_record = models.ForeignKey(
+    extracted_record = models.OneToOneField(
         ExtractedRecord,
         on_delete=models.CASCADE,
-        unique=True,
-        related_name="scrubbed_records",
+        related_name="scrubbed_record",
     )
     data = models.JSONField(help_text="Cleaned JSON data (PII removed).")
     created_at = models.DateTimeField(auto_now_add=True)
