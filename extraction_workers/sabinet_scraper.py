@@ -209,8 +209,6 @@ class SabinetScraper(BaseScraper):
     async def initialize(self) -> None:
         """Hydrate configuration variables and session state references."""
         await super().initialize()
-        self.use_proxy = self.config.get("use_proxy", False)
-        self.proxy_url = self.config.get("proxy_url")
 
         cookies_dir = os.path.join(os.path.dirname(self.output_dir), "cookies")
         os.makedirs(cookies_dir, exist_ok=True)

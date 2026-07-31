@@ -6,7 +6,7 @@ from typing import Dict, Any, Set, Optional, FrozenSet
 
 import requests
 import db_storage
-from utils.utils import fetch_pipeline_config, resolve_data_dir
+from utils.utils import fetch_pipeline_config, resolve_data_dir, to_bool
 from db import get_db_connection
 from utils.browser_helper import setup_logger
 
@@ -109,8 +109,13 @@ class BaseScraper(ABC):
         )
         logger.info(f"Progress state loaded: {self.progress_state}")
 
-        # Hydrate proxy flags from pipeline config & environment
-        self.use_proxy = bool(self.config.get("use_proxy", False))
+        # Hydrate proxy flags from pipeline config, extraction_params & environment
+        extraction_params = self.config.get("extraction_params", {})
+        self.use_proxy = (
+            to_bool(extraction_params.get("use_proxy"))
+            or to_bool(self.config.get("use_proxy"))
+            or to_bool(os.getenv("USE_PROXY"))
+        )
         self.proxy_url = self.config.get("proxy_url") or os.getenv("PROXY_URL")
 
         if self.use_proxy:

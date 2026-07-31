@@ -2,8 +2,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
-
+from typing import Any, Optional, Dict
 import requests
 import urllib3
 
@@ -45,6 +44,19 @@ else:
     API_URL = "http://coeus-control-plane:8001/api/pipelines/active/"
 
 
+def to_bool(val: Any) -> bool:
+    """Parse boolean values from bool, str, int, or float."""
+    if val is None:
+        return False
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on", "t")
+    return False
+
+
 async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
     """
     Fetches pipeline configuration, prioritizing environment variables
@@ -52,29 +64,37 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
     """
     proxy_url = os.getenv("PROXY_URL")
 
-    # 1. Try to load from environment variables (provided by dynamic_factory)
-    env_config = {
-        "start_url": os.getenv("START_URL"),
-        "document_type": os.getenv("DOCUMENT_TYPE"),
-        "allow_insecure_https": os.getenv("ALLOW_INSECURE_HTTPS", "False").lower()
-        == "true",
-        "allow_insecure_requests": os.getenv("ALLOW_INSECURE_REQUESTS", "False").lower()
-        == "true",
-        "use_proxy": os.getenv("USE_PROXY", "False").lower() == "true",
-        "proxy_url": proxy_url,
-        "name": os.getenv("PIPELINE_NAME", pipeline_name_or_id),
-        "subset": os.getenv("SUBSET", ""),
-    }
-
     # Extract extraction_params from env if it exists
     raw_params = os.getenv("EXTRACTION_PARAMS")
+    extraction_params = {}
     if raw_params:
         try:
-            env_config["extraction_params"] = json.loads(raw_params)
+            if isinstance(raw_params, str):
+                extraction_params = json.loads(raw_params)
+            elif isinstance(raw_params, dict):
+                extraction_params = raw_params
         except json.JSONDecodeError:
             logger.warning(
                 "Failed to parse EXTRACTION_PARAMS env var as JSON. Using empty dict."
             )
+
+    use_proxy_from_env = (
+        to_bool(extraction_params.get("use_proxy"))
+        or to_bool(os.getenv("USE_PROXY"))
+    )
+
+    # 1. Try to load from environment variables (provided by dynamic_factory)
+    env_config = {
+        "start_url": os.getenv("START_URL"),
+        "document_type": os.getenv("DOCUMENT_TYPE"),
+        "allow_insecure_https": to_bool(os.getenv("ALLOW_INSECURE_HTTPS", "False")),
+        "allow_insecure_requests": to_bool(os.getenv("ALLOW_INSECURE_REQUESTS", "False")),
+        "use_proxy": use_proxy_from_env,
+        "proxy_url": proxy_url,
+        "name": os.getenv("PIPELINE_NAME", pipeline_name_or_id),
+        "subset": os.getenv("SUBSET", ""),
+        "extraction_params": extraction_params,
+    }
 
     # If we have the essential bits from env, use them
     if env_config["start_url"] and env_config["document_type"]:
@@ -115,6 +135,18 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
             )
             sys.exit(1)
 
+        api_extraction_params = (
+            config.get("phase_2_extraction", {}).get("extraction_params", {})
+            or config.get("extraction_params", {})
+            or {}
+        )
+        api_use_proxy = (
+            to_bool(api_extraction_params.get("use_proxy"))
+            or to_bool(config.get("phase_1_ingestion", {}).get("use_proxy"))
+            or to_bool(config.get("use_proxy"))
+            or use_proxy_from_env
+        )
+
         # Standardize structure
         standard_config = {
             **config["metadata"],
@@ -123,8 +155,9 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
             "pipeline_id": config["pipeline_id"],
             "name": config.get("name"),
             "subset": config.get("subset", ""),
-            "use_proxy": config["phase_1_ingestion"].get("use_proxy", False),
+            "use_proxy": api_use_proxy,
             "proxy_url": proxy_url,
+            "extraction_params": api_extraction_params,
         }
 
         if standard_config.get("allow_insecure_requests"):

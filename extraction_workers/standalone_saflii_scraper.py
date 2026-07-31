@@ -168,9 +168,6 @@ class SafliiScraper(BaseScraper):
         self.screenshots_dir = os.path.join(os.path.dirname(self.output_dir), "screenshots")
         os.makedirs(self.screenshots_dir, exist_ok=True)
         
-        self.use_proxy = self.config.get("use_proxy", False)
-        self.proxy_url = self.config.get("proxy_url")
-        
         logger.info("==================================================")
         logger.info(f"🚀 COEUS SAFLII WORKER (SeleniumBase UC Mode) ({self.pipeline_name})")
         logger.info(f"Target Year Context Range Bounds: {self.start_year} - {self.end_year}")

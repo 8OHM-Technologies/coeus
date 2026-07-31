@@ -69,9 +69,6 @@ def run_scraper(pipes: PipesContext) -> None:
     document_type: str = pipes.get_extra("document_type")
     allow_insecure_https: bool = pipes.get_extra("allow_insecure_https")
     allow_insecure_requests: bool = pipes.get_extra("allow_insecure_requests")
-    use_proxy: bool = pipes.get_extra("use_proxy")
-    output_dir: str = pipes.get_extra("output_dir")
-
     extraction_params_raw = pipes.get_extra("extraction_params")
     # Handle both JSON string and direct dict input for robustness
     if isinstance(extraction_params_raw, str):
@@ -81,6 +78,24 @@ def run_scraper(pipes: PipesContext) -> None:
     else:
         extraction_params = {}
 
+    def _to_bool(val) -> bool:
+        if val is None:
+            return False
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            return val.strip().lower() in ("true", "1", "yes", "on", "t")
+        return False
+
+    use_proxy: bool = (
+        _to_bool(extraction_params.get("use_proxy"))
+        or _to_bool(pipes.get_extra("use_proxy"))
+        or _to_bool(os.getenv("USE_PROXY"))
+    )
+
+    output_dir: str = pipes.get_extra("output_dir") or "/app/data"
 
     # Ensure partition-scoped output directory exists on the shared volume
     partition_dir = os.path.join(output_dir, partition_key)
@@ -88,7 +103,7 @@ def run_scraper(pipes: PipesContext) -> None:
 
     logger.info(
         f"Starting scrape for partition='{partition_key}' "
-        f"scraper='{scraper_type}' url='{start_url}'"
+        f"scraper='{scraper_type}' url='{start_url}' use_proxy={use_proxy}"
     )
 
     # Build base environment variables — mirrors what definitions.py previously set
