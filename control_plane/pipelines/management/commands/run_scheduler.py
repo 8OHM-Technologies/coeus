@@ -24,6 +24,15 @@ def run_medusa_sync():
         logger.error(f"Medusa synchronization failed: {e}")
 
 
+def run_extracted_records_sync():
+    """Trigger the sync_extracted_records management command."""
+    try:
+        logger.info("Triggering Extracted Records cross-database synchronization...")
+        call_command("sync_extracted_records")
+    except Exception as e:
+        logger.error(f"Extracted Records synchronization failed: {e}")
+
+
 def get_pipeline_file_path(pipeline):
     """Helper to resolve the JSON data path for a pipeline."""
     pipeline_id = pipeline.name.lower().replace(" ", "_").replace("-", "_")
@@ -221,10 +230,19 @@ class Command(BaseCommand):
             action="store_true",
             help="Run the Medusa synchronization immediately and exit.",
         )
+        parser.add_argument(
+            "--sync-extracted-records",
+            action="store_true",
+            help="Run the Extracted Records cross-database synchronization immediately and exit.",
+        )
 
     def handle(self, *args, **options):
         if options["sync_medusa"]:
             run_medusa_sync()
+            return
+
+        if options["sync_extracted_records"]:
+            run_extracted_records_sync()
             return
 
         if options["now"]:
@@ -265,6 +283,15 @@ class Command(BaseCommand):
             replace_existing=True,
         )
         logger.info("Added 5-minute job 'update_pipeline_analytics'.")
+
+        scheduler.add_job(
+            run_extracted_records_sync,
+            trigger=CronTrigger(minute="*/15"),  # Run every 15 minutes
+            id="run_extracted_records_sync",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info("Added 15-minute job 'run_extracted_records_sync'.")
 
         try:
             logger.info("Starting scheduler...")
