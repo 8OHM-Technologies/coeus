@@ -43,7 +43,12 @@ async def get_db_connection() -> asyncpg.Connection:
         raise ValueError("Database environment variables are not fully set.")
 
     return await asyncpg.connect(
-        host=db_host, user=db_user, password=db_pass, database=db_name, port=db_port
+        host=db_host,
+        user=db_user,
+        password=db_pass,
+        database=db_name,
+        port=db_port,
+        command_timeout=60.0,
     )
 
 
@@ -58,5 +63,10 @@ async def get_db_pool():
     db_port = int(clean_env_var(os.environ.get("POSTGRES_PORT") or "5432"))
 
     return await asyncpg.create_pool(
-        host=db_host, user=db_user, password=db_pass, database=db_name, port=db_port
+        host=db_host,
+        user=db_user,
+        password=db_pass,
+        database=db_name,
+        port=db_port,
+        command_timeout=60.0,
     )

@@ -27,6 +27,7 @@ async def test_get_db_connection(monkeypatch, mocker):
         password="test-password",
         database="test-database",
         port=5432,
+        command_timeout=60.0,
     )
     assert conn is not None
 
@@ -60,5 +61,6 @@ async def test_get_db_pool(monkeypatch, mocker):
         password="test-password",
         database="test-database",
         port=5432,
+        command_timeout=60.0,
     )
     assert pool is not None
