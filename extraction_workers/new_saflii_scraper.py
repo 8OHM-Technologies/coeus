@@ -470,6 +470,7 @@ class SafliiScraper(BaseScraper):
             uc=True,
             headless=self.headless,
             proxy=sb_proxy,
+            multi_proxy=self.use_proxy,
             test=True,
             xvfb=self.use_xvfb,
             user_data_dir=indexing_profile,
@@ -478,6 +479,9 @@ class SafliiScraper(BaseScraper):
             sb.set_window_size(1280, 720)
             sb.driver.set_page_load_timeout(30)
             sb.driver.set_script_timeout(30)
+
+            # Verify and log outbound public IP
+            self.log_outbound_ip(sb, label="SAFLII Indexing Stage")
             
             # 1. Directly construct year directory URLs for the configured range (bypasses top-level redirect walls)
             logger.info(f"Constructing year directory indices for court '{self.court_code}' across years {self.start_year}..{self.end_year}")
@@ -565,6 +569,7 @@ class SafliiScraper(BaseScraper):
             uc=True,
             headless=self.headless,
             proxy=sb_proxy,
+            multi_proxy=self.use_proxy,
             test=True,
             xvfb=self.use_xvfb,
             user_data_dir=worker_profile,
@@ -573,6 +578,9 @@ class SafliiScraper(BaseScraper):
             sb.set_window_size(1280, 720)
             sb.driver.set_page_load_timeout(30)
             sb.driver.set_script_timeout(30)
+
+            # Verify and log outbound public IP
+            self.log_outbound_ip(sb, label=f"SAFLII Detailing Worker {worker_id}")
 
             while True:
                 try:

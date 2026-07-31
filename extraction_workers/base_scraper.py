@@ -1,8 +1,10 @@
 import os
 import asyncio
+import urllib.parse
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Set, Optional, FrozenSet
 
+import requests
 import db_storage
 from utils.utils import fetch_pipeline_config, resolve_data_dir
 from db import get_db_connection
@@ -107,9 +109,55 @@ class BaseScraper(ABC):
         )
         logger.info(f"Progress state loaded: {self.progress_state}")
 
-        # Hydrate proxy flags from pipeline config
-        self.use_proxy = self.config.get("use_proxy", False)
-        self.proxy_url = self.config.get("proxy_url")
+        # Hydrate proxy flags from pipeline config & environment
+        self.use_proxy = bool(self.config.get("use_proxy", False))
+        self.proxy_url = self.config.get("proxy_url") or os.getenv("PROXY_URL")
+
+        if self.use_proxy:
+            if not self.proxy_url:
+                logger.error(
+                    f"❌ [PROXY CONFIG] Pipeline '{self.pipeline_name}' requires proxy (use_proxy=True), "
+                    f"but NO PROXY_URL is configured or available in environment! Traffic WILL NOT be proxied."
+                )
+            else:
+                try:
+                    p_str = self.proxy_url if "://" in self.proxy_url else f"http://{self.proxy_url}"
+                    parsed = urllib.parse.urlparse(p_str)
+                    safe_net = f"{parsed.username}:****@{parsed.hostname}:{parsed.port}" if parsed.username else parsed.netloc
+                    logger.info(f"🌐 [PROXY CONFIG] Pipeline '{self.pipeline_name}' Proxy ENABLED -> {safe_net}")
+                except Exception:
+                    logger.info(f"🌐 [PROXY CONFIG] Pipeline '{self.pipeline_name}' Proxy ENABLED")
+        else:
+            logger.info(f"ℹ️ [PROXY CONFIG] Pipeline '{self.pipeline_name}' Proxy DISABLED (Direct Connection)")
+
+    def log_outbound_ip(self, sb: Any = None, label: str = "Scraper") -> Optional[str]:
+        """Check and log the current outbound IP address via SeleniumBase driver or HTTP request."""
+        if not self.use_proxy:
+            logger.info(f"ℹ️ [{label}] Direct Connection (Proxy Disabled)")
+            return None
+
+        if sb:
+            try:
+                sb.open("https://ipv4.webshare.io/")
+                ip = (sb.get_text("body") or "").strip()
+                logger.info(f"🌐 [{label}] Verified Outbound Public IP (via Proxy Browser): {ip}")
+                return ip
+            except Exception as e:
+                logger.warning(f"⚠️ [{label}] Failed to verify outbound IP via browser: {e}")
+                return None
+        else:
+            try:
+                formatted_proxy = self.proxy_url
+                if formatted_proxy and "://" not in formatted_proxy:
+                    formatted_proxy = f"http://{formatted_proxy}"
+                proxies = {"http": formatted_proxy, "https": formatted_proxy} if formatted_proxy else None
+                resp = requests.get("https://ipv4.webshare.io/", proxies=proxies, timeout=10)
+                ip = resp.text.strip()
+                logger.info(f"🌐 [{label}] Verified Outbound Public IP (via Proxy HTTP): {ip}")
+                return ip
+            except Exception as e:
+                logger.warning(f"⚠️ [{label}] Failed to verify outbound IP via HTTP request: {e}")
+                return None
 
     async def save_progress(self, year: int, month: int = 0, completed: bool = False, **kwargs) -> None:
         """Persists rolling-window execution markers into database storage."""

@@ -83,6 +83,11 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
         )
         if env_config.get("allow_insecure_requests"):
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        if env_config.get("use_proxy") and not env_config.get("proxy_url"):
+            logger.warning(
+                f"⚠️ [CONFIG WARNING] Pipeline '{pipeline_name_or_id}' has use_proxy=True, "
+                f"but PROXY_URL environment variable is missing or empty!"
+            )
         return env_config
 
     # 2. Fallback to API if env vars are missing
@@ -124,6 +129,12 @@ async def fetch_pipeline_config(pipeline_name_or_id: str) -> dict:
 
         if standard_config.get("allow_insecure_requests"):
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        if standard_config.get("use_proxy") and not standard_config.get("proxy_url"):
+            logger.warning(
+                f"⚠️ [CONFIG WARNING] Pipeline '{pipeline_name_or_id}' has use_proxy=True, "
+                f"but PROXY_URL environment variable is missing or empty!"
+            )
 
         return standard_config
 

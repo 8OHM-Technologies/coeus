@@ -54,10 +54,14 @@ def setup_logger(name: str) -> logging.Logger:
 # ---------------------------------------------------------------------------
 def format_sb_proxy(proxy_url: Optional[str]) -> Optional[str]:
     """Format standard proxy URL strings into SeleniumBase format (user:pass@host:port)."""
-    if not proxy_url:
+    if not proxy_url or not str(proxy_url).strip():
         return None
     
-    parsed = urllib.parse.urlparse(proxy_url)
+    proxy_str = str(proxy_url).strip()
+    if "://" not in proxy_str:
+        proxy_str = f"http://{proxy_str}"
+
+    parsed = urllib.parse.urlparse(proxy_str)
     sb_proxy = ""
     if parsed.username and parsed.password:
         sb_proxy += f"{parsed.username}:{parsed.password}@"
@@ -66,6 +70,18 @@ def format_sb_proxy(proxy_url: Optional[str]) -> Optional[str]:
     if parsed.port:
         sb_proxy += f":{parsed.port}"
     return sb_proxy or None
+
+
+def verify_sb_outbound_ip(sb: SB, label: str = "Browser") -> Optional[str]:
+    """Visit an IP discovery service using active SB driver and log the outbound IP address."""
+    try:
+        sb.open("https://ipv4.webshare.io/")
+        ip = (sb.get_text("body") or "").strip()
+        logger.info(f"🌐 [{label}] Verified Outbound Public IP: {ip}")
+        return ip
+    except Exception as e:
+        logger.warning(f"⚠️ [{label}] Failed to verify outbound IP address via browser: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +101,7 @@ def get_stealth_driver(
         An active `sb` context object with access to UC stealth methods.
     """
     sb_proxy = format_sb_proxy(proxy_url)
+    use_multi_proxy = bool(sb_proxy)
     
     if use_xvfb:
         logger.info("🖥️ Xvfb enabled: Overriding headless=True to headless=False for virtual display routing.")
@@ -95,6 +112,7 @@ def get_stealth_driver(
         uc=True,
         headless=headless,
         proxy=sb_proxy,
+        multi_proxy=use_multi_proxy,
         user_data_dir=user_data_dir,
         test=test,
         xvfb=use_xvfb,

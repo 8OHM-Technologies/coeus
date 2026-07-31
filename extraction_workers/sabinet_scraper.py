@@ -266,6 +266,10 @@ class SabinetScraper(BaseScraper):
             sb.set_window_size(1280, 800)
             sb.driver.set_page_load_timeout(30)
             sb.driver.set_script_timeout(30)
+
+            # Verify and log outbound public IP
+            self.log_outbound_ip(sb, label="Sabinet Auth Stage")
+
             self._navigate_with_reconnect(sb, scrape_url, label="Auth_Gate")
 
             logger.info("🔐 Triggering security workflow context drawer...")
@@ -349,6 +353,9 @@ class SabinetScraper(BaseScraper):
             sb.set_window_size(1280, 800)
             sb.driver.set_page_load_timeout(30)
             sb.driver.set_script_timeout(30)
+
+            # Verify and log outbound public IP
+            self.log_outbound_ip(sb, label="Sabinet Indexing Stage")
 
             # Load cookies if available
             if os.path.exists(self.cookies_filepath):
@@ -627,6 +634,9 @@ class SabinetScraper(BaseScraper):
                     sb.set_window_size(1280, 800)
                     sb.driver.set_page_load_timeout(30)
                     sb.driver.set_script_timeout(30)
+
+                    # Verify and log outbound public IP
+                    self.log_outbound_ip(sb, label=f"Sabinet Detailing Worker {worker_id}")
 
                     if os.path.exists(self.cookies_filepath):
                         sb.open("https://discover.sabinet.co.za/")

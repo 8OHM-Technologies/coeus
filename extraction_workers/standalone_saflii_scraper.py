@@ -254,8 +254,11 @@ class SafliiScraper(BaseScraper):
         raw_case_urls = []
         url_to_case_map = {}
 
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True) as sb:
+        with SB(uc=True, headless=self.headless, proxy=sb_proxy, multi_proxy=self.use_proxy, test=True) as sb:
             sb.set_window_size(1280, 720)
+            
+            # Verify and log outbound public IP
+            self.log_outbound_ip(sb, label="SAFLII Standalone Indexing")
             
             # 1. Directly construct year directory URLs for the configured range (bypasses top-level redirect walls)
             court_code = parse_case_url(self.start_url)[0] or "ZALCJHB"
@@ -327,8 +330,11 @@ class SafliiScraper(BaseScraper):
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         logger.info(f"[Worker {worker_id}] Initializing SeleniumBase UC browser session...")
 
-        with SB(uc=True, headless=self.headless, proxy=sb_proxy, test=True) as sb:
+        with SB(uc=True, headless=self.headless, proxy=sb_proxy, multi_proxy=self.use_proxy, test=True) as sb:
             sb.set_window_size(1280, 720)
+
+            # Verify and log outbound public IP
+            self.log_outbound_ip(sb, label=f"SAFLII Standalone Detailing Worker {worker_id}")
 
             while True:
                 try:
