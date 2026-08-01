@@ -5,7 +5,10 @@ import os
 import queue
 import random
 import re
+import shutil
 import sys
+import threading
+import time
 import urllib.parse
 from datetime import datetime, date as dt_date, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -24,6 +27,7 @@ except ImportError:
     from utils.browser_helper import format_sb_proxy
 
 logger = setup_logger("saflii_scraper")
+gui_lock = threading.Lock()
 
 
 class BlockedException(Exception):
@@ -397,10 +401,11 @@ class SafliiScraper(BaseScraper):
                 except Exception:
                     pass
 
-            # Attempt 1: UC GUI captcha click (simulates human mouse interaction on the Turnstile widget)
+            # Attempt 1: UC GUI captcha click (guarded by gui_lock to prevent multi-threaded X11 screen/mouse race conditions)
             solved = False
             try:
-                sb.uc_gui_click_captcha()
+                with gui_lock:
+                    sb.uc_gui_click_captcha()
                 sb.sleep(3)
                 title, h1, body = get_sb_page_signals(sb)
                 state = check_page_state(title, h1, body)
@@ -410,10 +415,11 @@ class SafliiScraper(BaseScraper):
             except Exception as captcha_err:
                 logger.warning(f"[{attempt_prefix}] uc_gui_click_captcha failed: {captcha_err}")
 
-            # Attempt 2: UC GUI handle captcha (broader handler — iframe-aware)
+            # Attempt 2: UC GUI handle captcha (broader handler — iframe-aware, guarded by gui_lock)
             if not solved:
                 try:
-                    sb.uc_gui_handle_captcha()
+                    with gui_lock:
+                        sb.uc_gui_handle_captcha()
                     sb.sleep(3)
                     title, h1, body = get_sb_page_signals(sb)
                     state = check_page_state(title, h1, body)
@@ -557,9 +563,6 @@ class SafliiScraper(BaseScraper):
         total_cases: int,
     ) -> None:
         """Synchronous thread running a dedicated SB UC instance for processing case items."""
-        import time
-        import shutil
-
         logger.info(f"[Worker {worker_id}] Starting detailing worker thread...")
 
         # Stagger worker startup to avoid race conditions during concurrent Chrome process creation
@@ -577,11 +580,13 @@ class SafliiScraper(BaseScraper):
             if work_queue.empty():
                 break
 
-            # Clean/remove the user data directory if it exists to avoid stale SingletonLock issues
+            # Clean user data directory before launching browser session
             shutil.rmtree(worker_profile, ignore_errors=True)
             os.makedirs(worker_profile, exist_ok=True)
 
             logger.info(f"[Worker {worker_id}] Launching browser session (profile: {worker_profile})...")
+            session_cases = 0
+
             try:
                 with SB(
                     uc=True,
@@ -589,7 +594,7 @@ class SafliiScraper(BaseScraper):
                     proxy=sb_proxy,
                     multi_proxy=self.use_proxy,
                     test=True,
-                    xvfb=self.use_xvfb,
+                    xvfb=False,  # Global Xvfb display managed at process level in detailing()
                     user_data_dir=worker_profile,
                     chromium_arg="--no-sandbox,--disable-dev-shm-usage"
                 ) as sb:
@@ -600,186 +605,177 @@ class SafliiScraper(BaseScraper):
                     # Verify and log outbound public IP
                     self.log_outbound_ip(sb, label=f"SAFLII Detailing Worker {worker_id}")
 
-                    session_cases = 0
                     while session_cases < max_cases_per_session:
                         try:
-                            item = work_queue.get_nowait()
+                            item = work_queue.get(timeout=1.0)
                         except queue.Empty:
-                            break
-
-                        if len(item) == 3:
-                            idx, case_url, pass_number = item
-                        else:
-                            idx, case_url = item
-                            pass_number = 1
-
-                        c_court, c_year, c_id = parse_case_url(case_url, default_court=self.court_code or "SAFLII")
-                        case_no = self.url_to_case_number.get(case_url)
-
-                        if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
-                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Skipping pre-existing record: {case_url}")
-                            work_queue.task_done()
-                            session_cases += 1
+                            if work_queue.empty():
+                                break
                             continue
 
-                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active [Pass {pass_number}/3] -> {case_url}")
-                        success = False
+                        if item is None:
+                            work_queue.task_done()
+                            logger.info(f"[Worker {worker_id}] Sentinel received. Terminating thread execution.")
+                            return
 
-                        for attempt in range(1, 4):
-                            try:
-                                state = self._navigate_and_handle_turnstile(
-                                    sb, case_url, f"worker_{worker_id}_case_{c_id}_pass_{pass_number}_att_{attempt}"
-                                )
-                                if state == "BLOCKED":
-                                    raise BlockedException(f"Turnstile block on asset: {c_id}")
-                                elif state == "NOT_FOUND":
-                                    if attempt < 3:
-                                        logger.warning(
-                                            f"[Worker {worker_id}][{idx}/{total_cases}] NOT_FOUND on case {c_id} "
-                                            f"[Pass {pass_number}, attempt {attempt}] — may be Turnstile misclassification. "
-                                            f"Attempting UC reconnect solve before next attempt..."
-                                        )
-                                        try:
-                                            sb.uc_open_with_reconnect(case_url, reconnect_time=5)
-                                            sb.sleep(3)
+                        try:
+                            if len(item) == 3:
+                                idx, case_url, pass_number = item
+                            else:
+                                idx, case_url = item
+                                pass_number = 1
+
+                            c_court, c_year, c_id = parse_case_url(case_url, default_court=self.court_code or "SAFLII")
+                            case_no = self.url_to_case_number.get(case_url)
+
+                            if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
+                                logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Skipping pre-existing record: {case_url}")
+                                session_cases += 1
+                                continue
+
+                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active [Pass {pass_number}/3] -> {case_url}")
+                            success = False
+
+                            for attempt in range(1, 4):
+                                try:
+                                    state = self._navigate_and_handle_turnstile(
+                                        sb, case_url, f"worker_{worker_id}_case_{c_id}_pass_{pass_number}_att_{attempt}"
+                                    )
+                                    if state == "BLOCKED":
+                                        raise BlockedException(f"Turnstile block on asset: {c_id}")
+                                    elif state == "NOT_FOUND":
+                                        if attempt < 3:
+                                            logger.warning(
+                                                f"[Worker {worker_id}][{idx}/{total_cases}] NOT_FOUND on case {c_id} "
+                                                f"[Pass {pass_number}, attempt {attempt}] — may be Turnstile misclassification. "
+                                                f"Attempting UC reconnect solve before next attempt..."
+                                            )
                                             try:
-                                                sb.uc_gui_handle_captcha()
-                                                sb.sleep(2)
+                                                sb.uc_open_with_reconnect(case_url, reconnect_time=5)
+                                                sb.sleep(3)
+                                                try:
+                                                    with gui_lock:
+                                                        sb.uc_gui_handle_captcha()
+                                                    sb.sleep(2)
+                                                except Exception:
+                                                    pass
                                             except Exception:
                                                 pass
-                                        except Exception:
-                                            pass
-                                        raise BlockedException(f"NOT_FOUND (possible Turnstile misclassification) on asset: {c_id}")
-                                    else:
-                                        raise Exception(f"Resource missing (state: {state})")
-                                elif state == "NAVIGATION_FAILED":
-                                    raise Exception(f"Browser stuck on previous page, failed to navigate to target URL '{case_url}'")
+                                            raise BlockedException(f"NOT_FOUND (possible Turnstile misclassification) on asset: {c_id}")
+                                        else:
+                                            raise Exception(f"Resource missing (state: {state})")
+                                    elif state == "NAVIGATION_FAILED":
+                                        raise Exception(f"Browser stuck on previous page, failed to navigate to target URL '{case_url}'")
 
-                                soup = BeautifulSoup(sb.get_page_source(), "lxml")
-                                center_div = (
-                                    soup.find("div", id="center")
-                                    or soup.find("div", class_="judgment")
-                                    or soup.find("article")
-                                    or soup.find("body")
-                                )
-                                center_html = str(center_div) if center_div else ""
+                                    soup = BeautifulSoup(sb.get_page_source(), "lxml")
+                                    center_div = (
+                                        soup.find("div", id="center")
+                                        or soup.find("div", class_="judgment")
+                                        or soup.find("article")
+                                        or soup.find("body")
+                                    )
+                                    center_html = str(center_div) if center_div else ""
 
-                                h2_el = center_div.find("h2") if center_div else None
-                                title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title()
+                                    h2_el = center_div.find("h2") if center_div else None
+                                    title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title()
 
-                                if not case_no:
-                                    case_no = extract_case_number_from_text(title)
+                                    if not case_no:
+                                        case_no = extract_case_number_from_text(title)
 
-                                if case_no and case_no in self.existing_case_numbers:
-                                    logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Duplicate signature isolated via late mapping: {case_no}")
+                                    if case_no and case_no in self.existing_case_numbers:
+                                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Duplicate signature isolated via late mapping: {case_no}")
+                                        success = True
+                                        break
+
+                                    record = {
+                                        "court": c_court,
+                                        "year": c_year,
+                                        "case_id": c_id,
+                                        "title": title,
+                                        "url": case_url,
+                                        "case_number": case_no,
+                                        "center_content": center_html,
+                                        "full_text": center_div.get_text(separator="\n", strip=True) if center_div else "",
+                                        "scraped_at": datetime.now(timezone.utc).isoformat(),
+                                        "worker_id": worker_id,
+                                    }
+
+                                    try:
+                                        doc_date = dt_date(int(c_year), 1, 1)
+                                    except Exception:
+                                        doc_date = dt_date.today()
+
+                                    # Dispatch async DB save (with 30s timeout)
+                                    future = asyncio.run_coroutine_threadsafe(
+                                        self._save_record_to_db(case_url, record, doc_date),
+                                        loop
+                                    )
+                                    future.result(timeout=30)
+
+                                    # Dispatch async progress state save (with 30s timeout)
+                                    current_y = int(c_year) if c_year.isdigit() else self.start_year
+                                    future_prog = asyncio.run_coroutine_threadsafe(
+                                        self.save_progress(
+                                            year=current_y,
+                                            court_code=self.court_code,
+                                            last_index=idx,
+                                            total_cases=total_cases,
+                                            last_url=case_url,
+                                            completed=False,
+                                        ),
+                                        loop
+                                    )
+                                    future_prog.result(timeout=30)
+
+                                    self.existing_urls.add(case_url)
+                                    if case_no:
+                                        self.existing_case_numbers.add(case_no)
+
+                                    logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] [+] Saved record: {c_court}_{c_year}_{c_id}")
                                     success = True
                                     break
 
-                                record = {
-                                    "court": c_court,
-                                    "year": c_year,
-                                    "case_id": c_id,
-                                    "title": title,
-                                    "url": case_url,
-                                    "case_number": case_no,
-                                    "center_content": center_html,
-                                    "full_text": center_div.get_text(separator="\n", strip=True) if center_div else "",
-                                    "scraped_at": datetime.now(timezone.utc).isoformat(),
-                                    "worker_id": worker_id,
-                                }
+                                except BlockedException as be:
+                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Blocked on case page {case_url} (Pass {pass_number}, attempt {attempt}/3): {be}")
+                                    if attempt < 3:
+                                        sb.sleep(attempt * 4)
+                                except Exception as err:
+                                    err_msg = str(err)
+                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
+                                    _fatal_session_keywords = (
+                                        "no such window",
+                                        "target window already closed",
+                                        "web view not found",
+                                        "invalid session id",
+                                        "connection refused",
+                                    )
+                                    if any(w in err_msg.lower() for w in _fatal_session_keywords):
+                                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Window or session connection disrupted. Re-queueing item and recycling browser...")
+                                        if pass_number < 3:
+                                            work_queue.put((idx, case_url, pass_number + 1))
+                                        raise  # Break out to recycle browser session
 
-                                try:
-                                    doc_date = dt_date(int(c_year), 1, 1)
-                                except Exception:
-                                    doc_date = dt_date.today()
+                                    if attempt < 3:
+                                        sb.sleep(attempt * 3)
 
-                                # Dispatch async DB save
-                                future = asyncio.run_coroutine_threadsafe(
-                                    self._save_record_to_db(case_url, record, doc_date),
-                                    loop
-                                )
-                                future.result()
-
-                                # Dispatch async progress state save
-                                current_y = int(c_year) if c_year.isdigit() else self.start_year
-                                future_prog = asyncio.run_coroutine_threadsafe(
-                                    self.save_progress(
-                                        year=current_y,
-                                        court_code=self.court_code,
-                                        last_index=idx,
-                                        total_cases=total_cases,
-                                        last_url=case_url,
-                                        completed=False,
-                                    ),
-                                    loop
-                                )
-                                future_prog.result()
-
-                                self.existing_urls.add(case_url)
-                                if case_no:
-                                    self.existing_case_numbers.add(case_no)
-
-                                logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] [+] Saved record: {c_court}_{c_year}_{c_id}")
-                                success = True
-                                break
-
-                            except BlockedException as be:
-                                logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Blocked on case page {case_url} (Pass {pass_number}, attempt {attempt}/3): {be}")
-                                if attempt < 3:
-                                    sb.sleep(attempt * 4)
-                            except Exception as err:
-                                err_msg = str(err)
-                                logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
-                                _fatal_session_keywords = (
-                                    "no such window",
-                                    "target window already closed",
-                                    "web view not found",
-                                    "invalid session id",
-                                    "connection refused",
-                                )
-                                if any(w in err_msg.lower() for w in _fatal_session_keywords):
-                                    logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Window or session connection disrupted. Recovering window handle...")
-                                    try:
-                                        handles = sb.driver.window_handles
-                                        if handles:
-                                            sb.driver.switch_to.window(handles[0])
-                                        else:
-                                            sb.open("about:blank")
-                                    except Exception:
-                                        try:
-                                            sb.uc_open_with_reconnect("about:blank", reconnect_time=1)
-                                        except Exception as fatal_err:
-                                            logger.error(
-                                                f"[Worker {worker_id}][{idx}/{total_cases}] "
-                                                f"Browser session unrecoverable ({fatal_err}). Terminating worker session."
-                                            )
-                                            # Put item back so it can be picked up by next session or worker
-                                            work_queue.put(item)
-                                            raise  # break out to recycle the browser
-
-                                if attempt < 3:
-                                    sb.sleep(attempt * 3)
-
-                        if success:
-                            sb.sleep(self.cooldown_seconds + random.uniform(0.3, 0.9))
-                        else:
-                            if pass_number < 3:
-                                logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/3. Re-queueing for retry pass {pass_number + 1}...")
-                                work_queue.put((idx, case_url, pass_number + 1))
-                                sb.sleep(2)
+                            if success:
+                                sb.sleep(self.cooldown_seconds + random.uniform(0.3, 0.9))
                             else:
-                                logger.error(f"[Worker {worker_id}][{idx}/{total_cases}] ❌ Case {c_id} ({case_url}) permanently failed after 3 retry passes.")
+                                if pass_number < 3:
+                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/3. Re-queueing for retry pass {pass_number + 1}...")
+                                    work_queue.put((idx, case_url, pass_number + 1))
+                                    sb.sleep(2)
+                                else:
+                                    logger.error(f"[Worker {worker_id}][{idx}/{total_cases}] ❌ Case {c_id} ({case_url}) permanently failed after 3 retry passes.")
 
-                        work_queue.task_done()
-                        session_cases += 1
+                            session_cases += 1
 
-                    # If we processed all items in queue or hit queue empty
-                    if work_queue.empty():
-                        break
+                        finally:
+                            work_queue.task_done()
 
             except Exception as browser_err:
-                logger.error(f"[Worker {worker_id}] Browser session failed or crashed: {browser_err}. Recycling browser...")
-                time.sleep(5)
+                logger.error(f"[Worker {worker_id}] Browser session failed or crashed: {browser_err}. Recycling browser session...")
+                time.sleep(3)
 
         logger.info(f"[Worker {worker_id}] Thread execution complete.")
 
@@ -819,35 +815,60 @@ class SafliiScraper(BaseScraper):
         concurrency = int(extraction_params.get("concurrency", 4))
         logger.info(f"[Stage 1B start] Starting detailing with {concurrency} SeleniumBase UC worker threads...")
 
-        work_queue = queue.Queue()
-        for idx, case_url in enumerate(self.case_urls, start=1):
-            work_queue.put((idx, case_url))
+        # Start a single global Xvfb display for the process if in non-headless/Xvfb mode
+        xvfb_display = None
+        should_use_xvfb = self.use_xvfb or (not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")))
 
-        loop = asyncio.get_running_loop()
-        total_cases = len(self.case_urls)
+        if should_use_xvfb:
+            try:
+                from pyvirtualdisplay import Display
+                xvfb_display = Display(visible=0, size=(1440, 900))
+                xvfb_display.start()
+                logger.info(f"🖥️ Started process-level global Xvfb display on {os.environ.get('DISPLAY')}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not start global Xvfb display: {e}")
 
-        worker_tasks = [
-            asyncio.to_thread(
-                self._detailing_worker_thread,
-                worker_id=i,
-                work_queue=work_queue,
-                loop=loop,
+        try:
+            work_queue = queue.Queue()
+            for idx, case_url in enumerate(self.case_urls, start=1):
+                work_queue.put((idx, case_url))
+
+            # Append sentinel None for each worker thread to signal completion
+            for _ in range(concurrency):
+                work_queue.put(None)
+
+            loop = asyncio.get_running_loop()
+            total_cases = len(self.case_urls)
+
+            worker_tasks = [
+                asyncio.to_thread(
+                    self._detailing_worker_thread,
+                    worker_id=i,
+                    work_queue=work_queue,
+                    loop=loop,
+                    total_cases=total_cases,
+                )
+                for i in range(1, concurrency + 1)
+            ]
+
+            await asyncio.gather(*worker_tasks)
+
+            # Mark completed state upon processing all candidate URLs
+            await self.save_progress(
+                year=self.end_year,
+                court_code=self.court_code,
+                last_index=total_cases,
                 total_cases=total_cases,
+                completed=True,
             )
-            for i in range(1, concurrency + 1)
-        ]
-
-        await asyncio.gather(*worker_tasks)
-
-        # Mark completed state upon processing all candidate URLs
-        await self.save_progress(
-            year=self.end_year,
-            court_code=self.court_code,
-            last_index=total_cases,
-            total_cases=total_cases,
-            completed=True,
-        )
-        logger.info("[Stage 1B complete] ✅ Scraping execution layer completely processed.")
+            logger.info("[Stage 1B complete] ✅ Scraping execution layer completely processed.")
+        finally:
+            if xvfb_display is not None:
+                try:
+                    xvfb_display.stop()
+                    logger.info("🖥️ Terminated global Xvfb display.")
+                except Exception:
+                    pass
 
     async def extraction(self) -> None:
         """Stage 2: Post-processing and extraction metrics verification."""
