@@ -171,3 +171,52 @@ async def test_saflii_scraper_progress_state_years(mocker):
     assert scraper.court_code == "ZALCJHB"
 
 
+def test_turnstile_block_triggers_ip_rotation(mocker):
+    """Test that encountering a Turnstile block immediately re-queues the case item and raises to rotate IP."""
+    from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
+
+    scraper = SafliiScraper(pipeline_name="saflii_test")
+    mocker.patch.object(scraper, "_navigate_and_handle_turnstile", return_value="BLOCKED")
+
+    import queue
+    work_queue = queue.Queue()
+    work_queue.put((1, "https://www.saflii.org/za/cases/ZAGPPHC/2010/585.html", 1))
+
+    # Mock SB context manager to throw BlockedException on exit when _navigate_and_handle_turnstile returns BLOCKED
+    mock_sb_ctx = MagicMock()
+    mock_sb = MagicMock()
+    mock_sb_ctx.__enter__.return_value = mock_sb
+    mocker.patch("coeus.extraction_workers.new_saflii_scraper.SB", return_value=mock_sb_ctx)
+
+    loop = AsyncMock()
+
+    # Limit while True loop to 1 cycle by putting sentinel None after the first item is re-queued
+    # Mock log_outbound_ip to append None to work_queue on second session creation
+    session_count = 0
+    def mock_ip(sb, label=""):
+        nonlocal session_count
+        session_count += 1
+        if session_count >= 1:
+            work_queue.put(None)
+
+    mocker.patch.object(scraper, "log_outbound_ip", side_effect=mock_ip)
+
+    scraper._detailing_worker_thread(
+        worker_id=1,
+        work_queue=work_queue,
+        loop=loop,
+        total_cases=1,
+    )
+
+    # Verify that item was re-queued with pass_number 2
+    items = []
+    while not work_queue.empty():
+        item = work_queue.get_nowait()
+        if item is not None:
+            items.append(item)
+
+    assert (1, "https://www.saflii.org/za/cases/ZAGPPHC/2010/585.html", 2) in items
+
+
+
+

@@ -736,9 +736,13 @@ class SafliiScraper(BaseScraper):
                                     break
 
                                 except BlockedException as be:
-                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Blocked on case page {case_url} (Pass {pass_number}, attempt {attempt}/3): {be}")
-                                    if attempt < 3:
-                                        sb.sleep(attempt * 4)
+                                    logger.warning(
+                                        f"[Worker {worker_id}][{idx}/{total_cases}] 🛑 Turnstile block detected on case page {case_url} ({be}). "
+                                        f"Assuming current IP is blocked by Cloudflare. Re-queueing case and recycling browser for a new proxy IP..."
+                                    )
+                                    if pass_number < 3:
+                                        work_queue.put((idx, case_url, pass_number + 1))
+                                    raise  # Break out to recycle browser session and rotate proxy IP
                                 except Exception as err:
                                     err_msg = str(err)
                                     logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
