@@ -193,10 +193,6 @@ def update_pipeline_analytics():
         'status',
         'scraped_at',
         'target__entity__name',
-        'data__worker_id',
-        'data__scraped_at',
-        'data__details_scraped_at',
-        'data__index_scraped_at'
     )
 
     data_by_scraper = {}
@@ -206,22 +202,11 @@ def update_pipeline_analytics():
         record_pipeline_name = entity_name or record_type or 'Unknown'
         scraper_type_name = pipeline_to_scraper_type.get(record_pipeline_name, record_pipeline_name)
         
-        # Resolve timestamp
-        ts = None
-        for key in ('data__details_scraped_at', 'data__scraped_at', 'data__index_scraped_at'):
-            val = r.get(key)
-            if val:
-                ts = parse_iso_datetime(val)
-                if ts:
-                    break
-        if not ts:
-            ts = r.get('scraped_at')
-
+        ts = r.get('scraped_at')
         if not ts:
             continue
 
-        worker_id = r.get('data__worker_id')
-        worker_key = str(worker_id) if worker_id is not None else 'unknown'
+        worker_key = 'unknown'
         status = r.get('status') or 'indexed'
 
         if scraper_type_name not in data_by_scraper:
@@ -254,7 +239,7 @@ def update_pipeline_analytics():
     for name in all_scraper_names:
         pipe_data = data_by_scraper.get(name)
 
-        # If no recent records found for this scraper type, perform a fallback query to load its latest 5,000 records.
+        # If no recent records found for this scraper type, perform a fallback query to load its latest 200 records.
         # This allows us to display worker lists and historical uptime/rates for inactive pipelines without loading all history.
         if not pipe_data:
             config_names = [cfg_name for cfg_name, st_name in pipeline_to_scraper_type.items() if st_name == name]
@@ -262,16 +247,12 @@ def update_pipeline_analytics():
             
             fallback_qs = ExtractedRecord.objects.filter(
                 Q(target__entity__name__in=query_names) | Q(record_type__in=query_names)
-            ).order_by('-scraped_at')[:5000].values(
+            ).order_by('-scraped_at')[:200].values(
                 'id',
                 'record_type',
                 'status',
                 'scraped_at',
                 'target__entity__name',
-                'data__worker_id',
-                'data__scraped_at',
-                'data__details_scraped_at',
-                'data__index_scraped_at'
             )
 
             pipe_data = {
@@ -281,20 +262,11 @@ def update_pipeline_analytics():
             }
 
             for r in fallback_qs:
-                ts = None
-                for key in ('data__details_scraped_at', 'data__scraped_at', 'data__index_scraped_at'):
-                    val = r.get(key)
-                    if val:
-                        ts = parse_iso_datetime(val)
-                        if ts:
-                            break
-                if not ts:
-                    ts = r.get('scraped_at')
+                ts = r.get('scraped_at')
                 if not ts:
                     continue
 
-                worker_id = r.get('data__worker_id')
-                worker_key = str(worker_id) if worker_id is not None else 'unknown'
+                worker_key = 'unknown'
                 status = r.get('status') or 'indexed'
 
                 def append_to_stage(stage):

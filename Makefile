@@ -2,7 +2,7 @@
 export GITHUB_ACCESS_TOKEN
 
 # Define phony targets so Make doesn't look for actual files with these names
-.PHONY: up down status logs dagster stop-dagster publish prod-up prod-down prod-pull portable-pull portable-up portable-down portable-restart
+.PHONY: up down status logs dagster stop-dagster publish prod-up prod-down prod-pull portable-pull portable-up portable-down portable-restart coeus stop-coeus scheduler stop-scheduler
 
 # Default tag for Docker images built and published locally
 TAG ?= latest
@@ -97,13 +97,13 @@ stop-dagster:
 # GROUP COMMANDS (Control Plane Stack)
 # -----------------------------------------------------------------------------
 
-# Spin up the 3 specific Coeus containers together
+# Spin up the specific Coeus control plane containers together
 coeus:
-	docker compose up -d --build traefik control-plane postgres
+	docker compose up -d --build traefik control-plane scheduler postgres
 
 # Spin down just the Coeus stack
 stop-coeus:
-	docker compose stop control-plane postgres
+	docker compose stop control-plane scheduler postgres
 
 # -----------------------------------------------------------------------------
 # DYNAMIC INDIVIDUAL SERVICE COMMANDS

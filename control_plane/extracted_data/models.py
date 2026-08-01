@@ -73,13 +73,14 @@ class ExtractedRecord(models.Model):
     requires_human_review = models.BooleanField(default=False, null=True)
     review_reason = models.TextField(blank=True, null=True)
     source_url = models.TextField(blank=True, null=True, unique=True)
-    scraped_at = models.DateTimeField(auto_now_add=True)
+    scraped_at = models.DateTimeField(auto_now_add=True, db_index=True)
     cleaned_at = models.DateTimeField(auto_now_add=False, null=True)
     detailed_at = models.DateTimeField(auto_now_add=False, null=True)
     status = models.CharField(
         max_length=20,
         choices=Statusses.choices,
         default=Statusses.INDEXED,
+        db_index=True,
         help_text="The status of the scraping workflow.",
     )
 

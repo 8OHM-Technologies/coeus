@@ -98,6 +98,25 @@ services:
       - "traefik.docker.network=8ohm-network"
 
   # ---------------------------------------------------------
+  # 3.1 Django Scheduler (APScheduler Background Worker)
+  # ---------------------------------------------------------
+  scheduler:
+    image: ghcr.io/8ohm-technologies/coeus-app:latest
+    container_name: coeus-scheduler
+    depends_on:
+      - postgres
+      - control-plane
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    networks:
+      - 8ohm-network
+    command: >
+      python control_plane/manage.py run_scheduler
+
+  # ---------------------------------------------------------
   # 4.1 Dagster Worker
   # ---------------------------------------------------------
   dagster-worker:

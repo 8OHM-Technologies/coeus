@@ -108,6 +108,28 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------
+  # 3.1 Django Scheduler (APScheduler Background Worker)
+  # ---------------------------------------------------------
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: coeus-scheduler
+    depends_on:
+      - postgres
+      - control-plane
+    env_file:
+      - .env
+    volumes:
+      - ./control_plane:/app/control_plane
+      - ./data:/app/data
+    networks:
+      - 8ohm-network
+    command: >
+      python control_plane/manage.py run_scheduler
+    restart: unless-stopped
+
+  # ---------------------------------------------------------
   # 4.1 Dagster Worker
   # ---------------------------------------------------------
   dagster-worker:
