@@ -75,7 +75,7 @@ class ExtractedRecord(models.Model):
     source_url = models.TextField(blank=True, null=True, unique=True)
     scraped_at = models.DateTimeField(auto_now_add=True, db_index=True)
     cleaned_at = models.DateTimeField(auto_now_add=False, null=True)
-    detailed_at = models.DateTimeField(auto_now_add=False, null=True)
+    detailed_at = models.DateTimeField(auto_now_add=False, null=True, db_index=True)
     status = models.CharField(
         max_length=20,
         choices=Statusses.choices,

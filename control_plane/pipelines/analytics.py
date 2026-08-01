@@ -186,12 +186,13 @@ def update_pipeline_analytics():
 
     # 3. Query only recent records (last 7 days) to calculate detailed uptime and rate.
     recent_records = ExtractedRecord.objects.filter(
-        scraped_at__gte=seven_days_ago
+        Q(scraped_at__gte=seven_days_ago) | Q(detailed_at__gte=seven_days_ago)
     ).values(
         'id',
         'record_type',
         'status',
         'scraped_at',
+        'detailed_at',
         'target__entity__name',
     )
 
@@ -202,12 +203,10 @@ def update_pipeline_analytics():
         record_pipeline_name = entity_name or record_type or 'Unknown'
         scraper_type_name = pipeline_to_scraper_type.get(record_pipeline_name, record_pipeline_name)
         
-        ts = r.get('scraped_at')
-        if not ts:
-            continue
-
-        worker_key = 'unknown'
+        ts_scraped = r.get('scraped_at')
+        ts_detailed = r.get('detailed_at') or ts_scraped
         status = r.get('status') or 'indexed'
+        worker_key = 'unknown'
 
         if scraper_type_name not in data_by_scraper:
             data_by_scraper[scraper_type_name] = {
@@ -218,18 +217,22 @@ def update_pipeline_analytics():
 
         scraper_data = data_by_scraper[scraper_type_name]
 
-        def append_to_stage(stage):
-            stage['overall'].append(ts)
+        def append_to_stage(stage, ts_val):
+            if not ts_val:
+                return
+            stage['overall'].append(ts_val)
             if worker_key not in stage['workers']:
                 stage['workers'][worker_key] = []
-            stage['workers'][worker_key].append(ts)
+            stage['workers'][worker_key].append(ts_val)
 
-        if status == 'indexed':
-            append_to_stage(scraper_data['indexed'])
-        elif status == 'detailed':
-            append_to_stage(scraper_data['detailed'])
+        if ts_scraped:
+            append_to_stage(scraper_data['indexed'], ts_scraped)
 
-        append_to_stage(scraper_data['all'])
+        if status == 'detailed' and ts_detailed:
+            append_to_stage(scraper_data['detailed'], ts_detailed)
+            append_to_stage(scraper_data['all'], ts_detailed)
+        elif ts_scraped:
+            append_to_stage(scraper_data['all'], ts_scraped)
 
     # Determine all unique scraper names to populate
     all_scraper_names = set(pipeline_to_scraper_type.values()) | set(overall_totals.keys()) | set(data_by_scraper.keys())
@@ -252,6 +255,7 @@ def update_pipeline_analytics():
                 'record_type',
                 'status',
                 'scraped_at',
+                'detailed_at',
                 'target__entity__name',
             )
 
@@ -262,25 +266,27 @@ def update_pipeline_analytics():
             }
 
             for r in fallback_qs:
-                ts = r.get('scraped_at')
-                if not ts:
-                    continue
-
-                worker_key = 'unknown'
+                ts_scraped = r.get('scraped_at')
+                ts_detailed = r.get('detailed_at') or ts_scraped
                 status = r.get('status') or 'indexed'
+                worker_key = 'unknown'
 
-                def append_to_stage(stage):
-                    stage['overall'].append(ts)
+                def append_to_stage(stage, ts_val):
+                    if not ts_val:
+                        return
+                    stage['overall'].append(ts_val)
                     if worker_key not in stage['workers']:
                         stage['workers'][worker_key] = []
-                    stage['workers'][worker_key].append(ts)
+                    stage['workers'][worker_key].append(ts_val)
 
-                if status == 'indexed':
-                    append_to_stage(pipe_data['indexed'])
-                elif status == 'detailed':
-                    append_to_stage(pipe_data['detailed'])
+                if ts_scraped:
+                    append_to_stage(pipe_data['indexed'], ts_scraped)
 
-                append_to_stage(pipe_data['all'])
+                if status == 'detailed' and ts_detailed:
+                    append_to_stage(pipe_data['detailed'], ts_detailed)
+                    append_to_stage(pipe_data['all'], ts_detailed)
+                elif ts_scraped:
+                    append_to_stage(pipe_data['all'], ts_scraped)
 
         indexed_metrics = calculate_uptime_and_rate(pipe_data['indexed']['overall'])
         indexed_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['indexed']['workers'].items()}
