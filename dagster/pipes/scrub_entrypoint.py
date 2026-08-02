@@ -17,8 +17,9 @@ from datetime import datetime
 
 from dagster_pipes import PipesContext, open_dagster_pipes
 
-# Ensure we can import extraction_workers
+# Ensure we can import extraction_workers in container or host
 sys.path.append("/app")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from extraction_workers.utils.pii_scrub import Scrub
 from extraction_workers.db import get_db_connection
 
@@ -67,52 +68,63 @@ async def run_scrub(pipes: PipesContext) -> None:
         )
 
         logger.info(f"Total records in DB: {total_records}")
-        logger.info(f"Already scrubbed: {already_scrubbed}")
-        logger.info(f"Records to scrub in this run: {len(records_to_scrub)}")
+        logger.info(f"Already scrubbed before run: {already_scrubbed}")
 
         scrubbed_count = already_scrubbed
+        scrubbed_this_run = 0
         pii_scrubber = Scrub()
+        batch_size = 200
 
-        for idx, row in enumerate(records_to_scrub, start=1):
-            record_id = row["id"]
-            data_raw = row["data"]
-
-            if isinstance(data_raw, str):
-                data = json.loads(data_raw)
-            else:
-                data = dict(data_raw) if data_raw else {}
-
-            # Scrub the data dictionary recursively
-            scrubbed_data = pii_scrubber.scrub_dict(data)
-
-            # Save to scrubbed_records table (upsert on conflict of extracted_record_id)
-            await conn.execute(
-                """
-                INSERT INTO scrubbed_records (id, extracted_record_id, data, created_at)
-                VALUES ($1, $2, $3, NOW())
-                ON CONFLICT (extracted_record_id)
-                DO UPDATE SET data = EXCLUDED.data
-                """,
-                str(uuid.uuid4()),
-                record_id,
-                json.dumps(scrubbed_data, ensure_ascii=False)
+        while True:
+            records_to_scrub = await conn.fetch(
+                "SELECT id, data FROM extracted_records WHERE record_type = $1 AND status = 'detailed' AND cleaned_at IS NULL ORDER BY scraped_at ASC LIMIT $2",
+                record_type_to_scrub,
+                batch_size,
             )
+            if not records_to_scrub:
+                break
 
-            # Update the extracted_records entry's cleaned_at datetime
-            await conn.execute(
-                """
-                UPDATE extracted_records
-                SET cleaned_at = NOW()
-                WHERE id = $1
-                """,
-                record_id
-            )
+            for idx, row in enumerate(records_to_scrub, start=1):
+                record_id = row["id"]
+                data_raw = row["data"]
 
-            scrubbed_count += 1
-            logger.info(
-                f"[{idx}/{len(records_to_scrub)}] Scrubbed record {record_id}. "
-                f"Progress: {scrubbed_count}/{total_records} total scrubbed."
-            )
+                if isinstance(data_raw, str):
+                    data = json.loads(data_raw)
+                else:
+                    data = dict(data_raw) if data_raw else {}
+
+                # Scrub the data dictionary recursively
+                scrubbed_data = pii_scrubber.scrub_dict(data)
+
+                # Save to scrubbed_records table (upsert on conflict of extracted_record_id)
+                await conn.execute(
+                    """
+                    INSERT INTO scrubbed_records (id, extracted_record_id, data, created_at)
+                    VALUES ($1, $2, $3, NOW())
+                    ON CONFLICT (extracted_record_id)
+                    DO UPDATE SET data = EXCLUDED.data
+                    """,
+                    str(uuid.uuid4()),
+                    record_id,
+                    json.dumps(scrubbed_data, ensure_ascii=False)
+                )
+
+                # Update the extracted_records entry's cleaned_at datetime
+                await conn.execute(
+                    """
+                    UPDATE extracted_records
+                    SET cleaned_at = NOW()
+                    WHERE id = $1
+                    """,
+                    record_id
+                )
+
+                scrubbed_count += 1
+                scrubbed_this_run += 1
+                logger.info(
+                    f"Scrubbed record {record_id}. "
+                    f"Progress: {scrubbed_count}/{total_records} total scrubbed."
+                )
 
         pipes.report_asset_materialization(
             metadata={

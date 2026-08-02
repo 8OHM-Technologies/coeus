@@ -2,7 +2,7 @@ import os
 import asyncpg
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 def clean_env_var(value: str | None) -> str | None:
     """Removes comments and surrounding quotes from environment variables,
