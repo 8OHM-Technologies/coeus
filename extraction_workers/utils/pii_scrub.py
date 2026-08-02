@@ -26,6 +26,42 @@ class Scrub:
             "judge of the high court", "judge of the supreme court",
         }
 
+    @staticmethod
+    def _is_employer_key(key: str) -> bool:
+        """Returns True if the dictionary key represents an employer name field."""
+        k = key.lower()
+        return "employer" in k or k in {
+            "company",
+            "company_name",
+            "organisation",
+            "organisation_name",
+            "organization",
+            "organization_name",
+            "firm",
+            "firm_name",
+        }
+
+    def _extract_employer_names(self, data: Union[dict, list, str]) -> set[str]:
+        """Scans structured data for values of employer fields to protect them globally across all text fields."""
+        employer_names: set[str] = set()
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if self._is_employer_key(key):
+                    if isinstance(value, str) and value.strip():
+                        employer_names.update(self._tokenise_name(value.strip()))
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, str) and item.strip():
+                                employer_names.update(self._tokenise_name(item.strip()))
+                    elif isinstance(value, dict):
+                        employer_names.update(self._extract_employer_names(value))
+                else:
+                    employer_names.update(self._extract_employer_names(value))
+        elif isinstance(data, list):
+            for item in data:
+                employer_names.update(self._extract_employer_names(item))
+        return employer_names
+
     # ------------------------------------------------------------------
     # Judge-name pre-identification
     # ------------------------------------------------------------------
@@ -170,8 +206,7 @@ class Scrub:
             if is_org:
                 continue
 
-            # ── Judge-name guard ──────────────────────────────────────
-            # 1. Check pre-identified judge names (full name or any component)
+            # ── Guard: check pre-identified judge or employer names ───
             name_tokens = set(name.text.split())
             if any(
                 pn.lower() in normalized or any(t.lower() == pn.lower() for t in name_tokens)
@@ -179,7 +214,7 @@ class Scrub:
             ):
                 continue
 
-            # 2. Fallback: check surrounding context tokens for judicial keywords
+            # Fallback: check surrounding context tokens for judicial keywords
             preceding_tokens = nlp_doc[max(0, name.start - 3) : name.start]
             if any(t.text.lower() in self._judicial_titles for t in preceding_tokens):
                 continue
@@ -200,16 +235,19 @@ class Scrub:
         judge_names = self._extract_judge_names(raw_text)
 
         if isinstance(input_data, dict):
-            return self.scrub_dict(input_data, judge_names=judge_names)
+            employer_names = self._extract_employer_names(input_data)
+            return self.scrub_dict(input_data, judge_names=judge_names, employer_names=employer_names)
 
         if original_format == "json":
             scrubbed_data = json.loads(input_data)
-            scrubbed_data = self.scrub_dict(scrubbed_data, judge_names=judge_names)
+            employer_names = self._extract_employer_names(scrubbed_data)
+            scrubbed_data = self.scrub_dict(scrubbed_data, judge_names=judge_names, employer_names=employer_names)
         elif original_format == "ndjson":
-            scrubbed_data = [
-                self.scrub_dict(json.loads(line), judge_names=judge_names)
-                for line in input_data.splitlines()
-            ]
+            scrubbed_data = []
+            for line in input_data.splitlines():
+                parsed = json.loads(line)
+                emp_names = self._extract_employer_names(parsed)
+                scrubbed_data.append(self.scrub_dict(parsed, judge_names=judge_names, employer_names=emp_names))
         elif original_format == "xml":
             root = ET.fromstring(input_data)
             self.scrub_xml(root, judge_names=judge_names)
@@ -219,19 +257,40 @@ class Scrub:
 
         return scrubbed_data
 
-    def scrub_dict(self, data: dict, judge_names: set[str] | None = None) -> dict:
+    def scrub_dict(
+        self,
+        data: dict,
+        judge_names: set[str] | None = None,
+        employer_names: set[str] | None = None,
+    ) -> dict:
+        if employer_names is None:
+            employer_names = self._extract_employer_names(data)
+
+        protected = (judge_names or set()) | (employer_names or set())
+
         for key, value in data.items():
+            if self._is_employer_key(key):
+                # Never redact employer name field value
+                continue
             if isinstance(value, dict):
-                data[key] = self.scrub_dict(value, judge_names=judge_names)
+                data[key] = self.scrub_dict(
+                    value, judge_names=judge_names, employer_names=employer_names
+                )
             elif isinstance(value, list):
                 data[key] = [
-                    self.scrub_dict(item, judge_names=judge_names)
+                    self.scrub_dict(
+                        item, judge_names=judge_names, employer_names=employer_names
+                    )
                     if isinstance(item, dict)
-                    else (self.scrub_text(item, judge_names=judge_names) if isinstance(item, str) else item)
+                    else (
+                        self.scrub_text(item, judge_names=protected)
+                        if isinstance(item, str)
+                        else item
+                    )
                     for item in value
                 ]
             elif isinstance(value, str):
-                data[key] = self.scrub_text(value, judge_names=judge_names)
+                data[key] = self.scrub_text(value, judge_names=protected)
         return data
 
     def scrub_xml(self, node: ET.Element, judge_names: set[str] | None = None) -> None:

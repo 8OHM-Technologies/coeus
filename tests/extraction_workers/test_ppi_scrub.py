@@ -62,3 +62,23 @@ def test_scrub_dict():
     assert "John Doe" not in scrubbed_data["summary"]
     assert "[REDACTED]" in scrubbed_data["summary"]
     assert "Acme Pty Ltd" in scrubbed_data["summary"]
+
+
+def test_no_scrub_employer_name_field():
+    scrubber = Scrub()
+
+    data = {
+        "applicant_employee": "David Miller",
+        "employer_name": "Bob Smith Contracting",
+        "summary": "David Miller was employed at Bob Smith Contracting."
+    }
+
+    scrubbed_data = scrubber.scrub_dict(data)
+
+    # Employer field value must never be redacted
+    assert scrubbed_data["employer_name"] == "Bob Smith Contracting"
+
+    # Employee name in summary must be redacted, but employer name must be protected
+    assert "David Miller" not in scrubbed_data["summary"]
+    assert "[REDACTED]" in scrubbed_data["summary"]
+    assert "Bob Smith Contracting" in scrubbed_data["summary"]
