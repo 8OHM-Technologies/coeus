@@ -116,7 +116,7 @@ async def get_existing_urls(
         """,
         record_type,
     )
-    return {row["source_url"] for row in rows}
+    return {row["source_url"] for row in rows if row["source_url"]}
 
 # TODO FIX THIS - USE URLS INSTEAD (NO CASE NUMBERS YET)
 async def get_existing_case_numbers(
@@ -131,7 +131,7 @@ async def get_existing_case_numbers(
         """,
         record_type,
     )
-    return {row["case_number"] for row in rows}
+    return {row["case_number"] for row in rows if row["case_number"]}
 
 
 # ---------------------------------------------------------------------------
@@ -391,3 +391,107 @@ async def save_pipeline_state(
         json.dumps(state, ensure_ascii=False),
         pipeline_name,
     )
+
+
+async def compute_dynamic_pipeline_state(
+    conn: asyncpg.Connection,
+    record_type: str,
+) -> dict[str, Any]:
+    """Dynamically query ``extracted_records`` for *record_type* to evaluate pipeline progress.
+
+    Returns a dict containing:
+      - ``total_records``: total count of records stored for this record_type
+      - ``total_indexed``: count of records pending detailing
+      - ``total_detailed``: count of records fully detailed
+      - ``records_needing_detail``: count of records still needing detailing
+      - ``yearly_stats``: per-year breakdown dict {year_str: {total, indexed, detailed, needing_detail}}
+      - ``completed_years``: list of years where all harvested records are detailed
+      - ``incomplete_years``: list of years with pending detailing items
+      - ``fully_complete``: bool indicating whether all harvested records are detailed (and total > 0)
+    """
+    rows = await conn.fetch(
+        """
+        SELECT 
+            COALESCE(
+                EXTRACT(YEAR FROM document_date)::int,
+                CASE WHEN (data->>'year') ~ '^[0-9]+$' THEN (data->>'year')::int ELSE NULL END
+            ) AS rec_year,
+            CASE 
+                WHEN status = 'detailed' OR (data->>'details_scraped_at') IS NOT NULL THEN 'detailed'
+                ELSE 'indexed'
+            END AS rec_status,
+            COUNT(*) AS count
+        FROM extracted_records
+        WHERE record_type = $1
+        GROUP BY rec_year, rec_status
+        """,
+        record_type,
+    )
+
+    yearly_stats: dict[int, dict[str, int]] = {}
+    total_records = 0
+    total_indexed = 0
+    total_detailed = 0
+
+    for row in rows:
+        ryear = row["rec_year"]
+        rstatus = row["rec_status"]
+        rcount = row["count"]
+
+        total_records += rcount
+        if rstatus == "detailed":
+            total_detailed += rcount
+        else:
+            total_indexed += rcount
+
+        if ryear is not None:
+            if ryear not in yearly_stats:
+                yearly_stats[ryear] = {"total": 0, "indexed": 0, "detailed": 0, "needing_detail": 0}
+            yearly_stats[ryear]["total"] += rcount
+            if rstatus == "detailed":
+                yearly_stats[ryear]["detailed"] += rcount
+            else:
+                yearly_stats[ryear]["indexed"] += rcount
+                yearly_stats[ryear]["needing_detail"] += rcount
+
+    completed_years = [
+        y for y, s in sorted(yearly_stats.items()) if s["total"] > 0 and s["needing_detail"] == 0
+    ]
+    incomplete_years = [
+        y for y, s in sorted(yearly_stats.items()) if s["needing_detail"] > 0
+    ]
+
+    records_needing_detail = total_indexed
+    fully_complete = bool(total_records > 0 and records_needing_detail == 0)
+
+    yearly_stats_json = {str(k): v for k, v in sorted(yearly_stats.items())}
+
+    return {
+        "record_type": record_type,
+        "total_records": total_records,
+        "total_indexed": total_indexed,
+        "total_detailed": total_detailed,
+        "records_needing_detail": records_needing_detail,
+        "yearly_stats": yearly_stats_json,
+        "completed_years": completed_years,
+        "incomplete_years": incomplete_years,
+        "fully_complete": fully_complete,
+    }
+
+
+async def sync_dynamic_pipeline_state(
+    conn: asyncpg.Connection,
+    pipeline_name: str,
+    record_type: str,
+    extra_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compute current dynamic state from ``extracted_records`` and persist into ``pipeline_state`` column."""
+    existing = await load_pipeline_state(conn, pipeline_name)
+    dynamic = await compute_dynamic_pipeline_state(conn, record_type)
+
+    merged = {**existing, **dynamic}
+    if extra_state:
+        merged.update(extra_state)
+
+    await save_pipeline_state(conn, pipeline_name, merged)
+    return merged

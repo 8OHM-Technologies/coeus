@@ -262,7 +262,7 @@ class SafliiScraper(BaseScraper):
                     self.court_code = match.group(1)
         self.court_code = self.court_code or "ZALCJHB"
 
-        # Resolve Year Range with Progress State Respect
+        # Resolve Year Range with Dynamic Progress State Respect
         if self.year:
             self.start_year = int(self.year)
             self.end_year = int(self.year)
@@ -270,12 +270,21 @@ class SafliiScraper(BaseScraper):
             cfg_start = extraction_params.get("start_year") or extraction_params.get("year")
             prog_last_year = self.progress_state.get("last_year")
             prog_completed = self.progress_state.get("last_completed", False)
+            incomplete_years = self.progress_state.get("incomplete_years", [])
+            completed_years = self.progress_state.get("completed_years", [])
 
             if cfg_start:
                 try:
                     self.start_year = int(cfg_start)
                 except (ValueError, TypeError):
                     self.start_year = 2000
+            elif incomplete_years:
+                # Resume from earliest incomplete year according to extracted_records
+                self.start_year = min(incomplete_years)
+            elif completed_years:
+                # All harvested years are complete; continue from next year
+                max_comp = max(completed_years)
+                self.start_year = max_comp + 1 if prog_completed else max_comp
             elif prog_last_year and isinstance(prog_last_year, int) and prog_last_year > 1900:
                 self.start_year = prog_last_year + 1 if prog_completed else prog_last_year
             else:
@@ -793,27 +802,20 @@ class SafliiScraper(BaseScraper):
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
 
         if not self.case_urls:
-            if self.STAGE_INDEXING in self.skip_stages:
-                # Indexing was skipped — load pending case URLs directly from the database
-                # so detailing can proceed without a prior in-memory indexing run.
-                logger.info(
-                    "Indexing stage was skipped; loading pending case URLs from the database..."
-                )
-                db_records = await db_storage.load_records_needing_detail(
-                    self.conn,
-                    db_record_type,
-                    sort_desc=False,
-                    limit=None,
-                    include_data=False,
-                )
-                if db_records:
-                    self.case_urls = [r["source_url"] for r in db_records if r.get("source_url")]
-                    logger.info(f"Loaded {len(self.case_urls)} pending URLs from the database.")
-                else:
-                    logger.info("No pending records found in the database. Nothing to detail.")
-                    return
+            # Query extracted_records table dynamically to load all pending records needing detail
+            logger.info("No in-memory case URLs found; querying extracted_records for pending records needing detail...")
+            db_records = await db_storage.load_records_needing_detail(
+                self.conn,
+                db_record_type,
+                sort_desc=False,
+                limit=None,
+                include_data=False,
+            )
+            if db_records:
+                self.case_urls = [r["source_url"] for r in db_records if r.get("source_url")]
+                logger.info(f"Loaded {len(self.case_urls)} pending URLs from extracted_records.")
             else:
-                logger.info("No indices staged for detailed processing pipelines.")
+                logger.info("No pending records needing detail found in extracted_records. Detailing complete.")
                 return
 
         concurrency = int(extraction_params.get("concurrency", 4))

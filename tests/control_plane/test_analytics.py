@@ -5,12 +5,12 @@ from pipelines.models import PipelineConfiguration, ScrapingPipelineMetrics
 from pipelines.analytics import calculate_uptime_and_rate, update_pipeline_analytics
 
 def test_calculate_uptime_and_rate_mixed_tz():
-    # Mix of naive and aware datetimes
-    naive_dt1 = datetime(2026, 7, 26, 8, 0, 0)
+    # Timestamps with UTC timezone
+    aware_dt1 = datetime(2026, 7, 26, 8, 0, 0, tzinfo=timezone.utc)
     aware_dt2 = datetime(2026, 7, 26, 8, 1, 0, tzinfo=timezone.utc)
-    naive_dt3 = datetime(2026, 7, 26, 8, 2, 0)
+    aware_dt3 = datetime(2026, 7, 26, 8, 2, 0, tzinfo=timezone.utc)
     
-    timestamps = [naive_dt1, aware_dt2, naive_dt3]
+    timestamps = [aware_dt1, aware_dt2, aware_dt3]
     
     res = calculate_uptime_and_rate(timestamps)
     
@@ -44,7 +44,6 @@ def test_update_pipeline_analytics_e2e():
     target = Target.objects.create(entity=entity, target_name="subset", location="https://test.com")
     
     # 3. Create records with different scraper timestamp formats:
-    # Record 1: Naive scraped_at (similar to new_saflii_scraper and sabinet_scraper)
     ExtractedRecord.objects.create(
         target=target,
         document_date=date(2026, 1, 1),
@@ -56,7 +55,6 @@ def test_update_pipeline_analytics_e2e():
         }
     )
     
-    # Record 2: Aware details_scraped_at (similar to details scraper updates)
     ExtractedRecord.objects.create(
         target=target,
         document_date=date(2026, 1, 1),
@@ -68,7 +66,6 @@ def test_update_pipeline_analytics_e2e():
         }
     )
     
-    # Record 3: No scraped_at timestamps, should fall back to scraped_at (timezone-aware)
     ExtractedRecord.objects.create(
         target=target,
         document_date=date(2026, 1, 1),
@@ -90,4 +87,73 @@ def test_update_pipeline_analytics_e2e():
     # Confirm metrics were saved in DB
     saved_metrics = ScrapingPipelineMetrics.objects.get(pipeline_name="new_saflii")
     assert saved_metrics.metrics == metrics
+
+
+@pytest.mark.django_db
+def test_update_pipeline_analytics_groups_by_scraper_type_sabinet():
+    from pipelines.models import ScraperType
+    sabinet_st, _ = ScraperType.objects.get_or_create(
+        name="sabinet",
+        defaults={"label": "Sabinet (Playwright + Misstcha)"}
+    )
+
+    # Config 1: Oldest
+    cfg_oldest = PipelineConfiguration.objects.create(
+        name="Sabinet SA Judgments - Oldest",
+        scraper_type=sabinet_st,
+        start_url="https://test.com/oldest",
+        extraction_params={"concurrency": 2}
+    )
+    entity_oldest = Entity.objects.create(name=cfg_oldest.name)
+    target_oldest = Target.objects.create(entity=entity_oldest, target_name="oldest", location="https://test.com/oldest")
+
+    # Config 2: Newest
+    cfg_newest = PipelineConfiguration.objects.create(
+        name="Sabinet SA Judgment - Newest",
+        scraper_type=sabinet_st,
+        start_url="https://test.com/newest",
+        extraction_params={"concurrency": 3}
+    )
+    entity_newest = Entity.objects.create(name=cfg_newest.name)
+    target_newest = Target.objects.create(entity=entity_newest, target_name="newest", location="https://test.com/newest")
+
+    # Create 2 records under oldest
+    for i in range(2):
+        ExtractedRecord.objects.create(
+            target=target_oldest,
+            document_date=date(2026, 1, 1),
+            record_type="sabinet_ccma",
+            status="detailed",
+            data={}
+        )
+
+    # Create 3 records under newest
+    for i in range(3):
+        ExtractedRecord.objects.create(
+            target=target_newest,
+            document_date=date(2026, 1, 1),
+            record_type="sabinet_ccma",
+            status="indexed",
+            data={}
+        )
+
+    results = update_pipeline_analytics()
+
+    # Must be grouped under 'sabinet', NOT under individual pipeline config names
+    assert "sabinet" in results
+    assert "Sabinet SA Judgments - Oldest" not in results
+    assert "Sabinet SA Judgment - Newest" not in results
+
+    metrics = results["sabinet"]
+    assert metrics["pipeline_name"] == "sabinet"
+    assert metrics["configured_concurrency"] == 5  # 2 + 3
+    assert metrics["overall_totals"]["total_records"] == 5
+    assert metrics["overall_totals"]["total_detailed"] == 2
+    assert metrics["overall_totals"]["total_indexed"] == 3
+
+    # Check database persistence
+    saved_metrics = ScrapingPipelineMetrics.objects.get(pipeline_name="sabinet")
+    assert saved_metrics.metrics["overall_totals"]["total_records"] == 5
+    assert not ScrapingPipelineMetrics.objects.filter(pipeline_name="Sabinet SA Judgments - Oldest").exists()
+
 

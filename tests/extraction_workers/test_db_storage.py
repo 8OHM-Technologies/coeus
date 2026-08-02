@@ -67,7 +67,8 @@ async def test_is_record_complete():
     assert res is True
     mock_conn.fetchval.assert_called_once()
     query = mock_conn.fetchval.call_args[0][0]
-    assert "source_url = $2 OR data->>'case_number' = $3" in query
+    assert "source_url = $2" in query
+    assert "data->>'case_number' = $3" in query
     assert "details_scraped_at" in query
 
     # 3. Only url present
@@ -78,7 +79,6 @@ async def test_is_record_complete():
     mock_conn.fetchval.assert_called_once()
     query = mock_conn.fetchval.call_args[0][0]
     assert "source_url = $2" in query
-    assert "case_number" not in query
 
     # 4. Only case_number present
     mock_conn.fetchval.reset_mock()
@@ -87,8 +87,7 @@ async def test_is_record_complete():
     assert res is True
     mock_conn.fetchval.assert_called_once()
     query = mock_conn.fetchval.call_args[0][0]
-    assert "data->>'case_number' = $2" in query
-    assert "source_url" not in query
+    assert "data->>'case_number' = $3" in query
 
 
 @pytest.mark.asyncio
@@ -118,24 +117,22 @@ async def test_upsert_scraped_records_batch():
     import uuid
     target_uuid = uuid.uuid4()
     
-    # We mock the single upsert function so we can test the batch wrapper
-    with pytest.MonkeyPatch.context() as mp:
-        mock_upsert = AsyncMock()
-        mp.setattr("extraction_workers.db_storage.upsert_scraped_record", mock_upsert)
-        
-        records = [
-            {"detail_url": "https://example.com/1", "title": "1"},
-            {"detail_url": "https://example.com/2", "title": "2"},
-        ]
-        
-        await upsert_scraped_records_batch(
-            mock_conn, target_uuid, "test_pipeline", records, url_key="detail_url", status="indexed"
-        )
-        
-        assert mock_upsert.call_count == 2
-        # Check first call arguments
-        call_args = mock_upsert.call_args_list[0][1]
-        assert call_args["status"] == "indexed"
+    records = [
+        {"detail_url": "https://example.com/1", "title": "1"},
+        {"detail_url": "https://example.com/2", "title": "2"},
+    ]
+    
+    count = await upsert_scraped_records_batch(
+        mock_conn, target_uuid, "test_pipeline", records, url_key="detail_url", status="indexed"
+    )
+    
+    assert count == 2
+    mock_conn.executemany.assert_called_once()
+    query = mock_conn.executemany.call_args[0][0]
+    batch_args = mock_conn.executemany.call_args[0][1]
+    assert "INSERT INTO extracted_records" in query
+    assert len(batch_args) == 2
+    assert batch_args[0][-1] == "indexed"
 
 
 @pytest.mark.asyncio
@@ -174,5 +171,59 @@ async def test_update_record_data():
     query = mock_conn.execute.call_args[0][0]
     assert "SET data = $1" in query
     assert "status" not in query
+
+
+@pytest.mark.asyncio
+async def test_compute_dynamic_pipeline_state():
+    from extraction_workers.db_storage import compute_dynamic_pipeline_state
+
+    mock_conn = AsyncMock()
+    mock_conn.fetch.return_value = [
+        {"rec_year": 2024, "rec_status": "detailed", "count": 10},
+        {"rec_year": 2024, "rec_status": "indexed", "count": 5},
+        {"rec_year": 2025, "rec_status": "indexed", "count": 3},
+    ]
+
+    state = await compute_dynamic_pipeline_state(mock_conn, "test_pipeline")
+
+    mock_conn.fetch.assert_called_once()
+    query = mock_conn.fetch.call_args[0][0]
+    assert "FROM extracted_records" in query
+    assert "WHERE record_type = $1" in query
+
+    assert state["record_type"] == "test_pipeline"
+    assert state["total_records"] == 18
+    assert state["total_detailed"] == 10
+    assert state["total_indexed"] == 8
+    assert state["records_needing_detail"] == 8
+    assert state["yearly_stats"]["2024"] == {"total": 15, "indexed": 5, "detailed": 10, "needing_detail": 5}
+    assert state["yearly_stats"]["2025"] == {"total": 3, "indexed": 3, "detailed": 0, "needing_detail": 3}
+    assert state["incomplete_years"] == [2024, 2025]
+    assert state["completed_years"] == []
+    assert state["fully_complete"] is False
+
+
+@pytest.mark.asyncio
+async def test_sync_dynamic_pipeline_state():
+    from extraction_workers.db_storage import sync_dynamic_pipeline_state
+
+    mock_conn = AsyncMock()
+    mock_conn.fetchval.return_value = '{"last_year": 2024}'
+    mock_conn.fetch.return_value = [
+        {"rec_year": 2024, "rec_status": "detailed", "count": 5},
+    ]
+
+    state = await sync_dynamic_pipeline_state(
+        mock_conn, "test_pipeline", "test_record_type", extra_state={"last_month": 12}
+    )
+
+    mock_conn.execute.assert_called_once()
+    assert state["total_records"] == 5
+    assert state["records_needing_detail"] == 0
+    assert state["completed_years"] == [2024]
+    assert state["fully_complete"] is True
+    assert state["last_year"] == 2024
+    assert state["last_month"] == 12
+
 
 

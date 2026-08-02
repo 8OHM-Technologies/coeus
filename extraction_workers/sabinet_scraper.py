@@ -558,13 +558,19 @@ class SabinetScraper(BaseScraper):
             or "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards"
         )
         extraction_params = self.config.get("extraction_params") or {}
+        db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
         is_fully_complete = self.progress_state.get("fully_complete", False)
         incremental = extraction_params.get("incremental", False) or is_fully_complete
 
         reverse_direction = extraction_params.get("reverse_direction", False)
-        db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
+        incomplete_years = self.progress_state.get("incomplete_years", [])
 
-        resume_year = 0 if incremental else self.progress_state.get("last_year", 0)
+        resume_year = self.progress_state.get("last_year", 0)
+        if not incremental and resume_year == 0 and incomplete_years:
+            resume_year = max(incomplete_years) if reverse_direction else min(incomplete_years)
+        if incremental:
+            resume_year = 0
+
         resume_month = 0 if incremental else self.progress_state.get("last_month", 0)
 
         loop = asyncio.get_running_loop()
@@ -581,9 +587,15 @@ class SabinetScraper(BaseScraper):
 
         logger.info(f"✅ Indexing complete. Scraped index updates total: {total_new}")
         if not skipped_any:
-            self.progress_state["fully_complete"] = True
-            self.progress_state["completed_at"] = datetime.now(timezone.utc).isoformat()
-            await db_storage.save_pipeline_state(self.conn, self.pipeline_name, self.progress_state)
+            self.progress_state = await db_storage.sync_dynamic_pipeline_state(
+                self.conn,
+                self.pipeline_name,
+                db_record_type,
+                extra_state={
+                    "fully_complete": True,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
             logger.info("✅ Progress state set to fully complete.")
         else:
             logger.warning("⚠️ Some timeframe windows were skipped due to errors. Progress state NOT set to fully complete.")

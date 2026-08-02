@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from django.db.models import Count, Q
 from extracted_data.models import ExtractedRecord
 
-from .models import PipelineConfiguration, ScrapingPipelineMetrics
+from .models import PipelineConfiguration, ScrapingPipelineMetrics, ScraperType
 
 
 def parse_iso_datetime(val):
@@ -132,9 +132,56 @@ def update_pipeline_analytics():
     per scraper type and per worker, differentiating between indexing and detailing stages.
     Saves the results to the db.
     """
-    # 1. Fetch all configurations with scraper types to map config name -> scraper type name
+    # 1. Fetch all scraper types and pipeline configurations to map any name/record_type -> scraper type name
+    known_scraper_types = set(ScraperType.objects.values_list('name', flat=True))
+    
+    mapping = {}
+    for st in ScraperType.objects.all():
+        mapping[st.name] = st.name
+        mapping[st.label] = st.name
+    
+    # Common aliases
+    mapping["saflii"] = "new_saflii"
+
     pipelines = PipelineConfiguration.objects.select_related('scraper_type').all()
-    pipeline_to_scraper_type = {p.name: p.scraper_type.name for p in pipelines if p.scraper_type}
+    
+    for p in pipelines:
+        if not p.scraper_type:
+            continue
+        st_name = p.scraper_type.name
+        if p.name:
+            mapping[p.name] = st_name
+        if p.subset:
+            mapping[p.subset] = st_name
+        shared_rt = (p.extraction_params or {}).get('shared_record_type')
+        if shared_rt:
+            mapping[shared_rt] = st_name
+
+    def resolve_scraper_type(entity_name, record_type):
+        if record_type and record_type in mapping:
+            return mapping[record_type]
+        if entity_name and entity_name in mapping:
+            return mapping[entity_name]
+        
+        if record_type:
+            rt_lower = record_type.lower()
+            for key, st_name in mapping.items():
+                if key and key.lower() == rt_lower:
+                    return st_name
+        if entity_name:
+            ent_lower = entity_name.lower()
+            for key, st_name in mapping.items():
+                if key and key.lower() == ent_lower:
+                    return st_name
+        
+        search_target = f"{entity_name or ''} {record_type or ''}".lower()
+        for st_name in known_scraper_types:
+            if st_name.lower() in search_target:
+                return st_name
+        if "saflii" in search_target:
+            return "new_saflii"
+
+        return entity_name or record_type or 'Unknown'
 
     # Sum/combine configured concurrency per scraper type
     scraper_type_concurrencies = {}
@@ -155,7 +202,6 @@ def update_pipeline_analytics():
     SEVEN_DAYS_SECONDS = 7 * 24 * 3600  # 604800
 
     # 2. Query all-time counts grouped by target entity, record type, and status.
-    # Grouping is extremely fast and avoids loading all historical rows in Django memory.
     all_time_counts = ExtractedRecord.objects.values(
         'target__entity__name', 'record_type', 'status'
     ).annotate(count=Count('id'))
@@ -167,8 +213,7 @@ def update_pipeline_analytics():
         status = item['status'] or 'indexed'
         count = item['count']
 
-        record_pipeline_name = entity_name or record_type or 'Unknown'
-        scraper_type_name = pipeline_to_scraper_type.get(record_pipeline_name, record_pipeline_name)
+        scraper_type_name = resolve_scraper_type(entity_name, record_type)
 
         if scraper_type_name not in overall_totals:
             overall_totals[scraper_type_name] = {
@@ -200,8 +245,7 @@ def update_pipeline_analytics():
     for r in recent_records:
         entity_name = r['target__entity__name']
         record_type = r['record_type']
-        record_pipeline_name = entity_name or record_type or 'Unknown'
-        scraper_type_name = pipeline_to_scraper_type.get(record_pipeline_name, record_pipeline_name)
+        scraper_type_name = resolve_scraper_type(entity_name, record_type)
         
         ts_scraped = r.get('scraped_at')
         ts_detailed = r.get('detailed_at') or ts_scraped
@@ -234,8 +278,8 @@ def update_pipeline_analytics():
         elif ts_scraped:
             append_to_stage(scraper_data['all'], ts_scraped)
 
-    # Determine all unique scraper names to populate
-    all_scraper_names = set(pipeline_to_scraper_type.values()) | set(overall_totals.keys()) | set(data_by_scraper.keys())
+    # Determine all unique scraper names to populate (strictly ScraperType names)
+    all_scraper_names = set(known_scraper_types) | set(overall_totals.keys()) | set(data_by_scraper.keys())
 
     # 4. Compute metrics and update databases
     results = {}
@@ -245,11 +289,14 @@ def update_pipeline_analytics():
         # If no recent records found for this scraper type, perform a fallback query to load its latest 200 records.
         # This allows us to display worker lists and historical uptime/rates for inactive pipelines without loading all history.
         if not pipe_data:
-            config_names = [cfg_name for cfg_name, st_name in pipeline_to_scraper_type.items() if st_name == name]
-            query_names = list(set(config_names + [name]))
+            query_names = [cfg_name for cfg_name, st_name in mapping.items() if st_name == name]
+            query_names = list(set(query_names + [name]))
             
             fallback_qs = ExtractedRecord.objects.filter(
-                Q(target__entity__name__in=query_names) | Q(record_type__in=query_names)
+                Q(target__entity__name__in=query_names) |
+                Q(record_type__in=query_names) |
+                Q(target__entity__name__icontains=name) |
+                Q(record_type__icontains=name)
             ).order_by('-scraped_at')[:200].values(
                 'id',
                 'record_type',

@@ -104,10 +104,10 @@ class BaseScraper(ABC):
         cases = await db_storage.get_existing_case_numbers(self.conn, db_record_type)
         self.existing_case_numbers = set(cases)
         
-        self.progress_state = await db_storage.load_pipeline_state(
-            self.conn, self.pipeline_name
+        self.progress_state = await db_storage.sync_dynamic_pipeline_state(
+            self.conn, self.pipeline_name, db_record_type
         )
-        logger.info(f"Progress state loaded: {self.progress_state}")
+        logger.info(f"Progress state loaded (dynamic): {self.progress_state}")
 
         # Hydrate proxy flags from pipeline config, extraction_params & environment
         extraction_params = self.config.get("extraction_params", {})
@@ -165,15 +165,20 @@ class BaseScraper(ABC):
                 return None
 
     async def save_progress(self, year: int, month: int = 0, completed: bool = False, **kwargs) -> None:
-        """Persists rolling-window execution markers into database storage."""
-        self.progress_state["last_year"] = year
-        self.progress_state["last_month"] = month
-        self.progress_state["last_completed"] = completed
-        for k, v in kwargs.items():
-            self.progress_state[k] = v
+        """Persists rolling-window execution markers and syncs dynamic extracted_records counts into database storage."""
+        extra_updates = {
+            "last_year": year,
+            "last_month": month,
+            "last_completed": completed,
+            **kwargs,
+        }
+        db_record_type = (
+            self.config.get("extraction_params", {}).get("shared_record_type")
+            or self.pipeline_name
+        )
         async with self.db_lock:
-            await db_storage.save_pipeline_state(
-                self.conn, self.pipeline_name, self.progress_state
+            self.progress_state = await db_storage.sync_dynamic_pipeline_state(
+                self.conn, self.pipeline_name, db_record_type, extra_state=extra_updates
             )
 
     async def cleanup(self) -> None:
