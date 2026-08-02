@@ -836,3 +836,4 @@ if __name__ == "__main__":
         skip_stages=args.skip_stages,
     )
     asyncio.run(scraper.run())
+    sys.exit(0)

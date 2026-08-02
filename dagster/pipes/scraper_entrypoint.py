@@ -140,13 +140,13 @@ def run_scraper(pipes: PipesContext) -> None:
     elif scraper_type in ("saflii", "new_saflii"):
         worker_args.extend(["--headless", "false"])
 
-    # Xvfb is required for headed Playwright scrapers
+    # Xvfb is required for headed Playwright/UC scrapers
     if scraper_type in ("saflii", "new_saflii"):
         cmd_str = " ".join(["python", "-m", worker_module] + worker_args)
         full_cmd = [
             "bash",
             "-c",
-            f"Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && sleep 1 && {cmd_str}",
+            f"Xvfb :99 -screen 0 1280x720x24 > /dev/null 2>&1 & XVFB_PID=$! && export DISPLAY=:99 && sleep 1 && {cmd_str}; STATUS=$?; kill $XVFB_PID 2>/dev/null; exit $STATUS",
         ]
     else:
         full_cmd = ["python", "-m", worker_module] + worker_args

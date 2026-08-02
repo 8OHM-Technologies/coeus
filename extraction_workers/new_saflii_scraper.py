@@ -937,3 +937,4 @@ if __name__ == "__main__":
     )
     
     asyncio.run(scraper.run())
+    sys.exit(0)
