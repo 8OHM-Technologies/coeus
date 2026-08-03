@@ -12,6 +12,8 @@ from coeus.extraction_workers.new_saflii_scraper import (
     parse_case_url,
     wait_for_page_load,
     extract_case_number_from_text,
+    extract_court_code_from_url,
+    DATABASES_INDEX_URL,
 )
 
 
@@ -48,6 +50,27 @@ def test_parse_case_url():
     assert court == "SAFLII"
     assert year == "unknown"
     assert case_id == "unknown"
+
+
+def test_extract_court_code_from_url():
+    # Standard cases URL
+    assert extract_court_code_from_url("https://www.saflii.org/za/cases/ZACC/") == "ZACC"
+    assert extract_court_code_from_url("https://www.saflii.org/za/cases/ZAGPJHC/2025/1.html") == "ZAGPJHC"
+
+    # Gazette URL
+    assert extract_court_code_from_url("https://www.saflii.org/za/gaz/ZANGAZ/") == "ZANGAZ"
+
+    # Journal URL
+    assert extract_court_code_from_url("https://www.saflii.org/za/journals/DEIJURE/") == "DEIJURE"
+
+    # Other URL
+    assert extract_court_code_from_url("https://www.saflii.org/za/other/ZAJSC/") == "ZAJSC"
+
+    # Non-matching URL
+    assert extract_court_code_from_url("https://www.saflii.org/content/databases.html") is None
+
+    # Non-SA URL
+    assert extract_court_code_from_url("https://www.saflii.org/ls/cases/LSHC/") is None
 
 
 @pytest.mark.asyncio
@@ -139,13 +162,17 @@ def test_extract_case_number_from_text():
 
 
 @pytest.mark.asyncio
-async def test_saflii_scraper_progress_state_years(mocker):
+async def test_saflii_scraper_initialize_defaults(mocker):
+    """Test that the refactored scraper initializes with sensible defaults and reads config correctly."""
     from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
 
     mock_config = {
-        "start_url": "https://www.saflii.org/za/cases/ZALCJHB/1999",
+        "start_url": "",
         "document_type": "awards",
-        "extraction_params": {}
+        "extraction_params": {
+            "courts": "ZACC,ZAGPJHB",
+            "shared_record_type": "saflii_courts",
+        },
     }
     mocker.patch("coeus.extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
     mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
@@ -153,22 +180,44 @@ async def test_saflii_scraper_progress_state_years(mocker):
     mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
     mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
-
-    # Mock progress state loaded from DB with last_year=1999, last_completed=False
-    mock_progress = {
-        "last_year": 1999,
-        "court_code": "ZALCJHB",
-        "last_completed": False
-    }
-    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value=mock_progress))
+    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value={}))
 
     scraper = SafliiScraper(pipeline_name="saflii_test")
     await scraper.initialize()
 
-    # Verify that start_year is set to 1999 from progress_state, not defaulting to 2026
-    assert scraper.start_year == 1999
-    assert scraper.end_year == 2026
-    assert scraper.court_code == "ZALCJHB"
+    # Default index URL should be used when start_url is empty
+    assert scraper.index_url == DATABASES_INDEX_URL
+
+    # Court filter should be parsed from config extraction_params
+    assert scraper.courts_filter == ["ZACC", "ZAGPJHB"]
+
+
+@pytest.mark.asyncio
+async def test_saflii_scraper_courts_from_cli(mocker):
+    """Test that CLI-supplied courts take precedence over config."""
+    from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
+
+    mock_config = {
+        "start_url": "",
+        "document_type": "awards",
+        "extraction_params": {
+            "courts": "ZACC",
+            "shared_record_type": "saflii_courts",
+        },
+    }
+    mocker.patch("coeus.extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock())
+    mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
+    mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value={}))
+
+    # CLI courts override config courts
+    scraper = SafliiScraper(pipeline_name="saflii_test", courts=["ZAGPJHB", "ZAWCHC"])
+    await scraper.initialize()
+
+    assert scraper.courts_filter == ["ZAGPJHB", "ZAWCHC"]
 
 
 def test_turnstile_block_triggers_ip_rotation(mocker):
@@ -216,7 +265,3 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
             items.append(item)
 
     assert (1, "https://www.saflii.org/za/cases/ZAGPPHC/2010/585.html", 2) in items
-
-
-
-

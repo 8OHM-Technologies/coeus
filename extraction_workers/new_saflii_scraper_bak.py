@@ -30,32 +30,6 @@ logger = setup_logger("saflii_scraper")
 gui_lock = threading.Lock()
 
 
-# ---------------------------------------------------------------------------
-# SAFLII Databases Index & Court Discovery Constants
-# ---------------------------------------------------------------------------
-
-DATABASES_INDEX_URL = "https://www.saflii.org/content/databases.html"
-
-# Valid SAFLII URL path prefixes for South African datasets
-_VALID_ZA_PATH_PREFIXES = ("/za/cases/", "/za/gaz/", "/za/journals/", "/za/other/")
-
-
-def extract_court_code_from_url(url: str) -> Optional[str]:
-    """Extract the SAFLII court/dataset code from a URL path.
-
-    Recognises patterns: ``/za/cases/{CODE}/``, ``/za/gaz/{CODE}/``,
-    ``/za/journals/{CODE}/``, ``/za/other/{CODE}/``
-    """
-    parsed = urllib.parse.urlparse(url)
-    parts = [p for p in parsed.path.split("/") if p]
-    for i, part in enumerate(parts):
-        if part == "za" and i + 2 < len(parts):
-            category = parts[i + 1]
-            if category in ("cases", "gaz", "journals", "other"):
-                return parts[i + 2]
-    return None
-
-
 class BlockedException(Exception):
     """Raised when a Cloudflare/Turnstile verification wall cannot be breached."""
     pass
@@ -242,34 +216,33 @@ async def wait_for_page_load(page, url_type: str = "case") -> str:
 
 class SafliiScraper(BaseScraper):
     """
-    SAFLII Scraper subclassing BaseScraper.
-    Discovers all South African courts/datasets from the SAFLII databases index
-    page, uses SeleniumBase UC mode with lxml parsing, multithreaded detailing
-    workers, database record persistence, progress tracking, and proxy support.
+    SAFLII Case Scraper subclassing BaseScraper.
+    Uses SeleniumBase UC mode with lxml parsing, multithreaded detailing workers,
+    database record persistence, progress tracking, and proxy support.
     """
 
     def __init__(
         self,
         pipeline_name: str,
-        courts: Optional[List[str]] = None,
+        court_code: Optional[str] = None,
         year: Optional[int] = None,
         headless: bool = False,
         use_xvfb: bool = True,
         skip_stages: Optional[str] = None,
     ):
         super().__init__(pipeline_name, skip_stages=skip_stages)
-        self.courts_filter: Optional[List[str]] = courts
+        self.court_code: Optional[str] = court_code
         self.year: Optional[int] = year
         self.headless: bool = headless
         self.use_xvfb: bool = use_xvfb
 
-        self.index_url: str = DATABASES_INDEX_URL
+        self.start_url: str = ""
+        self.start_year: int = 2000
+        self.end_year: int = datetime.now().year
         self.cooldown_seconds: float = 1.5
         self.take_debug_screenshots: bool = False
         self.screenshots_dir: str = ""
 
-        # Multi-court state
-        self.court_base_urls: Dict[str, Tuple[str, str]] = {}  # code -> (display_name, base_url)
         self.case_urls: List[str] = []
         self.url_to_case_number: Dict[str, str] = {}
         self.db_lock = asyncio.Lock()
@@ -278,33 +251,64 @@ class SafliiScraper(BaseScraper):
         """Hydrate configuration, resolve target IDs, DB connections, and progress state."""
         await super().initialize()
 
+        self.start_url = self.config.get("start_url") or "https://www.saflii.org/za/cases/ZALCJHB/"
         extraction_params = self.config.get("extraction_params", {})
+        
+        if not self.court_code:
+            self.court_code = extraction_params.get("court_code")
+            if not self.court_code and self.start_url:
+                match = re.search(r"/za/cases/([A-Za-z0-9]+)/", self.start_url)
+                if match:
+                    self.court_code = match.group(1)
+        self.court_code = self.court_code or "ZALCJHB"
 
-        # Allow index URL override from config; fall back to DATABASES_INDEX_URL
-        self.index_url = self.config.get("start_url") or DATABASES_INDEX_URL
+        # Resolve Year Range with Dynamic Progress State Respect
+        if self.year:
+            self.start_year = int(self.year)
+            self.end_year = int(self.year)
+        else:
+            cfg_start = extraction_params.get("start_year") or extraction_params.get("year")
+            prog_last_year = self.progress_state.get("last_year")
+            prog_completed = self.progress_state.get("last_completed", False)
+            incomplete_years = self.progress_state.get("incomplete_years", [])
+            completed_years = self.progress_state.get("completed_years", [])
 
-        # Court filter: CLI argument takes precedence, then config extraction_params
-        if not self.courts_filter:
-            cfg_courts = extraction_params.get("courts")
-            if cfg_courts:
-                if isinstance(cfg_courts, str):
-                    self.courts_filter = [c.strip() for c in cfg_courts.split(",") if c.strip()]
-                elif isinstance(cfg_courts, list):
-                    self.courts_filter = cfg_courts
+            if cfg_start:
+                try:
+                    self.start_year = int(cfg_start)
+                except (ValueError, TypeError):
+                    self.start_year = 2000
+            elif incomplete_years:
+                # Resume from earliest incomplete year according to extracted_records
+                self.start_year = min(incomplete_years)
+            elif completed_years:
+                # All harvested years are complete; continue from next year
+                max_comp = max(completed_years)
+                self.start_year = max_comp + 1 if prog_completed else max_comp
+            elif prog_last_year and isinstance(prog_last_year, int) and prog_last_year > 1900:
+                self.start_year = prog_last_year + 1 if prog_completed else prog_last_year
+            else:
+                self.start_year = 2000
+
+            cfg_end = extraction_params.get("end_year")
+            if cfg_end:
+                try:
+                    self.end_year = int(cfg_end)
+                except (ValueError, TypeError):
+                    self.end_year = datetime.now().year
+            else:
+                self.end_year = datetime.now().year
 
         self.cooldown_seconds = float(extraction_params.get("cooldown_seconds", 1.5))
         self.take_debug_screenshots = self.config.get("take_debug_screenshots", False)
-
+        
         if self.output_dir:
             self.screenshots_dir = os.path.join(os.path.dirname(self.output_dir), "screenshots")
             os.makedirs(self.screenshots_dir, exist_ok=True)
 
-        courts_desc = ", ".join(self.courts_filter) if self.courts_filter else "ALL (auto-discover)"
-        year_desc = str(self.year) if self.year else "auto-discover"
-
         logger.info("==================================================")
         logger.info(f"🚀 COEUS SAFLII WORKER (SeleniumBase UC Mode) ({self.pipeline_name})")
-        logger.info(f"Target Courts: {courts_desc} | Year: {year_desc}")
+        logger.info(f"Target Court: {self.court_code} | Year Range: {self.start_year} - {self.end_year}")
         logger.info("==================================================")
 
     async def authenticate(self, headless: bool = False) -> None:
@@ -467,162 +471,11 @@ class SafliiScraper(BaseScraper):
 
         return state
 
-    # ------------------------------------------------------------------
-    # Court & Year Discovery
-    # ------------------------------------------------------------------
-
-    def _discover_court_urls_from_page(self, sb: SB) -> Dict[str, Tuple[str, str]]:
-        """Navigate to SAFLII databases index page and extract all South African court/dataset URLs.
-
-        Returns dict mapping ``court_code`` → ``(display_name, base_url)``.
-        """
-        courts: Dict[str, Tuple[str, str]] = {}
-
-        for attempt in range(1, 4):
-            state = self._navigate_and_handle_turnstile(
-                sb, self.index_url, f"index_page_attempt_{attempt}"
-            )
-            if state == "BLOCKED":
-                logger.warning(f"Index page blocked on attempt {attempt}/3.")
-                if attempt < 3:
-                    sb.sleep(attempt * 4)
-                    continue
-                else:
-                    raise BlockedException(
-                        "Failed to access SAFLII databases index page after 3 attempts."
-                    )
-
-            soup = BeautifulSoup(sb.get_page_source(), "lxml")
-            for a_tag in soup.find_all("a"):
-                link_text = a_tag.get_text(strip=True)
-                href = a_tag.get("href")
-
-                if not link_text or not href or not link_text.startswith("South Africa:"):
-                    continue
-
-                abs_url = urllib.parse.urljoin(self.index_url, href)
-                parsed = urllib.parse.urlparse(abs_url)
-
-                # Accept only URLs matching valid SA path prefixes
-                if not any(parsed.path.startswith(prefix) for prefix in _VALID_ZA_PATH_PREFIXES):
-                    continue
-
-                court_code = extract_court_code_from_url(abs_url)
-                if court_code:
-                    base_url = abs_url.rstrip("/") + "/"
-                    courts[court_code] = (link_text, base_url)
-
-            if courts:
-                logger.info(f"Discovered {len(courts)} South African court/dataset URLs from index page.")
-                break
-            else:
-                logger.warning(
-                    f"No court URLs found on attempt {attempt}/3. Page may not have loaded correctly."
-                )
-                if attempt < 3:
-                    sb.sleep(attempt * 4)
-
-        return courts
-
-    def _discover_year_links_from_page(
-        self, sb: SB, court_code: str, base_url: str
-    ) -> List[Tuple[int, str]]:
-        """Navigate to a court's base page and discover available year directory links.
-
-        Year links typically appear as ``<a href="YYYY/">`` inside ``<h3>`` elements.
-
-        Returns list of ``(year, year_url)`` tuples sorted by year.
-        """
-        year_links: List[Tuple[int, str]] = []
-
-        for attempt in range(1, 4):
-            state = self._navigate_and_handle_turnstile(
-                sb, base_url, f"court_{court_code}_years_attempt_{attempt}"
-            )
-            if state == "BLOCKED":
-                logger.warning(f"Court page {court_code} blocked on attempt {attempt}/3.")
-                if attempt < 3:
-                    sb.sleep(attempt * 4)
-                    continue
-                else:
-                    logger.error(
-                        f"Failed to access court page {court_code} after 3 attempts. Skipping."
-                    )
-                    return []
-            if state == "NOT_FOUND":
-                logger.warning(f"Court page {court_code} returned NOT_FOUND. Skipping.")
-                return []
-
-            soup = BeautifulSoup(sb.get_page_source(), "lxml")
-            seen_years: set = set()
-
-            # Primary: look for year links inside <h3> elements
-            for h3 in soup.find_all("h3"):
-                for a_tag in h3.find_all("a"):
-                    href = a_tag.get("href", "").strip()
-                    year_match = re.match(r"^(\d{4})/?$", href)
-                    if year_match:
-                        year = int(year_match.group(1))
-                        if year not in seen_years:
-                            year_url = urllib.parse.urljoin(base_url, f"{year}/")
-                            year_links.append((year, year_url))
-                            seen_years.add(year)
-
-            # Fallback: scan all links on the page for bare year hrefs
-            if not year_links:
-                for a_tag in soup.find_all("a"):
-                    href = a_tag.get("href", "").strip()
-                    year_match = re.match(r"^(\d{4})/?$", href)
-                    if year_match:
-                        year = int(year_match.group(1))
-                        if year not in seen_years:
-                            year_url = urllib.parse.urljoin(base_url, f"{year}/")
-                            year_links.append((year, year_url))
-                            seen_years.add(year)
-
-            if year_links:
-                year_links.sort(key=lambda x: x[0])
-                logger.info(
-                    f"Court {court_code}: Discovered {len(year_links)} year directories: "
-                    f"{[y for y, _ in year_links]}"
-                )
-                break
-            else:
-                logger.warning(f"Court {court_code}: No year links found on attempt {attempt}/3.")
-                if attempt < 3:
-                    sb.sleep(attempt * 4)
-
-        return year_links
-
-    # ------------------------------------------------------------------
-    # Indexing
-    # ------------------------------------------------------------------
-
-    def _indexing_sync(
-        self, loop: asyncio.AbstractEventLoop, db_record_type: str
-    ) -> Tuple[List[str], Dict[str, str]]:
-        """Synchronous indexing task running inside a dedicated SB UC context thread.
-
-        Discovers courts from the databases index page, auto-discovers available
-        years per court, and harvests document URLs.  Indexed URLs are batch-saved
-        to the database per-court for restart resilience.
-        """
+    def _indexing_sync(self) -> Tuple[List[str], Dict[str, str]]:
+        """Synchronous indexing task running inside a dedicated SB UC context thread."""
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
-        raw_case_urls: List[str] = []
-        url_to_case_map: Dict[str, str] = {}
-
-        # Build set of already-indexed (court_code, year_str) pairs for fast skip checks
-        indexed_court_years: set = set()
-        for url in self.existing_urls:
-            cc = extract_court_code_from_url(url)
-            if cc:
-                year_match = re.search(r"/(\d{4})/", url)
-                if year_match:
-                    indexed_court_years.add((cc, year_match.group(1)))
-        if indexed_court_years:
-            logger.info(
-                f"Resume state: {len(indexed_court_years)} court+year combinations already indexed."
-            )
+        raw_case_urls = []
+        url_to_case_map = {}
 
         indexing_profile = "/tmp/saflii_indexing_profile"
         with SB(
@@ -641,174 +494,67 @@ class SafliiScraper(BaseScraper):
 
             # Verify and log outbound public IP
             self.log_outbound_ip(sb, label="SAFLII Indexing Stage")
+            
+            # 1. Directly construct year directory URLs for the configured range (bypasses top-level redirect walls)
+            logger.info(f"Constructing year directory indices for court '{self.court_code}' across years {self.start_year}..{self.end_year}")
+            year_links = [
+                (y, f"https://www.saflii.org/za/cases/{self.court_code}/{y}/")
+                for y in range(self.start_year, self.end_year + 1)
+            ]
+            logger.info(f"Found {len(year_links)} years to process: {[y for y, _ in year_links]}")
 
-            # 1. Discover all court URLs from the databases index page
-            logger.info(f"Discovering court URLs from: {self.index_url}")
-            self.court_base_urls = self._discover_court_urls_from_page(sb)
-
-            if not self.court_base_urls:
-                logger.error("No court URLs discovered from index page. Aborting indexing.")
-                return [], {}
-
-            # 2. Apply court filter if specified
-            if self.courts_filter:
-                filter_set = {c.upper() for c in self.courts_filter}
-                filtered = {
-                    k: v for k, v in self.court_base_urls.items() if k.upper() in filter_set
-                }
-                skipped = set(self.court_base_urls.keys()) - set(filtered.keys())
-                if skipped:
-                    logger.info(
-                        f"Court filter active. Skipping {len(skipped)} courts: {sorted(skipped)}"
-                    )
-                self.court_base_urls = filtered
-
-            total_courts = len(self.court_base_urls)
-            logger.info(f"Processing {total_courts} courts: {sorted(self.court_base_urls.keys())}")
-
-            # 3. For each court, discover years and harvest document URLs
-            for court_idx, (court_code, (display_name, base_url)) in enumerate(
-                sorted(self.court_base_urls.items()), 1
-            ):
-                logger.info(f"\n{'=' * 60}")
-                logger.info(
-                    f"[Court {court_idx}/{total_courts}] {display_name} ({court_code})"
-                )
-                logger.info(f"Base URL: {base_url}")
-                logger.info("=" * 60)
-
-                # 3a. Discover available years
-                if self.year:
-                    year_links = [(self.year, f"{base_url}{self.year}/")]
-                else:
-                    year_links = self._discover_year_links_from_page(sb, court_code, base_url)
-
-                if not year_links:
-                    logger.warning(f"Court {court_code}: No year directories found. Skipping.")
-                    continue
-
-                court_new_urls: List[str] = []
-
-                # 3b. Process each year directory
-                for year, year_url in year_links:
-                    # Skip already-indexed court+year combinations on restart
-                    if (court_code, str(year)) in indexed_court_years:
-                        logger.info(f"Court {court_code} year {year}: Already indexed, skipping.")
-                        continue
-
-                    logger.info(
-                        f"Processing structural year context directory: {court_code}/{year} -> {year_url}"
-                    )
-                    found_for_year = 0
-                    for attempt in range(1, 4):
-                        try:
-                            state = self._navigate_and_handle_turnstile(
-                                sb, year_url,
-                                f"court_{court_code}_year_{year}_attempt_{attempt}"
-                            )
-                            if state == "BLOCKED":
-                                logger.warning(
-                                    f"Year directory {court_code}/{year} blocked on attempt {attempt}/3."
-                                )
-                                if attempt < 3:
-                                    sb.sleep(attempt * 4)
-                                    continue
-                                else:
-                                    break
-
-                            if state == "NOT_FOUND":
-                                logger.info(
-                                    f"Court {court_code} year {year}: Directory not found."
-                                )
-                                break
-
-                            soup = BeautifulSoup(sb.get_page_source(), "lxml")
-                            for a_tag in soup.find_all("a"):
-                                href = a_tag.get("href")
-                                if not href:
-                                    continue
-                                abs_url = urllib.parse.urljoin(year_url, href)
-                                parsed_url = urllib.parse.urlparse(abs_url)
-                                parts = [p for p in parsed_url.path.split("/") if p]
-
-                                if len(parts) >= 2:
-                                    parent_dir, filename = parts[-2], parts[-1]
-                                    if parent_dir.isdigit() and len(parent_dir) == 4 and filename.endswith(".html"):
-                                        if not ("toc-" in filename or filename == "index.html"):
-                                            if abs_url not in self.existing_urls:
-                                                case_no = extract_case_number_from_text(a_tag.get_text(strip=True))
-                                                if case_no:
-                                                    url_to_case_map[abs_url] = case_no
-                                                court_new_urls.append(abs_url)
-                                                found_for_year += 1
-                            logger.info(
-                                f"Court {court_code} year {year}: "
-                                f"Harvested {found_for_year} new candidate URLs."
-                            )
-                            break
-                        except Exception as err:
-                            logger.warning(
-                                f"Error isolating index structures for {court_code}/{year} "
-                                f"[Attempt {attempt}]: {err}"
-                            )
+            # 2. Extract Document URLs from Year Directories
+            for year, year_url in year_links:
+                logger.info(f"Processing structural year context directory: {year} -> {year_url}")
+                found_for_year = 0
+                for attempt in range(1, 4):
+                    try:
+                        state = self._navigate_and_handle_turnstile(sb, year_url, f"year_{year}_attempt_{attempt}")
+                        if state == "BLOCKED":
+                            logger.warning(f"Year directory {year} blocked on attempt {attempt}/3.")
                             if attempt < 3:
                                 sb.sleep(attempt * 4)
+                                continue
+                            else:
+                                break
 
-                    sb.sleep(self.cooldown_seconds + random.uniform(0.2, 0.6))
+                        soup = BeautifulSoup(sb.get_page_source(), "lxml")
+                        for a_tag in soup.find_all("a"):
+                            href = a_tag.get("href")
+                            if not href:
+                                continue
+                            abs_url = urllib.parse.urljoin(year_url, href)
+                            parsed_url = urllib.parse.urlparse(abs_url)
+                            parts = [p for p in parsed_url.path.split("/") if p]
 
-                # Batch-save this court's newly discovered URLs to DB for restart resilience
-                if court_new_urls:
-                    batch_records = []
-                    for curl in court_new_urls:
-                        cc, cy, cid = parse_case_url(curl, default_court=court_code)
-                        rec = {
-                            "detail_url": curl,
-                            "court": cc,
-                            "year": cy,
-                            "case_id": cid,
-                        }
-                        cn = url_to_case_map.get(curl)
-                        if cn:
-                            rec["case_number"] = cn
-                        batch_records.append(rec)
-
-                    try:
-                        future = asyncio.run_coroutine_threadsafe(
-                            db_storage.upsert_scraped_records_batch(
-                                self.conn,
-                                self.target_id,
-                                db_record_type,
-                                batch_records,
-                                url_key="detail_url",
-                                status="indexed",
-                            ),
-                            loop,
-                        )
-                        saved = future.result(timeout=60)
-                        logger.info(
-                            f"Court {court_code}: Saved {saved} indexed records to database."
-                        )
-                    except Exception as save_err:
-                        logger.error(
-                            f"Court {court_code}: Failed to batch-save indexed records: {save_err}"
-                        )
-
-                    # Update dedup state for subsequent court+year skip checks
-                    self.existing_urls.update(court_new_urls)
-                    raw_case_urls.extend(court_new_urls)
+                            if len(parts) >= 2:
+                                parent_dir, filename = parts[-2], parts[-1]
+                                if parent_dir.isdigit() and len(parent_dir) == 4 and filename.endswith(".html"):
+                                    if self.start_year <= int(parent_dir) <= self.end_year:
+                                        if not ("toc-" in filename or filename == "index.html"):
+                                            case_no = extract_case_number_from_text(a_tag.get_text(strip=True))
+                                            if case_no:
+                                                url_to_case_map[abs_url] = case_no
+                                            raw_case_urls.append(abs_url)
+                                            found_for_year += 1
+                        logger.info(f"Year {year}: Harvested {found_for_year} candidate case URLs.")
+                        break
+                    except Exception as err:
+                        logger.warning(f"Error isolating index structures for year {year} [Attempt {attempt}]: {err}")
+                        if attempt < 3:
+                            sb.sleep(attempt * 4)
 
         return sorted(list(set(raw_case_urls))), url_to_case_map
 
     async def indexing(self) -> None:
-        """Sub-process A: Harvest case entry indexes across all discovered courts."""
-        logger.info("[Stage 1A start] Starting indexing stage via SeleniumBase UC thread...")
-        extraction_params = self.config.get("extraction_params", {})
-        db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
-        loop = asyncio.get_running_loop()
+        """Sub-process A: Harvest case entry indexes matching timeframe distribution constraints."""
+        if self.start_year > self.end_year:
+            logger.info(f"Start year {self.start_year} exceeds end year {self.end_year}. Pipeline already complete.")
+            self.case_urls = []
+            return
 
-        self.case_urls, self.url_to_case_number = await asyncio.to_thread(
-            self._indexing_sync, loop, db_record_type
-        )
+        logger.info(f"[Stage 1A start] Starting indexing stage via SeleniumBase UC thread...")
+        self.case_urls, self.url_to_case_number = await asyncio.to_thread(self._indexing_sync)
         logger.info(f"[Stage 1A complete] Total downstream asset indexes harvested: {len(self.case_urls)}")
 
     async def _save_record_to_db(self, case_url: str, record: dict, doc_date: dt_date) -> None:
@@ -888,7 +634,7 @@ class SafliiScraper(BaseScraper):
                                 idx, case_url = item
                                 pass_number = 1
 
-                            c_court, c_year, c_id = parse_case_url(case_url, default_court="SAFLII")
+                            c_court, c_year, c_id = parse_case_url(case_url, default_court=self.court_code or "SAFLII")
                             case_no = self.url_to_case_number.get(case_url)
 
                             if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
@@ -976,11 +722,11 @@ class SafliiScraper(BaseScraper):
                                     future.result(timeout=30)
 
                                     # Dispatch async progress state save (with 30s timeout)
-                                    current_y = int(c_year) if c_year.isdigit() else datetime.now().year
+                                    current_y = int(c_year) if c_year.isdigit() else self.start_year
                                     future_prog = asyncio.run_coroutine_threadsafe(
                                         self.save_progress(
                                             year=current_y,
-                                            court_code=c_court,
+                                            court_code=self.court_code,
                                             last_index=idx,
                                             total_cases=total_cases,
                                             last_url=case_url,
@@ -1115,7 +861,8 @@ class SafliiScraper(BaseScraper):
 
             # Mark completed state upon processing all candidate URLs
             await self.save_progress(
-                year=datetime.now().year,
+                year=self.end_year,
+                court_code=self.court_code,
                 last_index=total_cases,
                 total_cases=total_cases,
                 completed=True,
@@ -1143,26 +890,25 @@ class SafliiScraper(BaseScraper):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coeus SAFLII Scraper (SeleniumBase UC Driver)")
     parser.add_argument(
-        "--pipeline", "--pipeline_name",
-        required=True,
+        "--pipeline", "--pipeline_name", 
+        required=True, 
         dest="pipeline_name",
         help="Target pipeline setup configuration key matching environment presets"
     )
     parser.add_argument(
-        "--courts",
+        "--court_code",
         default=None,
-        help="Comma-separated SAFLII court codes to scrape (e.g. ZACC,ZALCJHB). "
-             "Omit to scrape all South African courts.",
+        help="SAFLII Court Code (e.g. ZALCJHB)",
     )
     parser.add_argument(
         "--year",
         type=int,
         default=None,
-        help="Target year (e.g. 2026). Omit for auto-discovery of all available years.",
+        help="Target year (e.g. 2026)",
     )
     parser.add_argument(
-        "--headless",
-        default="false",
+        "--headless", 
+        default="false", 
         help="Orchestrate worker browser processes via headless mode (true/false)"
     )
     parser.add_argument(
@@ -1181,18 +927,14 @@ if __name__ == "__main__":
     headless_value = args.headless.lower() == "true"
     use_xvfb_value = args.use_xvfb.lower() == "true"
 
-    courts_list = None
-    if args.courts:
-        courts_list = [c.strip() for c in args.courts.split(",") if c.strip()]
-
     scraper = SafliiScraper(
         pipeline_name=args.pipeline_name,
-        courts=courts_list,
+        court_code=args.court_code,
         year=args.year,
         headless=headless_value,
         use_xvfb=use_xvfb_value,
         skip_stages=args.skip_stages,
     )
-
+    
     asyncio.run(scraper.run())
     sys.exit(0)
