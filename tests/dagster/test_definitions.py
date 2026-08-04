@@ -136,4 +136,4 @@ def test_sabinet_job_and_sensors_exist():
     
     assert defs.get_job_def("sabinet_scrubbing_job").name == "sabinet_scrubbing_job"
     assert defs.get_sensor_def("sabinet_sync_sensor").name == "sabinet_sync_sensor"
-    assert defs.get_sensor_def("sabinet_scrubbed_sensor").name == "sabinet_scrubbed_sensor"
+    assert defs.get_sensor_def("scrubbed_sensor").name == "scrubbed_sensor"

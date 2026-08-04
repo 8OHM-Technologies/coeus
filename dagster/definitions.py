@@ -739,7 +739,7 @@ defs = dg.Definitions(
         coeus_blueprint_sensor,
         raw_scraped_pages_sensor,
         sabinet_sync_sensor,
-        sabinet_scrubbed_sensor
+        scrubbed_sensor
     ],
     resources={
         "pipes_docker": PipesDockerClient(),
