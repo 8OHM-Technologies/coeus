@@ -27,8 +27,30 @@ try:
 except ImportError:
     from db import get_db_connection
 
-# Old pipeline names that were used as record_type values
+# Old record_type values used by per-pipeline scrapers
 OLD_SAFLII_RECORD_TYPES = [
+    # Slugified variants (as actually stored in DB)
+    "saflii_labour_court___appeals",
+    "saflii_labour_court___db",
+    "saflii_labour_court___pe",
+    "saflii_labour_court___cct",
+    "saflii_labour_court___jhb",
+    "saflii_high_court___south_gp",
+    "saflii_high_court___north_gp",
+    "saflii_high_court___western_cape",
+    "saflii_high_court___nw_mafikeng",
+    "saflii_high_court___nc_kimberley",
+    "saflii_high_court___mp_middelburg",
+    "saflii_high_court___mp_mbombela",
+    "saflii_high_court___lp_thohoy",
+    "saflii_high_court___lp_polokwane",
+    "saflii_high_court___kzn_pmb",
+    "saflii_high_court___kzn_dbn",
+    "saflii_high_court___kzn",
+    "saflii_high_court___gauteng",
+    "saflii_high_court___ec",
+    "saflii_high_court___fs_bloem",
+    # Display-name variants (legacy runs)
     "Saflii Labour Court - Appeals",
     "Saflii Labour Court - DB",
     "Saflii Labour Court - PE",
@@ -49,6 +71,8 @@ OLD_SAFLII_RECORD_TYPES = [
     "Saflii High Court - Gauteng",
     "Saflii High Court - EC",
     "Saflii High Court - FS Bloem",
+    # Test records
+    "saflii_test",
 ]
 
 NEW_RECORD_TYPE = "saflii_courts"

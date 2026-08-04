@@ -702,11 +702,11 @@ def sabinet_sync_sensor(context: dg.SensorEvaluationContext):
 
 
 @dg.asset_sensor(
-    name="sabinet_scrubbed_sensor",
+    name="scrubbed_sensor",
     asset_key=dg.AssetKey("scrubbed_extracted_records"),
     default_status=dg.DefaultSensorStatus.RUNNING,
 )
-def sabinet_scrubbed_sensor(
+def scrubbed_sensor(
     context: dg.SensorEvaluationContext,
     asset_event: dg.EventLogEntry,
 ):
@@ -716,7 +716,7 @@ def sabinet_scrubbed_sensor(
     blueprint = get_blueprint_for_partition(partition_key)
     if blueprint and blueprint.get("scraper_type") == "sabinet":
         context.log.info(
-            f"scrubbed_extracted_records materialized for Sabinet partition '{partition_key}'. "
+            f"scrubbed_extracted_records materialized for partition '{partition_key}'. "
             f"Placeholder: This will trigger the downstream run (yet to be built)."
         )
         # TODO: Trigger the downstream job when it is built
