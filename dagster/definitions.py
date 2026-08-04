@@ -480,7 +480,19 @@ def coeus_blueprint_sensor(context: dg.SensorEvaluationContext):
 
     active_partition_keys = [str(bp["pipeline_id"]) for bp in blueprints if "pipeline_id" in bp]
     dynamic_partitions_requests = [pipeline_partitions.build_add_request(active_partition_keys)]
-    
+
+    # Clean up stale partitions that are no longer in the active blueprints
+    try:
+        existing_keys = set(context.instance.get_dynamic_partitions(pipeline_partitions.name))
+        stale_keys = existing_keys - set(active_partition_keys)
+        if stale_keys:
+            context.log.info(f"Removing {len(stale_keys)} stale partition keys: {stale_keys}")
+            dynamic_partitions_requests.append(
+                pipeline_partitions.build_delete_request(list(stale_keys))
+            )
+    except Exception as e:
+        context.log.warning(f"Failed to clean up stale partitions: {e}")
+
     current_time = time.time()
     current_minute_ts = int(current_time // 60) * 60
 
