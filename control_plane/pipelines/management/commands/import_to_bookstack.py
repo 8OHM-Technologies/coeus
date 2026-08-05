@@ -24,65 +24,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_SHELF_NAME = "South African Legal Data"
 
 
-def format_markdown_content(
-    scrubbed_record: ScrubbedRecord,
-    court_name: str,
-    data: Dict[str, Any],
-) -> str:
-    """Format scrubbed record JSON payload into clean markdown for BookStack."""
-    extracted = scrubbed_record.extracted_record
-    case_number = data.get("case_number") or data.get("metadata", {}).get("case_number") or "N/A"
-    judgment_date = (
-        data.get("judgment_date")
-        or data.get("metadata", {}).get("document_date")
-        or str(extracted.document_date)
-    )
-    record_type = extracted.record_type
-    source_url = extracted.source_url or "N/A"
-    applicant = data.get("applicant_plaintiff") or "N/A"
-    respondent = data.get("respondent_defendant")
-    if isinstance(respondent, list):
-        respondent_str = ", ".join(str(r) for r in respondent)
-    else:
-        respondent_str = str(respondent) if respondent else "N/A"
-
-    ai_summary = data.get("ai_summary") or data.get("summary") or "No summary available."
-    result = data.get("result") or "N/A"
-    judges = data.get("judges")
-    judges_str = ", ".join(str(j) for j in judges) if isinstance(judges, list) else (str(judges) if judges else "N/A")
-
-    markdown = f"""# Case Record: {case_number}
-
-| Metadata Field | Detail |
-| :--- | :--- |
-| **Court** | {court_name} |
-| **Case Reference** | `{case_number}` |
-| **Judgment Date** | {judgment_date} |
-| **Record Type** | {record_type} |
-| **Source URL** | [{source_url}]({source_url}) |
-
-## 👥 Parties & Presiding Officers
-- **Applicant / Plaintiff**: {applicant}
-- **Respondent / Defendant**: {respondent_str}
-- **Presiding Judge(s)**: {judges_str}
-
-## ⚖️ Rulings & Result
-**Result / Order**: {result}
-
-## 📝 Summary & Headnotes
-{ai_summary}
-
-## 🔍 Scrubbed Payload Data
-```json
-{json.dumps(data, indent=2, default=str)}
-```
-"""
-    return markdown
-
-
 def extract_court_name(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) -> str:
-    """Derive court name from data payload or associated target/entity."""
-    court = data.get("court") or data.get("metadata", {}).get("court")
+    """Derive book/category name from court, publisher, journal, or target/entity."""
+    court = (
+        data.get("court")
+        or data.get("metadata", {}).get("court")
+        or data.get("publisher")
+        or data.get("journal_name")
+    )
     if court and isinstance(court, str) and court.strip():
         return court.strip()
 
@@ -94,15 +43,21 @@ def extract_court_name(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) ->
         if extracted.target.entity and extracted.target.entity.name:
             return extracted.target.entity.name.strip()
 
-    return "Unspecified Court"
+    return "General Publications"
 
 
 def extract_page_title(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) -> str:
-    """Derive page title for BookStack."""
-    case_number = data.get("case_number")
+    """Derive a clean page title for any document type (Cases, Gazettes, Journals, Court Rolls)."""
+    # Check explicit title / name field
+    title_field = data.get("title") or data.get("name") or data.get("heading")
+    if title_field and isinstance(title_field, str) and title_field.strip():
+        return title_field.strip()[:240]
+
+    case_number = data.get("case_number") or data.get("metadata", {}).get("case_number")
     applicant = data.get("applicant_plaintiff")
     respondent = data.get("respondent_defendant")
 
+    # Case law title format
     if case_number and applicant:
         resp_str = respondent[0] if isinstance(respondent, list) and respondent else (respondent or "")
         title = f"[{case_number}] {applicant}"
@@ -113,10 +68,123 @@ def extract_page_title(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) ->
     if case_number:
         return f"Case Reference: {case_number}"[:240]
 
+    # Gazette format
+    gazette_no = data.get("gazette_number") or data.get("notice_number")
+    if gazette_no:
+        return f"Gazette Notice #{gazette_no}"[:240]
+
+    # Journal format
+    journal_name = data.get("journal_name")
+    if journal_name and applicant:
+        return f"{journal_name}: {applicant}"[:240]
+
     if applicant:
         return f"Matter: {applicant}"[:240]
 
-    return f"Scrubbed Record {scrubbed_record.id}"[:240]
+    # Fallback to record type & ID
+    extracted = scrubbed_record.extracted_record
+    rec_type = extracted.record_type.replace("_", " ").title() if extracted else "Record"
+    return f"{rec_type} ({scrubbed_record.id})"[:240]
+
+
+def format_markdown_content(
+    scrubbed_record: ScrubbedRecord,
+    court_name: str,
+    data: Dict[str, Any],
+) -> str:
+    """Format scrubbed record JSON payload into clean markdown for BookStack."""
+    extracted = scrubbed_record.extracted_record
+    title = extract_page_title(scrubbed_record, data)
+    doc_date = (
+        data.get("judgment_date")
+        or data.get("publication_date")
+        or data.get("date")
+        or data.get("metadata", {}).get("document_date")
+        or (str(extracted.document_date) if extracted and extracted.document_date else "N/A")
+    )
+    record_type = extracted.record_type if extracted else "N/A"
+    source_url = extracted.source_url if extracted and extracted.source_url else "N/A"
+
+    ref_number = (
+        data.get("case_number")
+        or data.get("gazette_number")
+        or data.get("notice_number")
+        or data.get("volume")
+        or "N/A"
+    )
+
+    ai_summary = (
+        data.get("ai_summary")
+        or data.get("summary")
+        or data.get("abstract")
+        or "No summary available."
+    )
+
+    # Build Metadata Table
+    markdown_parts = [
+        f"# {title}",
+        "",
+        "| Metadata Field | Detail |",
+        "| :--- | :--- |",
+        f"| **Category / Source** | {court_name} |",
+        f"| **Reference / Number** | `{ref_number}` |",
+        f"| **Document Date** | {doc_date} |",
+        f"| **Record Type** | {record_type} |",
+        f"| **Source URL** | [{source_url}]({source_url}) |" if source_url != "N/A" else "| **Source URL** | N/A |",
+        "",
+    ]
+
+    # Render Case Law Section if parties exist
+    applicant = data.get("applicant_plaintiff")
+    respondent = data.get("respondent_defendant")
+    judges = data.get("judges")
+    result = data.get("result")
+
+    if applicant or respondent or judges or result:
+        markdown_parts.append("## 👥 Parties & Court Rulings")
+        if applicant:
+            markdown_parts.append(f"- **Applicant / Plaintiff**: {applicant}")
+        if respondent:
+            resp_str = ", ".join(str(r) for r in respondent) if isinstance(respondent, list) else str(respondent)
+            markdown_parts.append(f"- **Respondent / Defendant**: {resp_str}")
+        if judges:
+            judges_str = ", ".join(str(j) for j in judges) if isinstance(judges, list) else str(judges)
+            markdown_parts.append(f"- **Presiding Judge(s)**: {judges_str}")
+        if result:
+            markdown_parts.append(f"- **Result / Order**: {result}")
+        markdown_parts.append("")
+
+    # Render Publication Details for Gazettes / Journals
+    publisher = data.get("publisher") or data.get("journal_name")
+    authors = data.get("author") or data.get("authors")
+    subjects = data.get("subjects") or data.get("keywords") or data.get("ai_keywords")
+
+    if publisher or authors or subjects:
+        markdown_parts.append("## 📚 Publication Details")
+        if publisher:
+            markdown_parts.append(f"- **Publisher / Journal**: {publisher}")
+        if authors:
+            auth_str = ", ".join(str(a) for a in authors) if isinstance(authors, list) else str(authors)
+            markdown_parts.append(f"- **Author(s)**: {auth_str}")
+        if subjects:
+            subj_str = ", ".join(str(s) for s in subjects) if isinstance(subjects, list) else str(subjects)
+            markdown_parts.append(f"- **Subjects / Keywords**: {subj_str}")
+        markdown_parts.append("")
+
+    # Render Summary
+    markdown_parts.extend([
+        "## 📝 Summary & Key Findings",
+        str(ai_summary),
+        "",
+        "## 🔍 Scrubbed Payload Data",
+        "```json",
+        json.dumps(data, indent=2, default=str),
+        "```",
+        ""
+    ])
+
+    return "\n".join(markdown_parts)
+
 
 
 class Command(BaseCommand):

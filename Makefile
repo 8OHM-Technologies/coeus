@@ -2,7 +2,7 @@
 export GITHUB_ACCESS_TOKEN
 
 # Define phony targets so Make doesn't look for actual files with these names
-.PHONY: up down status logs dagster stop-dagster publish prod-up prod-down prod-pull portable-pull portable-up portable-down portable-restart coeus stop-coeus scheduler stop-scheduler
+.PHONY: up down status logs dagster stop-dagster publish pull-prod up-prod down-prod pull-portable up-portable down-portable restart-portable coeus stop-coeus scheduler stop-scheduler migrate seed setup sync-extracted import-bookstack sync-shop migrate-saflii scrub
 
 # Default tag for Docker images built and published locally
 TAG ?= latest
@@ -27,41 +27,41 @@ up:
 down:
 	docker compose down
 
-prod-pull:
+pull-prod:
 	echo $(GITHUB_ACCESS_TOKEN) | docker login ghcr.io -u 8ohm-tiaanf --password-stdin
 	docker compose -f docker-compose.prod.yml pull
 	docker pull ghcr.io/8ohm-technologies/coeus-scraper:latest
 	docker pull ghcr.io/8ohm-technologies/coeus-extractor:latest
 
 # Full down → pull → up for prod (ensures updated images are used)
-prod-up:
+up-prod:
 	docker compose -f docker-compose.prod.yml down
 	docker compose -f docker-compose.prod.yml pull
 	docker compose -f docker-compose.prod.yml up -d
 
 # Tear down all containers, networks, and volumes
-prod-down:
+down-prod:
 	docker compose -f docker-compose.prod.yml down
 
 # Pull latest images for the portable stack
-portable-pull:
+pull-portable:
 	echo $(GITHUB_ACCESS_TOKEN) | docker login ghcr.io -u 8ohm-tiaanf --password-stdin
 	docker compose -f docker-compose.portable.yml pull
 	docker pull ghcr.io/8ohm-technologies/coeus-scraper:latest
 	docker pull ghcr.io/8ohm-technologies/coeus-extractor:latest
 
 # Full down → pull → up for portable (ensures updated images are used)
-portable-up:
+up-portable:
 	docker compose -f docker-compose.portable.yml down
 	docker compose -f docker-compose.portable.yml pull
 	docker compose -f docker-compose.portable.yml up -d
 
 # Tear down the portable stack
-portable-down:
+down-portable:
 	docker compose -f docker-compose.portable.yml down
 
 # Restart all portable services without a full down (quick refresh)
-portable-restart:
+restart-portable:
 	docker compose -f docker-compose.portable.yml restart
 
 # Spin up all containers in the background no build
@@ -106,6 +106,41 @@ stop-coeus:
 	docker compose stop control-plane scheduler postgres
 
 # -----------------------------------------------------------------------------
+# DATABASE & CONTROL PLANE COMMANDS
+# -----------------------------------------------------------------------------
+
+# Run database migrations
+migrate:
+	docker compose exec control-plane python control_plane/manage.py migrate
+
+# Seed pipeline definitions
+seed:
+	docker compose exec control-plane python control_plane/manage.py seed_pipelines
+
+# First-time setup: Run migrations and seed pipelines
+setup: migrate seed
+
+# Sync extracted JSON records from disk into DB
+sync-extracted:
+	docker compose exec control-plane python control_plane/manage.py sync_extracted_records
+
+# Import scrubbed court records into BookStack
+import-bookstack:
+	docker compose exec control-plane python control_plane/manage.py import_to_bookstack
+
+# Sync shop products
+sync-shop:
+	docker compose exec control-plane python control_plane/manage.py sync_shop_products
+
+# Migrate SAFLII records
+migrate-saflii:
+	docker compose exec control-plane python control_plane/manage.py migrate_saflii_records
+
+# Run standalone PII scrubber CLI script
+scrub:
+	PYTHONPATH=. python extraction_workers/scrub_standalone.py
+
+# -----------------------------------------------------------------------------
 # DYNAMIC INDIVIDUAL SERVICE COMMANDS
 # -----------------------------------------------------------------------------
 
@@ -119,12 +154,12 @@ stop-coeus:
 stop-%:
 	@docker compose stop $*
 
-# Catch-all target (PROD): Spin up any individual container by its service name
-# Example: 'make prod-web' or 'make prod-redis'
-prod-%:
-	@docker compose up -d --build $@
+# Dynamic target (PROD): Spin up any individual container by prefixing 'up-prod-'
+# Example: 'make up-prod-web' or 'make up-prod-redis'
+up-prod-%:
+	@docker compose -f docker-compose.prod.yml up -d --build $*
 
-# Dynamic target (PROD): Stop any individual container by prefixing 'prod-stop-'
-# Example: 'make prod-stop-web' or 'make prod-stop-redis'
-prod-stop-%:
-	@docker compose stop $*
+# Dynamic target (PROD): Stop any individual container by prefixing 'stop-prod-'
+# Example: 'make stop-prod-web' or 'make stop-prod-redis'
+stop-prod-%:
+	@docker compose -f docker-compose.prod.yml stop $*

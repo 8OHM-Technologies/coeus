@@ -73,10 +73,37 @@ class TestBookStackImport:
         )
 
         md = format_markdown_content(scrubbed, "Gauteng Local Division", scrubbed.data)
-        assert "# Case Record: 1234/2026" in md
+        assert "[1234/2026] John Doe v Minister of Justice" in md
         assert "Gauteng Local Division" in md
         assert "John Doe" in md
         assert "Application granted with costs." in md
+
+    def test_format_markdown_gazettes_and_journals(self):
+        entity = Entity.objects.create(name="Gazette Source")
+        target = Target.objects.create(entity=entity, target_name="Government Gazette")
+        extracted = ExtractedRecord.objects.create(
+            target=target,
+            document_date="2026-04-01",
+            record_type="sabinet_gazettes",
+            source_url="https://sabinet.co.za/gazette/50000",
+            data={},
+        )
+        scrubbed = ScrubbedRecord.objects.create(
+            extracted_record=extracted,
+            data={
+                "title": "National Environmental Management Act Notice",
+                "gazette_number": "50000",
+                "publisher": "Government Printer",
+                "summary": "Notice regarding plastic waste management.",
+                "keywords": ["Environment", "Regulations"],
+            },
+        )
+
+        md = format_markdown_content(scrubbed, "Government Gazette", scrubbed.data)
+        assert "# National Environmental Management Act Notice" in md
+        assert "Government Printer" in md
+        assert "Notice regarding plastic waste management." in md
+        assert "Environment, Regulations" in md
 
     @patch("pipelines.bookstack_client.requests.Session.request")
     def test_bookstack_client_shelf_and_book(self, mock_request):
