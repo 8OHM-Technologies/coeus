@@ -118,6 +118,23 @@ async def get_existing_urls(
     )
     return {row["source_url"] for row in rows if row["source_url"]}
 
+
+async def get_existing_urls_by_status(
+    conn: asyncpg.Connection,
+    record_type: str,
+    status: str = "detailed",
+) -> set[str]:
+    """Return ``source_url`` values for *record_type* filtered by *status*."""
+    rows = await conn.fetch(
+        """
+        SELECT source_url FROM extracted_records
+        WHERE record_type = $1 AND status = $2 AND source_url IS NOT NULL
+        """,
+        record_type,
+        status,
+    )
+    return {row["source_url"] for row in rows if row["source_url"]}
+
 # TODO FIX THIS - USE URLS INSTEAD (NO CASE NUMBERS YET)
 async def get_existing_case_numbers(
     conn: asyncpg.Connection,

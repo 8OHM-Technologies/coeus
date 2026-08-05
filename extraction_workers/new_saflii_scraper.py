@@ -613,6 +613,7 @@ class SafliiScraper(BaseScraper):
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         raw_case_urls: List[str] = []
         url_to_case_map: Dict[str, str] = {}
+        indexed_this_run: set = set()  # Local dedup set for within-run indexing
 
         # Build set of already-indexed (court_code, year_str) pairs for fast skip checks
         indexed_court_years: set = set()
@@ -740,7 +741,7 @@ class SafliiScraper(BaseScraper):
                                         filename.endswith(".html") or filename.endswith(".pdf")
                                     ):
                                         if not ("toc-" in filename or filename == "index.html"):
-                                            if abs_url not in self.existing_urls:
+                                            if abs_url not in self.existing_urls and abs_url not in indexed_this_run:
                                                 case_no = extract_case_number_from_text(a_tag.get_text(strip=True))
                                                 if case_no:
                                                     url_to_case_map[abs_url] = case_no
@@ -798,8 +799,9 @@ class SafliiScraper(BaseScraper):
                             f"Court {court_code}: Failed to batch-save indexed records: {save_err}"
                         )
 
-                    # Update dedup state for subsequent court+year skip checks
-                    self.existing_urls.update(court_new_urls)
+                    # Track newly indexed URLs locally for within-run dedup
+                    # (don't add to self.existing_urls — that would cause detailing to skip them)
+                    indexed_this_run.update(court_new_urls)
                     raw_case_urls.extend(court_new_urls)
 
         return sorted(list(set(raw_case_urls))), url_to_case_map
@@ -1119,6 +1121,18 @@ class SafliiScraper(BaseScraper):
 
         extraction_params = self.config.get("extraction_params", {})
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
+
+        # Refresh existing_urls to only contain URLs already detailed,
+        # so indexed-but-not-yet-detailed records are NOT skipped
+        try:
+            detailed_urls = await db_storage.get_existing_urls_by_status(
+                self.conn, db_record_type, status="detailed"
+            )
+            self.existing_urls = set(detailed_urls)
+            logger.info(f"Refreshed existing_urls for detailing: {len(self.existing_urls)} already-detailed URLs.")
+        except AttributeError:
+            # Fallback if get_existing_urls_by_status doesn't exist yet
+            logger.warning("get_existing_urls_by_status not available; using unfiltered existing_urls.")
 
         if not self.case_urls:
             # Query extracted_records table dynamically to load all pending records needing detail
