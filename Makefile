@@ -126,7 +126,7 @@ sync-extracted:
 
 # Import scrubbed court records into BookStack
 import-bookstack:
-	docker compose exec control-plane python control_plane/manage.py import_to_bookstack
+	docker compose exec control-plane python control_plane/manage.py import_to_bookstack $(ARGS)
 
 # Sync shop products
 sync-shop:

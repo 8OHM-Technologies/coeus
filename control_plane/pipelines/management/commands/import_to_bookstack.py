@@ -1,14 +1,16 @@
 """
 Django management command to read unimported scrubbed records from coeus.scrubbed_records
-and import them into BookStack under a single shelf ('South African Legal Data'),
-with separate books for each court.
+and import them into BookStack as HTML pages under a single shelf ('South African Legal Data'),
+grouped into court books.
 
 Usage:
     python manage.py import_to_bookstack
     python manage.py import_to_bookstack --batch-size 50
+    python manage.py import_to_bookstack --clear-first
     python manage.py import_to_bookstack --dry-run
 """
 
+import html
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -87,14 +89,19 @@ def extract_page_title(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) ->
     return f"{rec_type} ({scrubbed_record.id})"[:240]
 
 
-def format_markdown_content(
+def format_html_content(
     scrubbed_record: ScrubbedRecord,
     court_name: str,
     data: Dict[str, Any],
 ) -> str:
-    """Format scrubbed record JSON payload into clean markdown for BookStack."""
+    """
+    Format scrubbed record JSON payload into formal, elegant HTML for BookStack,
+    styled like official legal archives, law reports, and public records.
+    """
     extracted = scrubbed_record.extracted_record
-    title = extract_page_title(scrubbed_record, data)
+    raw_title = extract_page_title(scrubbed_record, data)
+    title_esc = html.escape(raw_title)
+
     doc_date = (
         data.get("judgment_date")
         or data.get("publication_date")
@@ -102,9 +109,12 @@ def format_markdown_content(
         or data.get("metadata", {}).get("document_date")
         or (str(extracted.document_date) if extracted and extracted.document_date else "N/A")
     )
-    record_type = extracted.record_type if extracted else "N/A"
-    source_url = extracted.source_url if extracted and extracted.source_url else "N/A"
+    doc_date_esc = html.escape(str(doc_date))
 
+    record_type_str = (extracted.record_type.replace("_", " ").title() if extracted and extracted.record_type else "Legal Record")
+    record_type_esc = html.escape(record_type_str)
+
+    source_url = extracted.source_url if extracted and extracted.source_url else None
     ref_number = (
         data.get("case_number")
         or data.get("gazette_number")
@@ -112,85 +122,140 @@ def format_markdown_content(
         or data.get("volume")
         or "N/A"
     )
+    ref_number_esc = html.escape(str(ref_number))
+    court_esc = html.escape(court_name)
 
     ai_summary = (
         data.get("ai_summary")
         or data.get("summary")
         or data.get("abstract")
-        or "No summary available."
+        or "No formal headnote or summary recorded."
+    )
+    ai_summary_esc = html.escape(str(ai_summary)).replace("\n", "<br>")
+
+    # Build HTML sections
+    html_parts = []
+
+    # Container & Header Banner
+    html_parts.append(
+        '<div style="font-family: \'Georgia\', \'Times New Roman\', serif; color: #1a202c; max-width: 900px; margin: 0 auto; line-height: 1.6;">'
     )
 
-    # Build Metadata Table
-    markdown_parts = [
-        f"# {title}",
-        "",
-        "| Metadata Field | Detail |",
-        "| :--- | :--- |",
-        f"| **Category / Source** | {court_name} |",
-        f"| **Reference / Number** | `{ref_number}` |",
-        f"| **Document Date** | {doc_date} |",
-        f"| **Record Type** | {record_type} |",
-        f"| **Source URL** | [{source_url}]({source_url}) |" if source_url != "N/A" else "| **Source URL** | N/A |",
-        "",
-    ]
+    # Document Header Banner
+    html_parts.append(
+        '<div style="border-bottom: 3px double #2b6cb0; padding-bottom: 12px; margin-bottom: 24px; text-align: center;">'
+        '<span style="font-family: sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; tracking: 1.5px; color: #4a5568; background-color: #edf2f7; padding: 4px 10px; border-radius: 4px; display: inline-block; margin-bottom: 8px;">'
+        'South African Legal Archive & Law Reports</span>'
+        f'<h1 style="font-size: 24px; font-weight: 700; color: #1a202c; margin: 8px 0 4px 0;">{title_esc}</h1>'
+        '</div>'
+    )
 
-    # Render Case Law Section if parties exist
+    # Metadata Grid Table
+    html_parts.append(
+        '<div style="background-color: #f7fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 16px; margin-bottom: 24px;">'
+        '<table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">'
+        '<tbody>'
+        '<tr>'
+        '<td style="width: 25%; font-weight: 700; color: #4a5568; padding: 6px 0;">Jurisdiction / Forum:</td>'
+        f'<td style="color: #2d3748; padding: 6px 0;"><strong>{court_esc}</strong></td>'
+        '</tr>'
+        '<tr>'
+        '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Official Reference:</td>'
+        f'<td style="color: #2d3748; padding: 6px 0;"><code style="background: #edf2f7; padding: 2px 6px; border-radius: 3px; font-family: monospace;">{ref_number_esc}</code></td>'
+        '</tr>'
+        '<tr>'
+        '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Date Delivered / Published:</td>'
+        f'<td style="color: #2d3748; padding: 6px 0;">{doc_date_esc}</td>'
+        '</tr>'
+        '<tr>'
+        '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Classification:</td>'
+        f'<td style="color: #2d3748; padding: 6px 0;">{record_type_esc}</td>'
+        '</tr>'
+    )
+    if source_url:
+        source_esc = html.escape(source_url)
+        html_parts.append(
+            '<tr>'
+            '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Source Record:</td>'
+            f'<td style="padding: 6px 0;"><a href="{source_esc}" target="_blank" style="color: #2b6cb0; text-decoration: none;">View Original Document ↗</a></td>'
+            '</tr>'
+        )
+    html_parts.append('tbody></table></div>')
+
+    # Parties & Court Rulings (Case Law)
     applicant = data.get("applicant_plaintiff")
     respondent = data.get("respondent_defendant")
     judges = data.get("judges")
     result = data.get("result")
 
     if applicant or respondent or judges or result:
-        markdown_parts.append("## 👥 Parties & Court Rulings")
+        html_parts.append(
+            '<div style="margin-bottom: 24px;">'
+            '<h2 style="font-family: sans-serif; font-size: 16px; color: #2b6cb0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 12px;">⚖️ Parties & Court Bench</h2>'
+            '<ul style="list-style: none; padding-left: 0; font-size: 14px;">'
+        )
         if applicant:
-            markdown_parts.append(f"- **Applicant / Plaintiff**: {applicant}")
+            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Applicant / Plaintiff:</strong> {html.escape(str(applicant))}</li>')
         if respondent:
             resp_str = ", ".join(str(r) for r in respondent) if isinstance(respondent, list) else str(respondent)
-            markdown_parts.append(f"- **Respondent / Defendant**: {resp_str}")
+            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Respondent / Defendant:</strong> {html.escape(resp_str)}</li>')
         if judges:
             judges_str = ", ".join(str(j) for j in judges) if isinstance(judges, list) else str(judges)
-            markdown_parts.append(f"- **Presiding Judge(s)**: {judges_str}")
-        if result:
-            markdown_parts.append(f"- **Result / Order**: {result}")
-        markdown_parts.append("")
+            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Presiding Judge(s):</strong> {html.escape(judges_str)}</li>')
+        html_parts.append('</ul>')
 
-    # Render Publication Details for Gazettes / Journals
+        if result:
+            html_parts.append(
+                '<div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 12px 16px; margin-top: 12px; border-radius: 0 4px 4px 0;">'
+                '<strong style="font-family: sans-serif; font-size: 13px; color: #2b6cb0; text-transform: uppercase; display: block; margin-bottom: 4px;">Holding & Final Order:</strong>'
+                f'<span style="font-size: 14px; color: #2d3748;">{html.escape(str(result))}</span>'
+                '</div>'
+            )
+        html_parts.append('</div>')
+
+    # Publication Details (Gazettes / Journals)
     publisher = data.get("publisher") or data.get("journal_name")
     authors = data.get("author") or data.get("authors")
     subjects = data.get("subjects") or data.get("keywords") or data.get("ai_keywords")
 
     if publisher or authors or subjects:
-        markdown_parts.append("## 📚 Publication Details")
+        html_parts.append(
+            '<div style="margin-bottom: 24px;">'
+            '<h2 style="font-family: sans-serif; font-size: 16px; color: #2b6cb0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 12px;">📚 Publication & Notice Info</h2>'
+            '<ul style="list-style: none; padding-left: 0; font-size: 14px;">'
+        )
         if publisher:
-            markdown_parts.append(f"- **Publisher / Journal**: {publisher}")
+            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Publisher / Periodical:</strong> {html.escape(str(publisher))}</li>')
         if authors:
             auth_str = ", ".join(str(a) for a in authors) if isinstance(authors, list) else str(authors)
-            markdown_parts.append(f"- **Author(s)**: {auth_str}")
+            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Author(s):</strong> {html.escape(auth_str)}</li>')
         if subjects:
-            subj_str = ", ".join(str(s) for s in subjects) if isinstance(subjects, list) else str(subjects)
-            markdown_parts.append(f"- **Subjects / Keywords**: {subj_str}")
-        markdown_parts.append("")
+            subj_list = subjects if isinstance(subjects, list) else [str(subjects)]
+            badges_html = " ".join(
+                f'<span style="background: #edf2f7; color: #4a5568; font-family: sans-serif; font-size: 12px; padding: 3px 8px; border-radius: 12px; display: inline-block; margin-right: 4px;">{html.escape(str(s))}</span>'
+                for s in subj_list
+            )
+            html_parts.append(f'<li style="margin-top: 8px;"><strong>Subjects & Indexing:</strong><br><div style="margin-top: 6px;">{badges_html}</div></li>')
+        html_parts.append('</ul></div>')
 
-    # Render Summary
-    markdown_parts.extend([
-        "## 📝 Summary & Key Findings",
-        str(ai_summary),
-        "",
-        "## 🔍 Scrubbed Payload Data",
-        "```json",
-        json.dumps(data, indent=2, default=str),
-        "```",
-        ""
-    ])
+    # Formal Headnotes & Case Summary Block
+    html_parts.append(
+        '<div style="margin-bottom: 28px;">'
+        '<h2 style="font-family: sans-serif; font-size: 16px; color: #2b6cb0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 12px;">📖 Headnotes & Summary</h2>'
+        '<blockquote style="margin: 0; padding: 16px 20px; background-color: #fffaf0; border-left: 4px solid #dd6b20; font-style: italic; font-size: 14.5px; color: #2d3748; line-height: 1.7; border-radius: 0 4px 4px 0;">'
+        f'{ai_summary_esc}'
+        '</blockquote>'
+        '</div>'
+    )
 
-    return "\n".join(markdown_parts)
-
+    html_parts.append('</div>')
+    return "".join(html_parts)
 
 
 class Command(BaseCommand):
     help = (
         "Import scrubbed records from coeus.scrubbed_records into BookStack "
-        "under a single shelf ('South African Legal Data'), grouped into court books."
+        "as styled HTML pages under a single shelf ('South African Legal Data'), grouped into court books."
     )
 
     def add_arguments(self, parser):
@@ -199,6 +264,11 @@ class Command(BaseCommand):
             type=int,
             default=100,
             help="Maximum number of records to process per run (default: 100).",
+        )
+        parser.add_argument(
+            "--clear-first",
+            action="store_true",
+            help="If specified, clears all existing BookStack pages/books and tracking entries before importing.",
         )
         parser.add_argument(
             "--dry-run",
@@ -220,11 +290,30 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         batch_size = options["batch_size"]
+        clear_first = options["clear_first"]
         dry_run = options["dry_run"]
         shelf_name = options["shelf_name"]
         limit = options["limit"]
 
-        self.stdout.write(self.style.NOTICE(f"Starting BookStack import (shelf: '{shelf_name}', dry_run: {dry_run})..."))
+        self.stdout.write(self.style.NOTICE(f"Starting BookStack HTML import (shelf: '{shelf_name}', clear_first: {clear_first}, dry_run: {dry_run})..."))
+
+        if dry_run:
+            client = None
+        else:
+            client = BookStackClient()
+
+        if clear_first:
+            self.stdout.write(self.style.WARNING("Option --clear-first specified. Clearing local import records and BookStack tables..."))
+            if not dry_run and client:
+                try:
+                    client.clear_all_shelves_and_books()
+                    self.stdout.write(self.style.SUCCESS("Cleared BookStack shelves and books via API."))
+                except Exception as exc:
+                    self.stderr.write(self.style.ERROR(f"Error clearing BookStack: {exc}"))
+
+            with transaction.atomic():
+                deleted_count, _ = BookStackImport.objects.all().delete()
+                self.stdout.write(self.style.SUCCESS(f"Cleared {deleted_count} local BookStackImport tracking records."))
 
         # Query unimported scrubbed records using O(1) indexed LEFT JOIN check
         queryset = (
@@ -248,13 +337,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.NOTICE(f"Processing batch of {len(to_process)} records..."))
 
         if dry_run:
-            client = None
             shelf_id = 999
             book_cache: Dict[str, int] = {}
         else:
-            client = BookStackClient()
             try:
-                shelf_obj = client.get_or_create_shelf(shelf_name, "Shelf containing South African court judgments and legal records.")
+                shelf_obj = client.get_or_create_shelf(shelf_name, "Shelf containing South African court judgments, gazettes, and legal records.")
                 shelf_id = shelf_obj["id"]
                 self.stdout.write(self.style.SUCCESS(f"Connected to BookStack Shelf '{shelf_name}' (ID: {shelf_id})."))
             except BookStackClientError as exc:
@@ -270,12 +357,12 @@ class Command(BaseCommand):
                 data = record.data if isinstance(record.data, dict) else json.loads(record.data or "{}")
                 court_name = extract_court_name(record, data)
                 page_title = extract_page_title(record, data)
-                markdown_content = format_markdown_content(record, court_name, data)
+                html_content = format_html_content(record, court_name, data)
 
                 tags = [
                     {"name": "coeus_scrubbed_id", "value": str(record.id)},
                     {"name": "court", "value": court_name},
-                    {"name": "record_type", "value": record.extracted_record.record_type},
+                    {"name": "record_type", "value": record.extracted_record.record_type if record.extracted_record else "unknown"},
                 ]
                 case_no = data.get("case_number")
                 if case_no:
@@ -290,18 +377,18 @@ class Command(BaseCommand):
                     imported_count += 1
                     continue
 
-                # Get or create Book for court
+                # Get or create Book for court / source
                 if court_name not in book_cache:
                     book_obj = client.get_or_create_book(court_name, shelf_id)
                     book_cache[court_name] = book_obj["id"]
 
                 book_id = book_cache[court_name]
 
-                # Create Page in BookStack
+                # Create HTML Page in BookStack
                 page_obj = client.create_page(
                     book_id=book_id,
                     name=page_title,
-                    markdown=markdown_content,
+                    html=html_content,
                     tags=tags,
                 )
                 page_id = page_obj["id"]

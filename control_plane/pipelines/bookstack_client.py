@@ -7,7 +7,7 @@ Shelves, Books, and Pages.
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import requests
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class BookStackClientError(Exception):
 class BookStackClient:
     """
     REST API Client for BookStack.
-    Handles shelf, book, and page creation and indexing.
+    Handles shelf, book, and page creation, deletion, and indexing.
     """
 
     def __init__(
@@ -29,7 +29,7 @@ class BookStackClient:
         base_url: Optional[str] = None,
         token_id: Optional[str] = None,
         token_secret: Optional[str] = None,
-        timeout: int = 15,
+        timeout: int = 20,
     ) -> None:
         self.base_url = (base_url or os.getenv("BOOKSTACK_URL", "http://ohmbase:80")).rstrip("/")
         self.token_id = token_id or os.getenv("BOOKSTACK_TOKEN_ID", "")
@@ -58,6 +58,10 @@ class BookStackClient:
         try:
             response = self.session.request(method, url, timeout=self.timeout, **kwargs)
             response.raise_for_status()
+            if response.status_code == 24:  # 204 No Content for DELETE
+                return {}
+            if not response.content:
+                return {}
             return response.json()
         except requests.exceptions.RequestException as exc:
             err_msg = f"BookStack API error on {method} {url}: {exc}"
@@ -79,7 +83,6 @@ class BookStackClient:
         data = res.get("data", [])
         for shelf in data:
             if shelf.get("name") == name:
-                # Fetch full shelf details (includes books array)
                 return self._request("GET", f"shelves/{shelf['id']}")
 
         # Create shelf if not found
@@ -139,18 +142,25 @@ class BookStackClient:
         self,
         book_id: int,
         name: str,
-        markdown: str,
+        html: Optional[str] = None,
+        markdown: Optional[str] = None,
         tags: Optional[List[Dict[str, str]]] = None,
         chapter_id: Optional[int] = None,
     ) -> dict:
         """
-        Creates a new page within a book (or chapter).
+        Creates a new page within a book (or chapter), using HTML or Markdown.
         """
         payload: Dict[str, Any] = {
             "book_id": book_id,
             "name": name[:250],  # Ensure title length boundary
-            "markdown": markdown,
         }
+        if html:
+            payload["html"] = html
+        elif markdown:
+            payload["markdown"] = markdown
+        else:
+            raise ValueError("Either 'html' or 'markdown' content must be provided.")
+
         if chapter_id:
             payload["chapter_id"] = chapter_id
         if tags:
@@ -158,3 +168,48 @@ class BookStackClient:
 
         logger.info(f"Creating BookStack Page '{name}' in Book #{book_id}")
         return self._request("POST", "pages", json=payload)
+
+    def delete_shelf(self, shelf_id: int) -> None:
+        """Deletes a shelf by ID."""
+        logger.info(f"Deleting BookStack Shelf #{shelf_id}")
+        self._request("DELETE", f"shelves/{shelf_id}")
+
+    def delete_book(self, book_id: int) -> None:
+        """Deletes a book by ID."""
+        logger.info(f"Deleting BookStack Book #{book_id}")
+        self._request("DELETE", f"books/{book_id}")
+
+    def delete_page(self, page_id: int) -> None:
+        """Deletes a page by ID."""
+        logger.info(f"Deleting BookStack Page #{page_id}")
+        self._request("DELETE", f"pages/{page_id}")
+
+    def clear_all_shelves_and_books(self) -> None:
+        """
+        Deletes all existing shelves and books in BookStack via REST API.
+        """
+        logger.info("Clearing all shelves and books from BookStack...")
+        
+        # Delete shelves
+        try:
+            shelves_res = self._request("GET", "shelves", params={"count": 500})
+            shelves = shelves_res.get("data", [])
+            for shelf in shelves:
+                try:
+                    self.delete_shelf(shelf["id"])
+                except Exception as exc:
+                    logger.warning(f"Failed to delete shelf #{shelf['id']}: {exc}")
+        except Exception as exc:
+            logger.warning(f"Failed to list shelves for deletion: {exc}")
+
+        # Delete books
+        try:
+            books_res = self._request("GET", "books", params={"count": 500})
+            books = books_res.get("data", [])
+            for book in books:
+                try:
+                    self.delete_book(book["id"])
+                except Exception as exc:
+                    logger.warning(f"Failed to delete book #{book['id']}: {exc}")
+        except Exception as exc:
+            logger.warning(f"Failed to list books for deletion: {exc}")

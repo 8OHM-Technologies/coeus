@@ -11,7 +11,7 @@ from pipelines.bookstack_client import BookStackClient, BookStackClientError
 from pipelines.management.commands.import_to_bookstack import (
     extract_court_name,
     extract_page_title,
-    format_markdown_content,
+    format_html_content,
 )
 
 
@@ -51,7 +51,7 @@ class TestBookStackImport:
         assert "[CCT 123/25]" in title
         assert "Alpha Corp v Beta Ltd" in title
 
-    def test_format_markdown_content(self):
+    def test_format_html_content(self):
         entity = Entity.objects.create(name="High Court Test")
         target = Target.objects.create(entity=entity, target_name="Gauteng Local Division")
         extracted = ExtractedRecord.objects.create(
@@ -72,13 +72,13 @@ class TestBookStackImport:
             },
         )
 
-        md = format_markdown_content(scrubbed, "Gauteng Local Division", scrubbed.data)
-        assert "[1234/2026] John Doe v Minister of Justice" in md
-        assert "Gauteng Local Division" in md
-        assert "John Doe" in md
-        assert "Application granted with costs." in md
+        html_out = format_html_content(scrubbed, "Gauteng Local Division", scrubbed.data)
+        assert "[1234/2026] John Doe v Minister of Justice" in html_out
+        assert "Gauteng Local Division" in html_out
+        assert "John Doe" in html_out
+        assert "Application granted with costs." in html_out
 
-    def test_format_markdown_gazettes_and_journals(self):
+    def test_format_html_gazettes_and_journals(self):
         entity = Entity.objects.create(name="Gazette Source")
         target = Target.objects.create(entity=entity, target_name="Government Gazette")
         extracted = ExtractedRecord.objects.create(
@@ -99,11 +99,11 @@ class TestBookStackImport:
             },
         )
 
-        md = format_markdown_content(scrubbed, "Government Gazette", scrubbed.data)
-        assert "# National Environmental Management Act Notice" in md
-        assert "Government Printer" in md
-        assert "Notice regarding plastic waste management." in md
-        assert "Environment, Regulations" in md
+        html_out = format_html_content(scrubbed, "Government Gazette", scrubbed.data)
+        assert "National Environmental Management Act Notice" in html_out
+        assert "Government Printer" in html_out
+        assert "Notice regarding plastic waste management." in html_out
+        assert "Environment" in html_out
 
     @patch("pipelines.bookstack_client.requests.Session.request")
     def test_bookstack_client_shelf_and_book(self, mock_request):
@@ -154,5 +154,28 @@ class TestBookStackImport:
         )
 
         call_command("import_to_bookstack", "--dry-run")
-        # Ensure no BookStackImport DB object was created during dry-run
         assert BookStackImport.objects.filter(scrubbed_record=scrubbed).count() == 0
+
+    def test_import_command_clear_first(self):
+        entity = Entity.objects.create(name="Clear Test Entity")
+        target = Target.objects.create(entity=entity, target_name="Clear Test Target")
+        extracted = ExtractedRecord.objects.create(
+            target=target,
+            document_date="2026-06-01",
+            record_type="saflii_courts",
+            data={},
+        )
+        scrubbed = ScrubbedRecord.objects.create(
+            extracted_record=extracted,
+            data={"court": "Labour Court", "case_number": "J200/26"},
+        )
+        BookStackImport.objects.create(
+            scrubbed_record=scrubbed,
+            bookstack_page_id=99,
+            bookstack_book_id=88,
+            court_name="Labour Court",
+        )
+        assert BookStackImport.objects.count() == 1
+
+        call_command("import_to_bookstack", "--clear-first", "--dry-run")
+        assert BookStackImport.objects.count() == 0
