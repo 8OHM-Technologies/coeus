@@ -15,6 +15,7 @@ COPY requirements-app.txt .
 RUN pip install --no-cache-dir -r requirements-app.txt
 
 COPY control_plane/ ./control_plane/
+COPY extraction_workers/ ./extraction_workers/
 
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

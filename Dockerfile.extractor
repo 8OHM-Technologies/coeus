@@ -16,11 +16,8 @@ COPY requirements-extractor.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-extractor.txt
 
-# Copy only the files needed for extraction (not the full Playwright stack)
-COPY extraction_workers/llm_extractor.py /app/extraction_workers/llm_extractor.py
-COPY extraction_workers/schemas.py       /app/extraction_workers/schemas.py
-COPY extraction_workers/db.py            /app/extraction_workers/db.py
-COPY extraction_workers/utils/           /app/extraction_workers/utils/
+# Copy all extraction workers code
+COPY extraction_workers/ /app/extraction_workers/
 
 # Copy the Dagster Pipes entrypoint
 COPY dagster/pipes/extractor_entrypoint.py /app/main.py
