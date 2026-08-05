@@ -293,6 +293,12 @@ class Command(BaseCommand):
             default=None,
             help="Optional maximum number of unimported records to process.",
         )
+        parser.add_argument(
+            "--record-type",
+            type=str,
+            default=None,
+            help="Optional filter to import scrubbed records for a specific record_type (e.g. 'saflii_courts').",
+        )
 
     def handle(self, *args, **options):
         batch_size = options["batch_size"]
@@ -300,8 +306,9 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
         shelf_name = options["shelf_name"]
         limit = options["limit"]
+        record_type = options["record_type"]
 
-        self.stdout.write(self.style.NOTICE(f"Starting BookStack HTML import (shelf: '{shelf_name}', clear_first: {clear_first}, dry_run: {dry_run})..."))
+        self.stdout.write(self.style.NOTICE(f"Starting BookStack HTML import (shelf: '{shelf_name}', clear_first: {clear_first}, dry_run: {dry_run}, record_type: {record_type})..."))
 
         if dry_run:
             client = None
@@ -322,15 +329,16 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"Cleared {deleted_count} local BookStackImport tracking records."))
 
         # Query unimported scrubbed records using O(1) indexed LEFT JOIN check
-        queryset = (
-            ScrubbedRecord.objects.select_related(
-                "extracted_record",
-                "extracted_record__target",
-                "extracted_record__target__entity",
-            )
-            .filter(bookstack_import__isnull=True)
-            .order_by("created_at")
-        )
+        queryset = ScrubbedRecord.objects.select_related(
+            "extracted_record",
+            "extracted_record__target",
+            "extracted_record__target__entity",
+        ).filter(bookstack_import__isnull=True)
+
+        if record_type:
+            queryset = queryset.filter(extracted_record__record_type=record_type)
+
+        queryset = queryset.order_by("created_at")
 
         total_unimported = queryset.count()
         self.stdout.write(self.style.NOTICE(f"Found {total_unimported} unimported scrubbed records."))
