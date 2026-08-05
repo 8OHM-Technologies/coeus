@@ -29,17 +29,31 @@ def clean_env_var(value: str | None) -> str | None:
             break
     return value.strip().strip("'\"")
 
+import socket
+
+def resolve_db_host(host: str | None) -> str:
+    """Resolves DB host name, falling back to localhost if running outside Docker container."""
+    if not host:
+        return "localhost"
+    try:
+        socket.gethostbyname(host)
+        return host
+    except socket.gaierror:
+        return "localhost"
+
+
 async def get_db_connection() -> asyncpg.Connection:
     """
     Establishes an asynchronous connection to the PostgreSQL instance via the proxy.
     """
-    db_host = clean_env_var(os.environ.get("POSTGRES_HOST"))
+    raw_host = clean_env_var(os.environ.get("POSTGRES_HOST"))
+    db_host = resolve_db_host(raw_host)
     db_user = clean_env_var(os.environ.get("POSTGRES_USER"))
     db_pass = clean_env_var(os.environ.get("POSTGRES_PASSWORD"))
     db_name = clean_env_var(os.environ.get("POSTGRES_DB"))
     db_port = int(clean_env_var(os.environ.get("POSTGRES_PORT") or "5432"))
 
-    if not all([db_host, db_user, db_pass, db_name]):
+    if not all([raw_host, db_user, db_pass, db_name]):
         raise ValueError("Database environment variables are not fully set.")
 
     return await asyncpg.connect(
@@ -56,7 +70,8 @@ async def get_db_pool():
     """
     Creates an asynchronous connection pool to the PostgreSQL instance via the proxy.
     """
-    db_host = clean_env_var(os.environ.get("POSTGRES_HOST"))
+    raw_host = clean_env_var(os.environ.get("POSTGRES_HOST"))
+    db_host = resolve_db_host(raw_host)
     db_user = clean_env_var(os.environ.get("POSTGRES_USER"))
     db_pass = clean_env_var(os.environ.get("POSTGRES_PASSWORD"))
     db_name = clean_env_var(os.environ.get("POSTGRES_DB"))
@@ -70,3 +85,4 @@ async def get_db_pool():
         port=db_port,
         command_timeout=60.0,
     )
+
