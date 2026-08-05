@@ -366,12 +366,24 @@ class Command(BaseCommand):
                 html_content = format_html_content(record, court_name, data)
 
                 tags = [
-                    {"name": "coeus_scrubbed_id", "value": str(record.id)},
                     {"name": "court", "value": court_name},
                 ]
+                
+                court_location = data.get("court_location")
+                if court_location:
+                    tags.append({"name": "court_location", "value": str(court_location)})
+
                 case_no = data.get("case_number")
                 if case_no:
                     tags.append({"name": "case_number", "value": str(case_no)})
+
+                employer = data.get("employer")
+                if employer:
+                    tags.append({"name": "employer", "value": str(employer)})
+
+                reason_for_dismissal = data.get("reason_for_dismissal")
+                if reason_for_dismissal:
+                    tags.append({"name": "reason_for_dismissal", "value": str(reason_for_dismissal)})
 
                 if dry_run:
                     self.stdout.write(
