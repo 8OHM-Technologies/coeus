@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import io
 import logging
 import os
 import queue
@@ -7,12 +8,14 @@ import random
 import re
 import shutil
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
 from datetime import datetime, date as dt_date, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+import pymupdf
 from bs4 import BeautifulSoup
 from seleniumbase import SB
 
@@ -733,7 +736,9 @@ class SafliiScraper(BaseScraper):
 
                                 if len(parts) >= 2:
                                     parent_dir, filename = parts[-2], parts[-1]
-                                    if parent_dir.isdigit() and len(parent_dir) == 4 and filename.endswith(".html"):
+                                    if parent_dir.isdigit() and len(parent_dir) == 4 and (
+                                        filename.endswith(".html") or filename.endswith(".pdf")
+                                    ):
                                         if not ("toc-" in filename or filename == "index.html"):
                                             if abs_url not in self.existing_urls:
                                                 case_no = extract_case_number_from_text(a_tag.get_text(strip=True))
@@ -930,17 +935,76 @@ class SafliiScraper(BaseScraper):
                                     elif state == "NAVIGATION_FAILED":
                                         raise Exception(f"Browser stuck on previous page, failed to navigate to target URL '{case_url}'")
 
-                                    soup = BeautifulSoup(sb.get_page_source(), "lxml")
-                                    center_div = (
-                                        soup.find("div", id="center")
-                                        or soup.find("div", class_="judgment")
-                                        or soup.find("article")
-                                        or soup.find("body")
-                                    )
-                                    center_html = str(center_div) if center_div else ""
+                                    is_pdf = case_url.lower().endswith(".pdf")
 
-                                    h2_el = center_div.find("h2") if center_div else None
-                                    title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title()
+                                    if is_pdf:
+                                        # --- PDF document: download via browser session and extract text with PyMuPDF ---
+                                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] PDF detected, downloading via browser session...")
+                                        try:
+                                            # Use CDP to download the PDF bytes through the browser's authenticated session
+                                            # (inherits proxy, cookies, and Cloudflare clearance)
+                                            pdf_response = sb.execute_cdp_cmd(
+                                                "Page.printToPDF", {}
+                                            )
+                                            if pdf_response and pdf_response.get("data"):
+                                                import base64
+                                                pdf_bytes = base64.b64decode(pdf_response["data"])
+                                            else:
+                                                # Fallback: fetch the raw PDF bytes via CDP Network.getResponseBody
+                                                # or via a direct download through the browser's requests session
+                                                pdf_bytes = sb.download_file(case_url)
+                                        except Exception:
+                                            # Final fallback: use JavaScript fetch inside the browser context
+                                            # to download the PDF (inherits session cookies/headers)
+                                            js_script = """
+                                            var resp = await fetch(arguments[0]);
+                                            var buf = await resp.arrayBuffer();
+                                            var bytes = new Uint8Array(buf);
+                                            var binary = '';
+                                            for (var i = 0; i < bytes.byteLength; i++) {
+                                                binary += String.fromCharCode(bytes[i]);
+                                            }
+                                            return btoa(binary);
+                                            """
+                                            try:
+                                                b64_data = sb.execute_async_script(js_script, case_url)
+                                                import base64
+                                                pdf_bytes = base64.b64decode(b64_data)
+                                            except Exception as pdf_dl_err:
+                                                raise Exception(f"Failed to download PDF via browser session: {pdf_dl_err}")
+
+                                        # Extract text from PDF bytes using PyMuPDF
+                                        pdf_text = ""
+                                        pdf_title = ""
+                                        try:
+                                            doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+                                            pdf_title = doc.metadata.get("title", "") or ""
+                                            pages_text = []
+                                            for page in doc:
+                                                pages_text.append(page.get_text())
+                                            pdf_text = "\n".join(pages_text)
+                                            doc.close()
+                                        except Exception as pdf_err:
+                                            logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] PyMuPDF extraction failed: {pdf_err}")
+
+                                        title = pdf_title or sb.get_page_title() or c_id
+                                        center_html = ""  # No HTML content for PDFs
+                                        full_text = pdf_text
+
+                                    else:
+                                        # --- HTML document: parse with BeautifulSoup ---
+                                        soup = BeautifulSoup(sb.get_page_source(), "lxml")
+                                        center_div = (
+                                            soup.find("div", id="center")
+                                            or soup.find("div", class_="judgment")
+                                            or soup.find("article")
+                                            or soup.find("body")
+                                        )
+                                        center_html = str(center_div) if center_div else ""
+
+                                        h2_el = center_div.find("h2") if center_div else None
+                                        title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title()
+                                        full_text = center_div.get_text(separator="\n", strip=True) if center_div else ""
 
                                     if not case_no:
                                         case_no = extract_case_number_from_text(title)
@@ -957,8 +1021,9 @@ class SafliiScraper(BaseScraper):
                                         "title": title,
                                         "url": case_url,
                                         "case_number": case_no,
+                                        "document_type": "pdf" if is_pdf else "html",
                                         "center_content": center_html,
-                                        "full_text": center_div.get_text(separator="\n", strip=True) if center_div else "",
+                                        "full_text": full_text,
                                         "scraped_at": datetime.now(timezone.utc).isoformat(),
                                         "worker_id": worker_id,
                                     }

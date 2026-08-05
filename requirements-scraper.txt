@@ -8,6 +8,7 @@ transformers>=4.35.0
 Pillow>=9.0.0
 beautifulsoup4>=4.14.3
 pdfplumber>=0.11
+PyMuPDF>=1.25.0
 google-api-python-client>=2.197.0
 google-auth>=2.55.0
 dagster-pipes

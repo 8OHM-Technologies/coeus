@@ -113,3 +113,30 @@ class ScrubbedRecord(models.Model):
 
     def __str__(self) -> str:
         return f"Scrubbed | {self.extracted_record.id}"
+
+
+class BookStackImport(models.Model):
+    """
+    Tracks which ScrubbedRecords have been successfully imported into BookStack.
+    Maps to the 'bookstack_imports' table.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    scrubbed_record = models.OneToOneField(
+        ScrubbedRecord,
+        on_delete=models.CASCADE,
+        related_name="bookstack_import",
+    )
+    bookstack_page_id = models.IntegerField(help_text="ID of the created BookStack page.")
+    bookstack_book_id = models.IntegerField(help_text="ID of the destination BookStack book.")
+    court_name = models.CharField(max_length=255, db_index=True)
+    imported_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        managed = True
+        db_table = "bookstack_imports"
+        verbose_name_plural = "BookStack Imports"
+
+    def __str__(self) -> str:
+        return f"BookStack Page {self.bookstack_page_id} | Scrubbed {self.scrubbed_record.id}"
+

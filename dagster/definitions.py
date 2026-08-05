@@ -713,6 +713,27 @@ def sabinet_sync_sensor(context: dg.SensorEvaluationContext):
         )
 
 
+@dg.asset(
+    name="bookstack_imported_pages",
+    partitions_def=pipeline_partitions,
+    deps=[scrubbed_extracted_records],
+)
+def bookstack_imported_pages(
+    context: dg.AssetExecutionContext,
+) -> dg.MaterializeResult:
+    """Imports new scrubbed records into BookStack under South African Legal Data shelf."""
+    import subprocess
+    cmd = ["python", "control_plane/manage.py", "import_to_bookstack", "--batch-size", "200"]
+    context.log.info(f"Executing BookStack import: {' '.join(cmd)}")
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.stdout:
+        context.log.info(res.stdout)
+    if res.returncode != 0:
+        context.log.error(res.stderr)
+        raise RuntimeError(f"BookStack import failed (exit code {res.returncode}): {res.stderr}")
+    return dg.MaterializeResult(metadata={"status": "success"})
+
+
 @dg.asset_sensor(
     name="scrubbed_sensor",
     asset_key=dg.AssetKey("scrubbed_extracted_records"),
@@ -723,16 +744,20 @@ def scrubbed_sensor(
     asset_event: dg.EventLogEntry,
 ):
     partition_key = asset_event.dagster_event.partition
-    
-    # Check if this partition is Sabinet
-    blueprint = get_blueprint_for_partition(partition_key)
-    if blueprint and blueprint.get("scraper_type") == "sabinet":
-        context.log.info(
-            f"scrubbed_extracted_records materialized for partition '{partition_key}'. "
-            f"Placeholder: This will trigger the downstream run (yet to be built)."
-        )
-        # TODO: Trigger the downstream job when it is built
-        # return dg.RunRequest(...)
+    context.log.info(
+        f"scrubbed_extracted_records materialized for partition '{partition_key}'. "
+        f"Triggering BookStack import job."
+    )
+    return dg.RunRequest(
+        run_key=f"bookstack_import_{partition_key}_{asset_event.timestamp}",
+        partition_key=partition_key,
+    )
+
+
+bookstack_import_job = dg.define_asset_job(
+    name="bookstack_import_job",
+    selection=dg.AssetSelection.assets("bookstack_imported_pages"),
+)
 
 
 defs = dg.Definitions(
@@ -740,12 +765,14 @@ defs = dg.Definitions(
         fetch_github_repo_info,
         raw_scraped_pages,
         extracted_structured_data,
-        scrubbed_extracted_records
+        scrubbed_extracted_records,
+        bookstack_imported_pages
     ],
     jobs=[
         downstream_extraction_scrubbing_job,
         sabinet_scrubbing_job,
-        general_scrubbing_job
+        general_scrubbing_job,
+        bookstack_import_job
     ],
     sensors=[
         coeus_blueprint_sensor,
