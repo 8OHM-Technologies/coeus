@@ -95,12 +95,22 @@ def format_html_content(
     data: Dict[str, Any],
 ) -> str:
     """
-    Format scrubbed record JSON payload into formal HTML for BookStack,
-    wrapped in .page-content and using BookStack native callout classes (.callout.info, .callout.success, .callout.warning).
+    Format scrubbed record JSON payload into BookStack HTML.
+    - Case Law: Rendered as formal legal report (Court Location, Reason for Dismissal, Bench, Holding, Subjects, and remaining fields).
+    - Gazettes / Journals / Notices: Rendered as clean, readable text documents.
+    - No source URL links.
     """
     extracted = scrubbed_record.extracted_record
     raw_title = extract_page_title(scrubbed_record, data)
     title_esc = html.escape(raw_title)
+
+    record_type_str = (extracted.record_type if extracted and extracted.record_type else "")
+    is_case_law = bool(
+        data.get("applicant_plaintiff")
+        or data.get("case_number")
+        or "saflii" in record_type_str.lower()
+        or "court" in record_type_str.lower()
+    )
 
     doc_date = (
         data.get("judgment_date")
@@ -110,102 +120,200 @@ def format_html_content(
         or (str(extracted.document_date) if extracted and extracted.document_date else "N/A")
     )
     doc_date_esc = html.escape(str(doc_date))
-
-    record_type_str = (extracted.record_type.replace("_", " ").title() if extracted and extracted.record_type else "Legal Record")
-    record_type_esc = html.escape(record_type_str)
-
-    source_url = extracted.source_url if extracted and extracted.source_url else None
-    ref_number = (
-        data.get("case_number")
-        or data.get("gazette_number")
-        or data.get("notice_number")
-        or data.get("volume")
-        or "N/A"
-    )
-    ref_number_esc = html.escape(str(ref_number))
+    rec_type_display = record_type_str.replace("_", " ").title() if record_type_str else "Legal Document"
+    rec_type_esc = html.escape(rec_type_display)
     court_esc = html.escape(court_name)
 
-    ai_summary = (
-        data.get("ai_summary")
-        or data.get("summary")
-        or data.get("abstract")
-        or "No formal headnote or summary recorded."
-    )
-    ai_summary_esc = html.escape(str(ai_summary)).replace("\n", "<br>")
-
-    # Build HTML using BookStack native .page-content wrapper
     html_parts = ['<div class="page-content">']
 
-    # Document Header Banner
+    # -------------------------------------------------------------------------
+    # PATH A: Non-Case Documents (Gazettes, Journals, Notices, Court Rolls)
+    # -------------------------------------------------------------------------
+    if not is_case_law:
+        html_parts.append(
+            f'<h1 style="border-bottom: 2px solid var(--color-primary, #2b6cb0); padding-bottom: 8px;">{title_esc}</h1>'
+        )
+
+        ref_no = (
+            data.get("gazette_number")
+            or data.get("notice_number")
+            or data.get("volume")
+            or data.get("issue")
+        )
+
+        publisher = data.get("publisher") or data.get("journal_name")
+
+        html_parts.append('<div class="callout info"><p>')
+        if publisher:
+            html_parts.append(f'<strong>Publisher / Journal:</strong> {html.escape(str(publisher))} &nbsp;|&nbsp; ')
+        else:
+            html_parts.append(f'<strong>Source / Forum:</strong> {court_esc} &nbsp;|&nbsp; ')
+
+        if ref_no:
+            html_parts.append(f'<strong>Reference No:</strong> <code>{html.escape(str(ref_no))}</code> &nbsp;|&nbsp; ')
+        html_parts.append(f'<strong>Date:</strong> {doc_date_esc} &nbsp;|&nbsp; <strong>Type:</strong> {rec_type_esc}')
+        html_parts.append('</p></div>')
+
+        # Document Text / Content
+        body_text = (
+            data.get("full_text")
+            or data.get("text")
+            or data.get("content")
+            or data.get("raw_text")
+            or data.get("ai_summary")
+            or data.get("summary")
+        )
+        if body_text:
+            text_formatted = html.escape(str(body_text)).replace("\n\n", "</p><p>").replace("\n", "<br>")
+            html_parts.append(f'<div style="font-size: 15px; line-height: 1.7; margin-top: 16px;"><p>{text_formatted}</p></div>')
+
+        # Additional metadata bullet points
+        handled_keys = {"title", "name", "heading", "gazette_number", "notice_number", "volume", "issue", "date", "publication_date", "publisher", "journal_name", "full_text", "text", "content", "raw_text", "summary", "ai_summary", "metadata"}
+        extra_items = {k: v for k, v in data.items() if k not in handled_keys and v}
+
+        if extra_items:
+            html_parts.append('<h3>Additional Publication Metadata</h3><ul>')
+            for k, v in extra_items.items():
+                k_label = k.replace("_", " ").title()
+                if isinstance(v, list):
+                    v_str = ", ".join(str(item) for item in v)
+                else:
+                    v_str = str(v)
+                html_parts.append(f'<li><strong>{html.escape(k_label)}:</strong> {html.escape(v_str)}</li>')
+            html_parts.append('</ul>')
+
+        html_parts.append('</div>')
+        return "".join(html_parts)
+
+    # -------------------------------------------------------------------------
+    # PATH B: Case Law Records
+    # -------------------------------------------------------------------------
     html_parts.append(
         f'<h1 style="border-bottom: 2px solid var(--color-primary, #2b6cb0); padding-bottom: 8px;">{title_esc}</h1>'
     )
 
-    # Metadata Callout (Info)
-    html_parts.append('<div class="callout info">')
-    html_parts.append(
-        f'<p><strong>Jurisdiction / Forum:</strong> {court_esc} &nbsp;|&nbsp; '
-        f'<strong>Reference:</strong> <code>{ref_number_esc}</code> &nbsp;|&nbsp; '
-        f'<strong>Date:</strong> {doc_date_esc} &nbsp;|&nbsp; '
-        f'<strong>Type:</strong> {record_type_esc}'
-    )
-    if source_url:
-        source_esc = html.escape(source_url)
-        html_parts.append(f' &nbsp;|&nbsp; <a href="{source_esc}" target="_blank">Source Document ↗</a>')
+    case_no = data.get("case_number") or data.get("metadata", {}).get("case_number") or "N/A"
+    case_no_esc = html.escape(str(case_no))
+    court_location = data.get("court_location") or data.get("location")
+    reportable = data.get("reportable")
+
+    # Metadata Callout Box
+    html_parts.append('<div class="callout info"><p>')
+    html_parts.append(f'<strong>Court:</strong> {court_esc}')
+    if court_location:
+        html_parts.append(f' ({html.escape(str(court_location))})')
+    html_parts.append(f' &nbsp;|&nbsp; <strong>Case Ref:</strong> <code>{case_no_esc}</code> &nbsp;|&nbsp; <strong>Date:</strong> {doc_date_esc}')
+    if reportable is not None:
+        rep_str = "Reportable" if reportable else "Not Reportable"
+        html_parts.append(f' &nbsp;|&nbsp; <strong>Status:</strong> {rep_str}')
     html_parts.append('</p></div>')
 
-    # Parties & Court Rulings (Case Law)
+    # Parties & Court Bench
     applicant = data.get("applicant_plaintiff")
     respondent = data.get("respondent_defendant")
     judges = data.get("judges")
-    result = data.get("result")
 
-    if applicant or respondent or judges or result:
-        html_parts.append('<h2>⚖️ Parties & Court Bench</h2><ul>')
-        if applicant:
-            html_parts.append(f'<li><strong>Applicant / Plaintiff:</strong> {html.escape(str(applicant))}</li>')
-        if respondent:
-            resp_str = ", ".join(str(r) for r in respondent) if isinstance(respondent, list) else str(respondent)
-            html_parts.append(f'<li><strong>Respondent / Defendant:</strong> {html.escape(resp_str)}</li>')
-        if judges:
-            judges_str = ", ".join(str(j) for j in judges) if isinstance(judges, list) else str(judges)
-            html_parts.append(f'<li><strong>Presiding Judge(s):</strong> {html.escape(judges_str)}</li>')
-        html_parts.append('</ul>')
+    html_parts.append('<h2>⚖️ Parties & Court Bench</h2><ul>')
+    if applicant:
+        html_parts.append(f'<li><strong>Applicant / Plaintiff:</strong> {html.escape(str(applicant))}</li>')
+    if respondent:
+        resp_str = ", ".join(str(r) for r in respondent) if isinstance(respondent, list) else str(respondent)
+        html_parts.append(f'<li><strong>Respondent / Defendant:</strong> {html.escape(resp_str)}</li>')
+    if judges:
+        judges_str = ", ".join(str(j) for j in judges) if isinstance(judges, list) else str(judges)
+        html_parts.append(f'<li><strong>Presiding Judge(s):</strong> {html.escape(judges_str)}</li>')
+    if court_location:
+        html_parts.append(f'<li><strong>Court Location / City:</strong> {html.escape(str(court_location))}</li>')
+    html_parts.append('</ul>')
 
-        if result:
-            html_parts.append(
-                '<div class="callout success">'
-                f'<p><strong>Holding & Final Order:</strong> {html.escape(str(result))}</p>'
-                '</div>'
-            )
+    # Holding & Final Order
+    result = data.get("result") or data.get("order") or data.get("holding")
+    if result:
+        html_parts.append(
+            '<div class="callout success">'
+            f'<p><strong>Holding & Final Order:</strong> {html.escape(str(result))}</p>'
+            '</div>'
+        )
 
-    # Publication Details (Gazettes / Journals)
-    publisher = data.get("publisher") or data.get("journal_name")
-    authors = data.get("author") or data.get("authors")
-    subjects = data.get("subjects") or data.get("keywords") or data.get("ai_keywords")
-
-    if publisher or authors or subjects:
-        html_parts.append('<h2>📚 Publication Details</h2><ul>')
-        if publisher:
-            html_parts.append(f'<li><strong>Publisher / Periodical:</strong> {html.escape(str(publisher))}</li>')
-        if authors:
-            auth_str = ", ".join(str(a) for a in authors) if isinstance(authors, list) else str(authors)
-            html_parts.append(f'<li><strong>Author(s):</strong> {html.escape(auth_str)}</li>')
-        if subjects:
-            subj_str = ", ".join(str(s) for s in subjects) if isinstance(subjects, list) else str(subjects)
-            html_parts.append(f'<li><strong>Subjects / Keywords:</strong> {html.escape(subj_str)}</li>')
-        html_parts.append('</ul>')
-
-    # Headnotes & Summary Callout (Warning / Highlight)
-    html_parts.append(
-        '<h2>📖 Headnotes & Summary</h2>'
-        '<div class="callout warning">'
-        f'<p>{ai_summary_esc}</p>'
-        '</div>'
+    # Reason for Dismissal (when present)
+    reason_dismissal = (
+        data.get("reason_for_dismissal")
+        or data.get("dismissal_reason")
+        or data.get("reasons_for_dismissal")
     )
+    if reason_dismissal:
+        html_parts.append(
+            '<div class="callout danger">'
+            f'<p><strong>Reason for Dismissal:</strong> {html.escape(str(reason_dismissal))}</p>'
+            '</div>'
+        )
+
+    # Headnotes & Summary
+    ai_summary = (
+        data.get("ai_summary")
+        or data.get("summary")
+        or data.get("headnotes")
+        or data.get("abstract")
+    )
+    if ai_summary:
+        ai_summary_esc = html.escape(str(ai_summary)).replace("\n", "<br>")
+        html_parts.append(
+            '<h2>📖 Headnotes & Summary</h2>'
+            '<div class="callout warning">'
+            f'<p>{ai_summary_esc}</p>'
+            '</div>'
+        )
+
+    # Catchwords & Subjects
+    subjects = (
+        data.get("subjects")
+        or data.get("keywords")
+        or data.get("ai_keywords")
+        or data.get("catchwords")
+    )
+    if subjects:
+        subj_str = ", ".join(str(s) for s in subjects) if isinstance(subjects, list) else str(subjects)
+        html_parts.append(f'<h2>🏷️ Legal Classification & Subjects</h2><p>{html.escape(subj_str)}</p>')
+
+    # Full Judgment Text (when present)
+    judgment_text = (
+        data.get("full_text")
+        or data.get("text")
+        or data.get("content")
+        or data.get("judgment_text")
+    )
+    if judgment_text:
+        text_formatted = html.escape(str(judgment_text)).replace("\n\n", "</p><p>").replace("\n", "<br>")
+        html_parts.append('<h2>📄 Full Judgment / Record Text</h2>')
+        html_parts.append(f'<div style="font-size: 14.5px; line-height: 1.7;"><p>{text_formatted}</p></div>')
+
+    # All Remaining Payload Fields (ensure no data is omitted)
+    handled_keys = {
+        "applicant_plaintiff", "respondent_defendant", "judges", "result", "order", "holding",
+        "reason_for_dismissal", "dismissal_reason", "reasons_for_dismissal",
+        "court_location", "location", "case_number", "judgment_date", "date", "publication_date",
+        "court", "record_type", "reportable", "summary", "ai_summary", "headnotes", "abstract",
+        "subjects", "keywords", "ai_keywords", "catchwords",
+        "full_text", "text", "content", "judgment_text", "metadata"
+    }
+    remaining_fields = {k: v for k, v in data.items() if k not in handled_keys and v is not None and v != ""}
+
+    if remaining_fields:
+        html_parts.append('<h2>📋 Additional Case Information</h2><ul>')
+        for k, v in remaining_fields.items():
+            k_label = k.replace("_", " ").title()
+            if isinstance(v, list):
+                v_str = ", ".join(str(item) for item in v)
+            elif isinstance(v, dict):
+                v_str = json.dumps(v, indent=2)
+            else:
+                v_str = str(v)
+            html_parts.append(f'<li><strong>{html.escape(k_label)}:</strong> {html.escape(v_str)}</li>')
+        html_parts.append('</ul>')
 
     html_parts.append('</div>')
     return "".join(html_parts)
+
 
 
 
