@@ -9,4 +9,6 @@ django-tomselect>=2026.6.2
 gunicorn==22.0.0
 whitenoise>=6.7.0
 spacy
+click
+dotenv
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
