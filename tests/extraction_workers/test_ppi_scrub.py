@@ -121,3 +121,45 @@ def test_no_scrub_employer_name_field():
     assert "David Miller" not in scrubbed_data["summary"]
     assert "[REDACTED]" in scrubbed_data["summary"]
     assert "Bob Smith Contracting" in scrubbed_data["summary"]
+
+
+def test_ccma_sabinet_record_scrub():
+    scrubber = Scrub()
+
+    data = {
+        "court": "CCMA",
+        "forum": "CCMA",
+        "title": "Pretorius v Southern Life Association, NW75",
+        "employee": "Pretorius",
+        "employer": "Southern Life Association",
+        "award_date": "1997-03-01",
+        "detail_url": "https://discover.sabinet.co.za/document/1609229",
+        "hearing_end": "1997-03-03",
+        "award_number": "NW75",
+        "detail_title": "Pretorius v Southern Life Association, NW75",
+        "date_modified": "2019-10-28",
+        "document_type": "CCMA Bargaining Council Awards",
+        "hearing_start": "1997-03-03",
+        "court_location": "North West [Mafikeng]",
+        "reason_for_dismissal": "Retrenchment Disputes"
+    }
+
+    scrubbed = scrubber.scrub_dict(data)
+
+    # 1. Employee field must be redacted
+    assert scrubbed["employee"] == "[REDACTED]"
+
+    # 2. Employee name in titles MUST be redacted
+    assert scrubbed["title"] == "[REDACTED] v Southern Life Association, NW75"
+    assert scrubbed["detail_title"] == "[REDACTED] v Southern Life Association, NW75"
+
+    # 3. Employer must NOT be redacted
+    assert scrubbed["employer"] == "Southern Life Association"
+
+    # 4. Court metadata & Award number must NOT be redacted
+    assert scrubbed["court"] == "CCMA"
+    assert scrubbed["award_number"] == "NW75"
+    assert scrubbed["court_location"] == "North West [Mafikeng]"
+
+    # 5. Legal dispute subject must NOT be redacted
+    assert scrubbed["reason_for_dismissal"] == "Retrenchment Disputes"
