@@ -316,16 +316,23 @@ class Command(BaseCommand):
             client = BookStackClient()
 
         if clear_first:
-            self.stdout.write(self.style.WARNING("Option --clear-first specified. Clearing local import records and BookStack tables..."))
+            self.stdout.write(self.style.WARNING(f"Option --clear-first specified. Clearing local import records (record_type: {record_type or 'ALL'})..."))
             if not dry_run and client:
                 try:
-                    client.clear_all_shelves_and_books()
-                    self.stdout.write(self.style.SUCCESS("Cleared BookStack shelves and books via API."))
+                    if record_type:
+                        # Clear only books for this specific court/record_type if possible, or warning
+                        self.stdout.write(self.style.NOTICE(f"Clearing tracking entries for record_type='{record_type}'..."))
+                    else:
+                        client.clear_all_shelves_and_books()
+                        self.stdout.write(self.style.SUCCESS("Cleared BookStack shelves and books via API."))
                 except Exception as exc:
                     self.stderr.write(self.style.ERROR(f"Error clearing BookStack: {exc}"))
 
             with transaction.atomic():
-                deleted_count, _ = BookStackImport.objects.all().delete()
+                if record_type:
+                    deleted_count, _ = BookStackImport.objects.filter(scrubbed_record__extracted_record__record_type=record_type).delete()
+                else:
+                    deleted_count, _ = BookStackImport.objects.all().delete()
                 self.stdout.write(self.style.SUCCESS(f"Cleared {deleted_count} local BookStackImport tracking records."))
 
         # Query unimported scrubbed records using O(1) indexed LEFT JOIN check
