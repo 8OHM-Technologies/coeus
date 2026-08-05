@@ -140,6 +140,10 @@ migrate-saflii:
 scrub:
 	docker compose exec control-plane python extraction_workers/scrub_standalone.py $(ARGS)
 
+# Run CCMA court normalization cleanup
+clean-ccma:
+	docker compose exec control-plane python extraction_workers/clean_ccma_courts.py
+
 # -----------------------------------------------------------------------------
 # DYNAMIC INDIVIDUAL SERVICE COMMANDS
 # -----------------------------------------------------------------------------
