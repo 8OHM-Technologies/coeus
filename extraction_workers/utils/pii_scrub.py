@@ -4,8 +4,27 @@ import xml.etree.ElementTree as ET
 from typing import Union
 import spacy
 
-# Load Spacy NLP model
-nlp = spacy.load("en_core_web_trf")
+# Load Spacy NLP model with fallback support
+def _load_spacy_model():
+    for model_name in ["en_core_web_trf", "en_core_web_sm", "en_core_web_md"]:
+        try:
+            return spacy.load(model_name)
+        except Exception:
+            continue
+    import subprocess
+    import sys
+    try:
+        subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=True)
+        return spacy.load("en_core_web_sm")
+    except Exception as exc:
+        raise OSError(
+            "Could not load or download any spaCy model (en_core_web_trf, en_core_web_sm). "
+            "Please run: python -m spacy download en_core_web_sm"
+        ) from exc
+
+
+nlp = _load_spacy_model()
+
 
 
 class Scrub:
