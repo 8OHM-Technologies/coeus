@@ -2,46 +2,31 @@ import re
 import json
 import xml.etree.ElementTree as ET
 from typing import Union
-import spacy
-import scrubadub
-import scrubadub_spacy
+
+try:
+    from gliner import GLiNER
+except ImportError:
+    GLiNER = None
 
 
-def _load_spacy_model():
-    """Loads a spaCy model with fallback options."""
-    for model_name in ["en_core_web_trf", "en_core_web_sm", "en_core_web_md"]:
-        try:
-            spacy.load(model_name)
-            return model_name
-        except Exception:
-            continue
-    import subprocess
-    import sys
+def _load_gliner_model(model_name: str = "knowledgator/gliner-stream-pii-v1.0"):
+    """Loads GLiNER model for PII entity detection."""
+    if GLiNER is None:
+        return None
     try:
-        subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=True)
-        return "en_core_web_sm"
-    except Exception as exc:
-        raise OSError(
-            "Could not load or download any spaCy model (en_core_web_trf, en_core_web_sm). "
-            "Please run: python -m spacy download en_core_web_sm"
-        ) from exc
-
-
-SPACY_MODEL_NAME = _load_spacy_model()
+        return GLiNER.from_pretrained(model_name)
+    except Exception:
+        try:
+            return GLiNER.from_pretrained("urchade/gliner_base")
+        except Exception:
+            return None
 
 
 class Scrub:
-    def __init__(self):
-        self.scrubber = scrubadub.Scrubber()
-        # Remove default name detector if present to ensure scrubadub_spacy NER is used
-        if "name" in self.scrubber._detectors:
-            self.scrubber.remove_detector("name")
+    _global_model = None
 
-        self.spacy_detector = scrubadub_spacy.detectors.SpacyEntityDetector(
-            model=SPACY_MODEL_NAME,
-            named_entities=["PERSON", "ORG"],
-        )
-        self.scrubber.add_detector(self.spacy_detector)
+    def __init__(self, model_name: str = "knowledgator/gliner-stream-pii-v1.0"):
+        self.model_name = model_name
 
         self._judicial_prefixes = re.compile(
             r"\b(?:Judge|Justice|Magistrate|Acting|Commissioner|Arbitrator|Chief\s+Justice|Judge\s+President|Deputy\s+Judge\s+President|Coram|Before)\s*$",
@@ -63,6 +48,12 @@ class Scrub:
             "vs", "versus", "soc", "npc", "npo", "sars", "ccma", "court", "courts", "division", "high court", "supreme court", "labour court",
             "contracting", "hardware", "plumbing", "contractors", "services", "industries", "holdings", "group", "enterprises", "ventures", "partners", "trust", "bank"
         ]
+
+    @property
+    def model(self):
+        if Scrub._global_model is None:
+            Scrub._global_model = _load_gliner_model(self.model_name)
+        return Scrub._global_model
 
     # ------------------------------------------------------------------
     # Field Key Classifications
@@ -216,7 +207,7 @@ class Scrub:
         return parts
 
     # ------------------------------------------------------------------
-    # Public scrub interface & scrubadub-spacy NLP
+    # Public scrub interface & GLiNER PII detection
     # ------------------------------------------------------------------
 
     def scrub_text(
@@ -225,6 +216,7 @@ class Scrub:
         person_names: set[str] | None = None,
         judge_names: set[str] | None = None,
         org_names: set[str] | None = None,
+        threshold: float = 0.4,
     ) -> str:
         if not text or not text.strip():
             return text
@@ -233,61 +225,75 @@ class Scrub:
         judge_names = (judge_names or set()) | self._extract_judge_names(text)
         org_names = org_names or set()
 
-        # Step 1: Iterate filths detected by scrubadub with scrubadub_spacy
-        all_filths = list(self.scrubber.iter_filth(text))
+        redacted_text = text
 
-        # Collect organization character spans from spaCy NER
-        org_spans = [(f.beg, f.end) for f in all_filths if f.type == "organization"]
+        if self.model is not None:
+            pii_labels = ["name", "person", "organization", "company"]
+            try:
+                entities = self.model.predict_entities(text, pii_labels, threshold=threshold)
+            except Exception:
+                entities = []
 
-        filtered_filths = []
-        for f in all_filths:
-            # Rule 2: Company/Union/Organisation names should NEVER be redacted
-            if f.type == "organization":
-                continue
+            # Extract organization entity spans
+            org_spans = [
+                (e["start"], e["end"])
+                for e in entities
+                if e.get("label", "").lower() in ("organization", "company")
+            ]
 
-            if f.type in ("name", "person", "unknown"):
-                filth_text = f.text.strip()
-
-                # Guard: skip single characters or numbers
-                if len(filth_text) <= 1 or re.search(r"^[\d/\\]+$", filth_text):
-                    continue
-
-                # Rule 1: Judge/Arbitrator names should NEVER be redacted
-                preceding_text = text[max(0, f.beg - 35) : f.beg]
-                if self._judicial_prefixes.search(preceding_text):
-                    continue
-
-                following_text = text[f.end : min(len(text), f.end + 20)]
-                if self._judicial_suffixes.search(following_text):
-                    continue
-
-                filth_words = set(filth_text.split())
-                if filth_text in judge_names or any(jn in filth_text or jn in filth_words for jn in judge_names):
-                    continue
-
+            entities_to_redact = []
+            for entity in entities:
+                lbl = entity.get("label", "").lower()
                 # Rule 2: Company/Union/Organisation names should NEVER be redacted
-                if self._is_org_name(filth_text) or filth_text in org_names:
+                if lbl in ("organization", "company"):
                     continue
 
-                # Rule 3: Natural person names redacted - EXCEPT inside org names (e.g., "John's Hardware")
-                # Check if this name is inside a spaCy ORG entity span
-                inside_org = any(ob <= f.beg and f.end <= oe for ob, oe in org_spans)
-                if inside_org:
-                    continue
+                if lbl in ("name", "person"):
+                    start = entity["start"]
+                    end = entity["end"]
+                    ent_text = entity.get("text", text[start:end]).strip()
 
-                # Check possessive org pattern immediately following name (e.g., "John's Hardware")
-                if re.match(r"^\s*'s\s+(?:Hardware|Plumbing|Contracting|Bakery|Garage|Services|Store|Shop|Market|Cafe|Consulting|Logistics|Engineering|Construction|Holdings|Group|Enterprise|Enterprises|Auto|Motors)\b", following_text, re.IGNORECASE):
-                    continue
+                    # Guard: skip single characters or numbers
+                    if len(ent_text) <= 1 or re.search(r"^[\d/\\]+$", ent_text):
+                        continue
 
-                f.replacement_string = "[REDACTED]"
-                filtered_filths.append(f)
+                    # Rule 1: Judge/Arbitrator names should NEVER be redacted
+                    preceding_text = text[max(0, start - 35) : start]
+                    if self._judicial_prefixes.search(preceding_text):
+                        continue
 
-        # Apply scrubadub replacement
-        scrubbed = text
-        if filtered_filths:
-            scrubbed = self.scrubber._replace_text(text=scrubbed, filth_list=filtered_filths, document_name=None)
+                    following_text = text[end : min(len(text), end + 20)]
+                    if self._judicial_suffixes.search(following_text):
+                        continue
 
-        # Step 2: Redact explicit natural person names from structured fields
+                    ent_words = set(ent_text.split())
+                    if ent_text in judge_names or any(jn in ent_text or jn in ent_words for jn in judge_names):
+                        continue
+
+                    # Rule 2: Company/Union/Organisation names should NEVER be redacted
+                    if self._is_org_name(ent_text) or ent_text in org_names:
+                        continue
+
+                    # Rule 3: Natural person names redacted - EXCEPT inside org names (e.g., "John's Hardware")
+                    inside_org = any(ob <= start and end <= oe for ob, oe in org_spans)
+                    if inside_org:
+                        continue
+
+                    if re.match(r"^\s*'s\s+(?:Hardware|Plumbing|Contracting|Bakery|Garage|Services|Store|Shop|Market|Cafe|Consulting|Logistics|Engineering|Construction|Holdings|Group|Enterprise|Enterprises|Auto|Motors)\b", following_text, re.IGNORECASE):
+                        continue
+
+                    entities_to_redact.append(entity)
+
+            # Sort entities by 'start' index in reverse order (right to left)
+            sorted_entities = sorted(entities_to_redact, key=lambda x: x["start"], reverse=True)
+
+            # Splice string to swap text fragments with [REDACTED]
+            for entity in sorted_entities:
+                start = entity["start"]
+                end = entity["end"]
+                redacted_text = redacted_text[:start] + "[REDACTED]" + redacted_text[end:]
+
+        # Redact explicit natural person names from structured fields
         if person_names:
             for name in person_names:
                 if (
@@ -297,9 +303,9 @@ class Scrub:
                     and name not in org_names
                     and not self._is_org_name(name)
                 ):
-                    scrubbed = re.sub(r"\b" + re.escape(name.strip()) + r"\b", "[REDACTED]", scrubbed)
+                    redacted_text = re.sub(r"\b" + re.escape(name.strip()) + r"\b", "[REDACTED]", redacted_text)
 
-        return scrubbed
+        return redacted_text
 
     def scrub_pii_with_nlp(
         self,
@@ -308,7 +314,6 @@ class Scrub:
         judge_names: set[str] | None = None,
         org_names: set[str] | None = None,
     ) -> str:
-        """Backwards compatibility alias for scrub_text."""
         return self.scrub_text(text, person_names=person_names, judge_names=judge_names, org_names=org_names)
 
     # ------------------------------------------------------------------
@@ -390,14 +395,6 @@ class Scrub:
 
 if __name__ == "__main__":
     pii_scrubber = Scrub()
-    file = "<some file path>"
-    format = "<one of 'json', 'ndjson', 'xml' or 'txt'>"
-
-    with open(file, "r") as f:
-        input_data = f.read()
-
-    scrubbed_data = pii_scrubber.scrub(input_data, format)
-    print("Original data:")
-    print(input_data)
-    print("Scrubbed data:")
-    print(scrubbed_data)
+    sample_text = "My name is John Smith. Contact me at john.smith@email.com or call 555-123-4567."
+    print("Original Text:", sample_text)
+    print("Sanitized Output:", pii_scrubber.scrub_text(sample_text))
