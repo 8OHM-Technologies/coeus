@@ -138,7 +138,7 @@ migrate-saflii:
 
 # Run standalone PII scrubber CLI script
 scrub:
-	PYTHONPATH=. python extraction_workers/scrub_standalone.py
+	docker compose exec control-plane python extraction_workers/scrub_standalone.py $(ARGS)
 
 # -----------------------------------------------------------------------------
 # DYNAMIC INDIVIDUAL SERVICE COMMANDS
