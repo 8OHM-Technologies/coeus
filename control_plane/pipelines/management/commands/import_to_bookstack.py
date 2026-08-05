@@ -95,8 +95,8 @@ def format_html_content(
     data: Dict[str, Any],
 ) -> str:
     """
-    Format scrubbed record JSON payload into formal, elegant HTML for BookStack,
-    styled like official legal archives, law reports, and public records.
+    Format scrubbed record JSON payload into formal HTML for BookStack,
+    wrapped in .page-content and using BookStack native callout classes (.callout.info, .callout.success, .callout.warning).
     """
     extracted = scrubbed_record.extracted_record
     raw_title = extract_page_title(scrubbed_record, data)
@@ -133,54 +133,26 @@ def format_html_content(
     )
     ai_summary_esc = html.escape(str(ai_summary)).replace("\n", "<br>")
 
-    # Build HTML sections
-    html_parts = []
-
-    # Container & Header Banner
-    html_parts.append(
-        '<div style="font-family: \'Georgia\', \'Times New Roman\', serif; color: #1a202c; max-width: 900px; margin: 0 auto; line-height: 1.6;">'
-    )
+    # Build HTML using BookStack native .page-content wrapper
+    html_parts = ['<div class="page-content">']
 
     # Document Header Banner
     html_parts.append(
-        '<div style="border-bottom: 3px double #2b6cb0; padding-bottom: 12px; margin-bottom: 24px; text-align: center;">'
-        '<span style="font-family: sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; tracking: 1.5px; color: #4a5568; background-color: #edf2f7; padding: 4px 10px; border-radius: 4px; display: inline-block; margin-bottom: 8px;">'
-        'South African Legal Archive & Law Reports</span>'
-        f'<h1 style="font-size: 24px; font-weight: 700; color: #1a202c; margin: 8px 0 4px 0;">{title_esc}</h1>'
-        '</div>'
+        f'<h1 style="border-bottom: 2px solid var(--color-primary, #2b6cb0); padding-bottom: 8px;">{title_esc}</h1>'
     )
 
-    # Metadata Grid Table
+    # Metadata Callout (Info)
+    html_parts.append('<div class="callout info">')
     html_parts.append(
-        '<div style="background-color: #f7fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 16px; margin-bottom: 24px;">'
-        '<table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">'
-        '<tbody>'
-        '<tr>'
-        '<td style="width: 25%; font-weight: 700; color: #4a5568; padding: 6px 0;">Jurisdiction / Forum:</td>'
-        f'<td style="color: #2d3748; padding: 6px 0;"><strong>{court_esc}</strong></td>'
-        '</tr>'
-        '<tr>'
-        '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Official Reference:</td>'
-        f'<td style="color: #2d3748; padding: 6px 0;"><code style="background: #edf2f7; padding: 2px 6px; border-radius: 3px; font-family: monospace;">{ref_number_esc}</code></td>'
-        '</tr>'
-        '<tr>'
-        '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Date Delivered / Published:</td>'
-        f'<td style="color: #2d3748; padding: 6px 0;">{doc_date_esc}</td>'
-        '</tr>'
-        '<tr>'
-        '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Classification:</td>'
-        f'<td style="color: #2d3748; padding: 6px 0;">{record_type_esc}</td>'
-        '</tr>'
+        f'<p><strong>Jurisdiction / Forum:</strong> {court_esc} &nbsp;|&nbsp; '
+        f'<strong>Reference:</strong> <code>{ref_number_esc}</code> &nbsp;|&nbsp; '
+        f'<strong>Date:</strong> {doc_date_esc} &nbsp;|&nbsp; '
+        f'<strong>Type:</strong> {record_type_esc}'
     )
     if source_url:
         source_esc = html.escape(source_url)
-        html_parts.append(
-            '<tr>'
-            '<td style="font-weight: 700; color: #4a5568; padding: 6px 0;">Source Record:</td>'
-            f'<td style="padding: 6px 0;"><a href="{source_esc}" target="_blank" style="color: #2b6cb0; text-decoration: none;">View Original Document ↗</a></td>'
-            '</tr>'
-        )
-    html_parts.append('tbody></table></div>')
+        html_parts.append(f' &nbsp;|&nbsp; <a href="{source_esc}" target="_blank">Source Document ↗</a>')
+    html_parts.append('</p></div>')
 
     # Parties & Court Rulings (Case Law)
     applicant = data.get("applicant_plaintiff")
@@ -189,29 +161,23 @@ def format_html_content(
     result = data.get("result")
 
     if applicant or respondent or judges or result:
-        html_parts.append(
-            '<div style="margin-bottom: 24px;">'
-            '<h2 style="font-family: sans-serif; font-size: 16px; color: #2b6cb0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 12px;">⚖️ Parties & Court Bench</h2>'
-            '<ul style="list-style: none; padding-left: 0; font-size: 14px;">'
-        )
+        html_parts.append('<h2>⚖️ Parties & Court Bench</h2><ul>')
         if applicant:
-            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Applicant / Plaintiff:</strong> {html.escape(str(applicant))}</li>')
+            html_parts.append(f'<li><strong>Applicant / Plaintiff:</strong> {html.escape(str(applicant))}</li>')
         if respondent:
             resp_str = ", ".join(str(r) for r in respondent) if isinstance(respondent, list) else str(respondent)
-            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Respondent / Defendant:</strong> {html.escape(resp_str)}</li>')
+            html_parts.append(f'<li><strong>Respondent / Defendant:</strong> {html.escape(resp_str)}</li>')
         if judges:
             judges_str = ", ".join(str(j) for j in judges) if isinstance(judges, list) else str(judges)
-            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Presiding Judge(s):</strong> {html.escape(judges_str)}</li>')
+            html_parts.append(f'<li><strong>Presiding Judge(s):</strong> {html.escape(judges_str)}</li>')
         html_parts.append('</ul>')
 
         if result:
             html_parts.append(
-                '<div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 12px 16px; margin-top: 12px; border-radius: 0 4px 4px 0;">'
-                '<strong style="font-family: sans-serif; font-size: 13px; color: #2b6cb0; text-transform: uppercase; display: block; margin-bottom: 4px;">Holding & Final Order:</strong>'
-                f'<span style="font-size: 14px; color: #2d3748;">{html.escape(str(result))}</span>'
+                '<div class="callout success">'
+                f'<p><strong>Holding & Final Order:</strong> {html.escape(str(result))}</p>'
                 '</div>'
             )
-        html_parts.append('</div>')
 
     # Publication Details (Gazettes / Journals)
     publisher = data.get("publisher") or data.get("journal_name")
@@ -219,37 +185,28 @@ def format_html_content(
     subjects = data.get("subjects") or data.get("keywords") or data.get("ai_keywords")
 
     if publisher or authors or subjects:
-        html_parts.append(
-            '<div style="margin-bottom: 24px;">'
-            '<h2 style="font-family: sans-serif; font-size: 16px; color: #2b6cb0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 12px;">📚 Publication & Notice Info</h2>'
-            '<ul style="list-style: none; padding-left: 0; font-size: 14px;">'
-        )
+        html_parts.append('<h2>📚 Publication Details</h2><ul>')
         if publisher:
-            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Publisher / Periodical:</strong> {html.escape(str(publisher))}</li>')
+            html_parts.append(f'<li><strong>Publisher / Periodical:</strong> {html.escape(str(publisher))}</li>')
         if authors:
             auth_str = ", ".join(str(a) for a in authors) if isinstance(authors, list) else str(authors)
-            html_parts.append(f'<li style="margin-bottom: 6px;"><strong>Author(s):</strong> {html.escape(auth_str)}</li>')
+            html_parts.append(f'<li><strong>Author(s):</strong> {html.escape(auth_str)}</li>')
         if subjects:
-            subj_list = subjects if isinstance(subjects, list) else [str(subjects)]
-            badges_html = " ".join(
-                f'<span style="background: #edf2f7; color: #4a5568; font-family: sans-serif; font-size: 12px; padding: 3px 8px; border-radius: 12px; display: inline-block; margin-right: 4px;">{html.escape(str(s))}</span>'
-                for s in subj_list
-            )
-            html_parts.append(f'<li style="margin-top: 8px;"><strong>Subjects & Indexing:</strong><br><div style="margin-top: 6px;">{badges_html}</div></li>')
-        html_parts.append('</ul></div>')
+            subj_str = ", ".join(str(s) for s in subjects) if isinstance(subjects, list) else str(subjects)
+            html_parts.append(f'<li><strong>Subjects / Keywords:</strong> {html.escape(subj_str)}</li>')
+        html_parts.append('</ul>')
 
-    # Formal Headnotes & Case Summary Block
+    # Headnotes & Summary Callout (Warning / Highlight)
     html_parts.append(
-        '<div style="margin-bottom: 28px;">'
-        '<h2 style="font-family: sans-serif; font-size: 16px; color: #2b6cb0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 12px;">📖 Headnotes & Summary</h2>'
-        '<blockquote style="margin: 0; padding: 16px 20px; background-color: #fffaf0; border-left: 4px solid #dd6b20; font-style: italic; font-size: 14.5px; color: #2d3748; line-height: 1.7; border-radius: 0 4px 4px 0;">'
-        f'{ai_summary_esc}'
-        '</blockquote>'
+        '<h2>📖 Headnotes & Summary</h2>'
+        '<div class="callout warning">'
+        f'<p>{ai_summary_esc}</p>'
         '</div>'
     )
 
     html_parts.append('</div>')
     return "".join(html_parts)
+
 
 
 class Command(BaseCommand):
