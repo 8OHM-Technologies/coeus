@@ -15,7 +15,14 @@ import urllib.parse
 from datetime import datetime, date as dt_date, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-import pymupdf
+try:
+    import pymupdf
+except ImportError:
+    try:
+        import fitz as pymupdf
+    except ImportError:
+        pymupdf = None
+
 from bs4 import BeautifulSoup
 from seleniumbase import SB
 
@@ -615,19 +622,6 @@ class SafliiScraper(BaseScraper):
         url_to_case_map: Dict[str, str] = {}
         indexed_this_run: set = set()  # Local dedup set for within-run indexing
 
-        # Build set of already-indexed (court_code, year_str) pairs for fast skip checks
-        indexed_court_years: set = set()
-        for url in self.existing_urls:
-            cc = extract_court_code_from_url(url)
-            if cc:
-                year_match = re.search(r"/(\d{4})/", url)
-                if year_match:
-                    indexed_court_years.add((cc, year_match.group(1)))
-        if indexed_court_years:
-            logger.info(
-                f"Resume state: {len(indexed_court_years)} court+year combinations already indexed."
-            )
-
         indexing_profile = "/tmp/saflii_indexing_profile"
         with SB(
             uc=True,
@@ -695,11 +689,6 @@ class SafliiScraper(BaseScraper):
 
                 # 3b. Process each year directory
                 for year, year_url in year_links:
-                    # Skip already-indexed court+year combinations on restart
-                    if (court_code, str(year)) in indexed_court_years:
-                        logger.info(f"Court {court_code} year {year}: Already indexed, skipping.")
-                        continue
-
                     logger.info(
                         f"Processing structural year context directory: {court_code}/{year} -> {year_url}"
                     )
@@ -940,57 +929,57 @@ class SafliiScraper(BaseScraper):
                                     is_pdf = case_url.lower().endswith(".pdf")
 
                                     if is_pdf:
-                                        # --- PDF document: download via browser session and extract text with PyMuPDF ---
+                                        # --- PDF document: download via browser session and extract text ---
                                         logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] PDF detected, downloading via browser session...")
+                                        pdf_bytes = None
+
+                                        # Primary: use JavaScript fetch inside browser context (inherits session cookies & CF clearance)
+                                        js_script = """
+                                        var callback = arguments[arguments.length - 1];
+                                        fetch(arguments[0])
+                                            .then(r => r.arrayBuffer())
+                                            .then(buf => {
+                                                var bytes = new Uint8Array(buf);
+                                                var binary = '';
+                                                for (var i = 0; i < bytes.byteLength; i++) {
+                                                    binary += String.fromCharCode(bytes[i]);
+                                                }
+                                                callback(btoa(binary));
+                                            })
+                                            .catch(err => callback('ERROR:' + err));
+                                        """
                                         try:
-                                            # Use CDP to download the PDF bytes through the browser's authenticated session
-                                            # (inherits proxy, cookies, and Cloudflare clearance)
-                                            pdf_response = sb.execute_cdp_cmd(
-                                                "Page.printToPDF", {}
-                                            )
-                                            if pdf_response and pdf_response.get("data"):
-                                                import base64
-                                                pdf_bytes = base64.b64decode(pdf_response["data"])
-                                            else:
-                                                # Fallback: fetch the raw PDF bytes via CDP Network.getResponseBody
-                                                # or via a direct download through the browser's requests session
-                                                pdf_bytes = sb.download_file(case_url)
-                                        except Exception:
-                                            # Final fallback: use JavaScript fetch inside the browser context
-                                            # to download the PDF (inherits session cookies/headers)
-                                            js_script = """
-                                            var resp = await fetch(arguments[0]);
-                                            var buf = await resp.arrayBuffer();
-                                            var bytes = new Uint8Array(buf);
-                                            var binary = '';
-                                            for (var i = 0; i < bytes.byteLength; i++) {
-                                                binary += String.fromCharCode(bytes[i]);
-                                            }
-                                            return btoa(binary);
-                                            """
-                                            try:
-                                                b64_data = sb.execute_async_script(js_script, case_url)
+                                            b64_data = sb.execute_async_script(js_script, case_url)
+                                            if b64_data and not str(b64_data).startswith("ERROR:"):
                                                 import base64
                                                 pdf_bytes = base64.b64decode(b64_data)
-                                            except Exception as pdf_dl_err:
-                                                raise Exception(f"Failed to download PDF via browser session: {pdf_dl_err}")
+                                        except Exception as js_err:
+                                            logger.warning(f"[Worker {worker_id}] JS fetch failed: {js_err}")
 
-                                        # Extract text from PDF bytes using PyMuPDF
+                                        if not pdf_bytes:
+                                            try:
+                                                pdf_bytes = sb.download_file(case_url)
+                                            except Exception as dl_err:
+                                                logger.warning(f"[Worker {worker_id}] sb.download_file failed: {dl_err}")
+
+                                        # Extract text from PDF bytes using PyMuPDF / fitz if installed
                                         pdf_text = ""
                                         pdf_title = ""
-                                        try:
-                                            doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-                                            pdf_title = doc.metadata.get("title", "") or ""
-                                            pages_text = []
-                                            for page in doc:
-                                                pages_text.append(page.get_text())
-                                            pdf_text = "\n".join(pages_text)
-                                            doc.close()
-                                        except Exception as pdf_err:
-                                            logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] PyMuPDF extraction failed: {pdf_err}")
+                                        if pdf_bytes and pymupdf is not None:
+                                            try:
+                                                doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+                                                pdf_title = doc.metadata.get("title", "") or ""
+                                                pages_text = [page.get_text() for page in doc]
+                                                pdf_text = "\n".join(pages_text)
+                                                doc.close()
+                                            except Exception as pdf_err:
+                                                logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] PDF text extraction failed: {pdf_err}")
+                                        elif pymupdf is None:
+                                            logger.warning(f"[Worker {worker_id}] PyMuPDF/fitz not installed in worker environment; skipping PDF text extraction.")
 
                                         title = pdf_title or sb.get_page_title() or c_id
                                         center_html = ""  # No HTML content for PDFs
+                                        full_text = pdf_text
                                         full_text = pdf_text
 
                                     else:

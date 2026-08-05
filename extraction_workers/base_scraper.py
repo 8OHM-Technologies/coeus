@@ -5,10 +5,16 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Set, Optional, FrozenSet
 
 import requests
-import db_storage
-from utils.utils import fetch_pipeline_config, resolve_data_dir, to_bool
-from db import get_db_connection
-from utils.browser_helper import setup_logger
+try:
+    from . import db_storage
+    from .db import get_db_connection
+    from .utils.utils import fetch_pipeline_config, resolve_data_dir, to_bool
+    from .utils.browser_helper import setup_logger
+except ImportError:
+    import db_storage
+    from db import get_db_connection
+    from utils.utils import fetch_pipeline_config, resolve_data_dir, to_bool
+    from utils.browser_helper import setup_logger
 
 logger = setup_logger(__name__)
 

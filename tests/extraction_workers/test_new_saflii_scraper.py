@@ -174,13 +174,15 @@ async def test_saflii_scraper_initialize_defaults(mocker):
             "shared_record_type": "saflii_courts",
         },
     }
+    mock_conn = AsyncMock()
+    mock_conn.fetchval = AsyncMock(return_value=None)
     mocker.patch("coeus.extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
     mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
-    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock())
+    mocker.patch("coeus.extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
     mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
     mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
-    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value={}))
 
     scraper = SafliiScraper(pipeline_name="saflii_test")
     await scraper.initialize()
@@ -205,13 +207,15 @@ async def test_saflii_scraper_courts_from_cli(mocker):
             "shared_record_type": "saflii_courts",
         },
     }
+    mock_conn = AsyncMock()
+    mock_conn.fetchval = AsyncMock(return_value=None)
     mocker.patch("coeus.extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
     mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
-    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock())
+    mocker.patch("coeus.extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
     mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
     mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
-    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value={}))
 
     # CLI courts override config courts
     scraper = SafliiScraper(pipeline_name="saflii_test", courts=["ZAGPJHB", "ZAWCHC"])
