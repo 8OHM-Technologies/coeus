@@ -73,6 +73,24 @@ def test_no_scrub_various_judge_title_styles():
     assert "Molahlehi J" in scrubbed
 
 
+def test_no_scrub_person_name_in_org_name():
+    scrubber = Scrub()
+
+    text = (
+        "John Doe was employed at John's Hardware Ltd with David Miller. "
+        "David Miller was employed at Bob Smith Contracting."
+    )
+    scrubbed = scrubber.scrub_text(text)
+
+    # Standalone person names must be redacted
+    assert "John Doe" not in scrubbed
+    assert "David Miller" not in scrubbed
+
+    # Person names inside company names must NOT be redacted
+    assert "John's Hardware Ltd" in scrubbed
+    assert "Bob Smith Contracting" in scrubbed
+
+
 def test_scrub_dict():
     scrubber = Scrub()
 

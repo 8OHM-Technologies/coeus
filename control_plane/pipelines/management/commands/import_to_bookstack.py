@@ -258,11 +258,6 @@ def format_html_content(
     html_parts.append('</div>')
     return "".join(html_parts)
 
-
-
-
-
-
 class Command(BaseCommand):
     help = (
         "Import scrubbed records from coeus.scrubbed_records into BookStack "
@@ -373,7 +368,6 @@ class Command(BaseCommand):
                 tags = [
                     {"name": "coeus_scrubbed_id", "value": str(record.id)},
                     {"name": "court", "value": court_name},
-                    {"name": "record_type", "value": record.extracted_record.record_type if record.extracted_record else "unknown"},
                 ]
                 case_no = data.get("case_number")
                 if case_no:

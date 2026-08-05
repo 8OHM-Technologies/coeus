@@ -3,19 +3,23 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Union
 import spacy
+import scrubadub
+import scrubadub_spacy
 
-# Load Spacy NLP model with fallback support
+
 def _load_spacy_model():
+    """Loads a spaCy model with fallback options."""
     for model_name in ["en_core_web_trf", "en_core_web_sm", "en_core_web_md"]:
         try:
-            return spacy.load(model_name)
+            spacy.load(model_name)
+            return model_name
         except Exception:
             continue
     import subprocess
     import sys
     try:
         subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=True)
-        return spacy.load("en_core_web_sm")
+        return "en_core_web_sm"
     except Exception as exc:
         raise OSError(
             "Could not load or download any spaCy model (en_core_web_trf, en_core_web_sm). "
@@ -23,32 +27,42 @@ def _load_spacy_model():
         ) from exc
 
 
-nlp = _load_spacy_model()
-
-
-# Common legal dispute terms, case subjects, and non-person words that spaCy NER might misclassify
-LEGAL_DISPUTE_TERMS = {
-    "retrenchment", "demarcation", "dismissal", "severance", "misconduct", "incapacity",
-    "operational", "requirements", "unfair", "labour", "practice", "dispute", "disputes",
-    "arbitration", "bargaining", "council", "strike", "strikes", "lockout", "lockouts",
-    "wage", "wages", "salary", "salaries", "transfer", "contract", "employment",
-    "section", "schedule", "clause", "act", "bill", "regulation", "regulations",
-    "rule", "rules", "substantive", "procedural", "fairness", "reinstatement",
-    "compensation", "award", "order", "ruling", "application", "review", "rescission",
-    "condonation", "jurisdiction", "jurisdictional", "promotion", "demotion",
-    "suspension", "benefit", "benefits", "discrimination", "harassment", "retaliation",
-}
+SPACY_MODEL_NAME = _load_spacy_model()
 
 
 class Scrub:
     def __init__(self):
-        self.patterns = {}
+        self.scrubber = scrubadub.Scrubber()
+        # Remove default name detector if present to ensure scrubadub_spacy NER is used
+        if "name" in self.scrubber._detectors:
+            self.scrubber.remove_detector("name")
 
-        self._judicial_titles = {
-            "judge", "justice", "magistrate", "acting", "j", "aj", "dcj", "ja", "aja", "jp", "djp", "p", "cj", "eja",
-            "judge of the high court", "judge of the supreme court", "judge president", "deputy judge president",
-            "chief justice", "coram", "before", "commissioner", "arbitrator",
-        }
+        self.spacy_detector = scrubadub_spacy.detectors.SpacyEntityDetector(
+            model=SPACY_MODEL_NAME,
+            named_entities=["PERSON", "ORG"],
+        )
+        self.scrubber.add_detector(self.spacy_detector)
+
+        self._judicial_prefixes = re.compile(
+            r"\b(?:Judge|Justice|Magistrate|Acting|Commissioner|Arbitrator|Chief\s+Justice|Judge\s+President|Deputy\s+Judge\s+President|Coram|Before)\s*$",
+            re.IGNORECASE,
+        )
+        self._judicial_suffixes = re.compile(
+            r"^\s*(?:AJ|DCJ|JA|AJA|JP|DJP|CJ|EJA|P|J)\b",
+            re.IGNORECASE,
+        )
+
+        self._org_indicators = [
+            "ltd", "limited", "pty", "proprietary", "inc", "incorporated", "corp", "corporation", "cc", "gmbh", "plc", "llc", "llp",
+            "union", "unions", "numsa", "amcu", "cosatu", "satawu", "popcru", "nehawu", "denosa", "solidarity", "solidariteit",
+            "association", "associations", "federation", "society", "council", "committee", "chamber", "coalition", "alliance", "congress",
+            "minister", "mec", "department", "dept", "registrar", "commissioner", "director",
+            "state", "government", "president", "governor", "premier", "mayor", "municipality", "municipal", "city of", "province",
+            "board", "agency", "authority", "commission", "office", "bureau", "administration", "protector", "police", "sheriff",
+            "school", "university", "college", "clinic", "hospital", "church", "foundation", "charity", "club", "institute", "center", "centre",
+            "vs", "versus", "soc", "npc", "npo", "sars", "ccma", "court", "courts", "division", "high court", "supreme court", "labour court",
+            "contracting", "hardware", "plumbing", "contractors", "services", "industries", "holdings", "group", "enterprises", "ventures", "partners", "trust", "bank"
+        ]
 
     # ------------------------------------------------------------------
     # Field Key Classifications
@@ -66,7 +80,7 @@ class Scrub:
             "detail_url", "preview_image_url", "document_type", "id", "record_type", "type",
             "journal_name", "publisher", "volume", "issue",
             "reason_for_dismissal", "nature_of_dispute", "issue_in_dispute", "subject",
-            "category", "status",
+            "category", "status", "url", "worker_id", "scraped_at", "year",
         }
         return k in metadata_keys
 
@@ -108,29 +122,17 @@ class Scrub:
         """Backwards compatibility helper."""
         return Scrub._is_metadata_key(key) or Scrub._is_org_key(key) or Scrub._is_judicial_key(key)
 
-    @staticmethod
-    def _is_org_name(val: str) -> bool:
-        """Returns True if the string looks like an organisation / corporate / union name."""
-        v = val.lower()
-        org_indicators = [
-            "ltd", "limited", "pty", "proprietary", "inc", "corp", "cc", "gmbh", "plc", "llc",
-            "union", "numsa", "amcu", "cosatu", "satawu", "popcru", "nehawu", "denosa", "solidarity",
-            "association", "society", "council", "board", "bank", "trust", "fund", "dept", "department",
-            "minister", "mec", "municipality", "city of", "government", "sars", "ccma",
-        ]
-        return any(re.search(r"\b" + re.escape(kw) + r"\b", v) for kw in org_indicators)
+    def _is_org_name(self, val: str) -> bool:
+        """Returns True if string matches corporate/union/org indicators or patterns."""
+        v = val.lower().strip()
+        return any(re.search(r"\b" + re.escape(kw) + r"\b", v) for kw in self._org_indicators)
 
     # ------------------------------------------------------------------
     # Data Analysis: Extract Natural Persons, Orgs, Judges from Struct
     # ------------------------------------------------------------------
 
     def _extract_dict_entities(self, data: Union[dict, list, str]) -> tuple[set[str], set[str], set[str]]:
-        """
-        Walks structured data and extracts:
-        - person_names: natural persons' names (e.g. employee: "Pretorius")
-        - org_names: business/employer/union names
-        - judge_names: judge/arbitrator names
-        """
+        """Walks structured data and extracts person_names, org_names, judge_names."""
         person_names: set[str] = set()
         org_names: set[str] = set()
         judge_names: set[str] = set()
@@ -181,7 +183,7 @@ class Scrub:
         for m in pattern_suffix.finditer(text):
             judge_names.update(self._tokenise_name(m.group(0).strip()))
 
-        title_prefix = r"(?:Acting\s+)?(?:Judge|Justice|Magistrate|Chief\s+Justice|Judge\s+President|Deputy\s+Judge\s+President)"
+        title_prefix = r"(?:Acting\s+)?(?:Judge|Justice|Magistrate|Chief\s+Justice|Judge\s+President|Deputy\s+Judge\s+President|Commissioner|Arbitrator)"
         pattern_prefix = re.compile(
             r"\b" + title_prefix + r"\s+([A-Z][a-z]+(?:\s+(?:van|der|den|de|du|la|le|von)\s+[A-Z][a-z]+)?(?:\s+[A-Z][a-z]+)*)\b"
         )
@@ -196,7 +198,7 @@ class Scrub:
         parts: set[str] = {clean_name}
 
         without_title = re.sub(
-            r"^(?:Judge|Justice|Magistrate|Chief\s+Justice|Judge\s+President|Deputy\s+Judge\s+President|Acting\s+Judge|Acting\s+Justice)\s+",
+            r"^(?:Judge|Justice|Magistrate|Chief\s+Justice|Judge\s+President|Deputy\s+Judge\s+President|Acting\s+Judge|Acting\s+Justice|Commissioner|Arbitrator)\s+",
             "", clean_name, flags=re.IGNORECASE
         )
         without_suffix = re.sub(
@@ -214,7 +216,7 @@ class Scrub:
         return parts
 
     # ------------------------------------------------------------------
-    # Public scrub interface & NLP
+    # Public scrub interface & scrubadub-spacy NLP
     # ------------------------------------------------------------------
 
     def scrub_text(
@@ -224,25 +226,80 @@ class Scrub:
         judge_names: set[str] | None = None,
         org_names: set[str] | None = None,
     ) -> str:
-        if judge_names is None:
-            judge_names = self._extract_judge_names(text)
+        if not text or not text.strip():
+            return text
 
-        scrubbed_text = text
+        person_names = person_names or set()
+        judge_names = (judge_names or set()) | self._extract_judge_names(text)
+        org_names = org_names or set()
 
-        # Step 1: Explicitly redact any target person names known from structured fields
+        # Step 1: Iterate filths detected by scrubadub with scrubadub_spacy
+        all_filths = list(self.scrubber.iter_filth(text))
+
+        # Collect organization character spans from spaCy NER
+        org_spans = [(f.beg, f.end) for f in all_filths if f.type == "organization"]
+
+        filtered_filths = []
+        for f in all_filths:
+            # Rule 2: Company/Union/Organisation names should NEVER be redacted
+            if f.type == "organization":
+                continue
+
+            if f.type in ("name", "person", "unknown"):
+                filth_text = f.text.strip()
+
+                # Guard: skip single characters or numbers
+                if len(filth_text) <= 1 or re.search(r"^[\d/\\]+$", filth_text):
+                    continue
+
+                # Rule 1: Judge/Arbitrator names should NEVER be redacted
+                preceding_text = text[max(0, f.beg - 35) : f.beg]
+                if self._judicial_prefixes.search(preceding_text):
+                    continue
+
+                following_text = text[f.end : min(len(text), f.end + 20)]
+                if self._judicial_suffixes.search(following_text):
+                    continue
+
+                filth_words = set(filth_text.split())
+                if filth_text in judge_names or any(jn in filth_text or jn in filth_words for jn in judge_names):
+                    continue
+
+                # Rule 2: Company/Union/Organisation names should NEVER be redacted
+                if self._is_org_name(filth_text) or filth_text in org_names:
+                    continue
+
+                # Rule 3: Natural person names redacted - EXCEPT inside org names (e.g., "John's Hardware")
+                # Check if this name is inside a spaCy ORG entity span
+                inside_org = any(ob <= f.beg and f.end <= oe for ob, oe in org_spans)
+                if inside_org:
+                    continue
+
+                # Check possessive org pattern immediately following name (e.g., "John's Hardware")
+                if re.match(r"^\s*'s\s+(?:Hardware|Plumbing|Contracting|Bakery|Garage|Services|Store|Shop|Market|Cafe|Consulting|Logistics|Engineering|Construction|Holdings|Group|Enterprise|Enterprises|Auto|Motors)\b", following_text, re.IGNORECASE):
+                    continue
+
+                f.replacement_string = "[REDACTED]"
+                filtered_filths.append(f)
+
+        # Apply scrubadub replacement
+        scrubbed = text
+        if filtered_filths:
+            scrubbed = self.scrubber._replace_text(text=scrubbed, filth_list=filtered_filths, document_name=None)
+
+        # Step 2: Redact explicit natural person names from structured fields
         if person_names:
             for name in person_names:
-                if name and len(name.strip()) > 1:
-                    scrubbed_text = re.sub(r"\b" + re.escape(name.strip()) + r"\b", "[REDACTED]", scrubbed_text)
+                if (
+                    name
+                    and len(name.strip()) > 1
+                    and name not in judge_names
+                    and name not in org_names
+                    and not self._is_org_name(name)
+                ):
+                    scrubbed = re.sub(r"\b" + re.escape(name.strip()) + r"\b", "[REDACTED]", scrubbed)
 
-        # Step 2: Run NLP for general text person entities
-        scrubbed_text = self.scrub_pii_with_nlp(
-            scrubbed_text,
-            person_names=person_names,
-            judge_names=judge_names,
-            org_names=org_names,
-        )
-        return scrubbed_text
+        return scrubbed
 
     def scrub_pii_with_nlp(
         self,
@@ -251,81 +308,8 @@ class Scrub:
         judge_names: set[str] | None = None,
         org_names: set[str] | None = None,
     ) -> str:
-        nlp_doc = nlp(text)
-        final_text = text
-
-        org_keywords = [
-            "court", "courts", "division", "high court", "supreme court", "labour court", "land claims court",
-            "magistrate", "magistrates", "tribunal", "tribunals", "bar", "chambers", "jurisdiction",
-            "johannesburg", "pretoria", "cape town", "durban", "bloemfontein", "gqeberha", "port elizabeth",
-            "polokwane", "nelspruit", "mbombela", "mahikeng", "mmabatho", "kimberley", "pietermaritzburg",
-            "thohoyandou", "bisho", "grahamstown", "makhanda", "gauteng", "western cape", "eastern cape",
-            "kwazulu-natal", "free state", "limpopo", "mpumalanga", "north west", "northern cape",
-            "south africa", "saflii", "case", "matter", "appeal", "review", "index", "citation",
-            "ltd", "limited", "pty", "proprietary", "inc", "incorporated", "corp", "corporation",
-            "gmbh", "plc", "llc", "llp", "holdings", "group", "industries", "services", "enterprises",
-            "ventures", "partners", "trust", "bank", "co", "company", "companies",
-            "union", "unions", "association", "associations", "federation", "society", "council",
-            "committee", "chamber", "coalition", "alliance", "congress", "amcu", "numsa", "num",
-            "cosatu", "satawu", "popcru", "nehawu", "denosa", "solidarity", "solidariteit",
-            "minister", "mec", "department", "dept", "registrar", "commissioner", "director",
-            "judge", "judges", "justice", "justices",
-            "state", "government", "president", "governor", "premier", "mayor", "municipality",
-            "municipal", "city of", "province", "provincial", "national", "board", "agency",
-            "authority", "commission", "office", "bureau", "administration", "protector", "police",
-            "sheriff", "school", "university", "college", "clinic", "hospital", "church", "foundation",
-            "charity", "club", "institute", "center", "centre", "vs", "versus", "cc", "close corporation",
-            "soc", "npc", "npo", "sars", "ccma"
-        ]
-
-        protected_names: set[str] = (judge_names or set()) | (org_names or set())
-
-        for name in nlp_doc.ents:
-            if name.label_ != "PERSON":
-                continue
-
-            entity_text = name.text.strip()
-
-            # Guard 1: Do NOT redact if it contains numbers, slashes, or symbols
-            if re.search(r"[\d/\\]", entity_text):
-                continue
-
-            normalized = entity_text.lower()
-
-            # Guard 2: Skip legal dispute terms / case subjects
-            if normalized in LEGAL_DISPUTE_TERMS:
-                continue
-
-            # Guard 3: Skip if entity matches court/location/organization keywords
-            is_org = any(
-                re.search(r"\b" + re.escape(kw) + r"\b", normalized)
-                for kw in org_keywords
-            )
-            if is_org:
-                continue
-
-            # Guard 4: Check pre-identified judge or employer/protected names
-            is_protected = False
-            entity_words = {t.lower().strip(".,;:()") for t in entity_text.split()}
-            for pn in protected_names:
-                pn_norm = pn.lower().strip()
-                if pn_norm == normalized or (" " in pn_norm and pn_norm in normalized) or pn_norm in entity_words:
-                    is_protected = True
-                    break
-
-            if is_protected:
-                continue
-
-            # Guard 5: Context tokens for judicial titles
-            preceding_tokens = nlp_doc[max(0, name.start - 3) : name.start]
-            following_tokens = nlp_doc[name.end : min(len(nlp_doc), name.end + 3)]
-            context_tokens = {t.text.lower() for t in list(preceding_tokens) + list(following_tokens)}
-            if context_tokens & self._judicial_titles:
-                continue
-
-            final_text = re.sub(r"\b" + re.escape(entity_text) + r"\b", "[REDACTED]", final_text)
-
-        return final_text
+        """Backwards compatibility alias for scrub_text."""
+        return self.scrub_text(text, person_names=person_names, judge_names=judge_names, org_names=org_names)
 
     # ------------------------------------------------------------------
     # Entry points
@@ -369,7 +353,7 @@ class Scrub:
                 continue
 
             if self._is_person_key(key):
-                # Person name fields (e.g. employee: "Pretorius") are scrubbed directly
+                # Natural person name fields (e.g. employee: "Pretorius") are scrubbed directly
                 if isinstance(value, str) and value.strip():
                     data[key] = "[REDACTED]"
                 continue
