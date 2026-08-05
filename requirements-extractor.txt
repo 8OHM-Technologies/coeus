@@ -1,4 +1,6 @@
 # Extractor image dependencies
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 dagster-pipes
 requests
 pydantic>=2.6

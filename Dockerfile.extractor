@@ -11,10 +11,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install LLM extraction deps
+# Install LLM extraction deps (using PyTorch CPU wheel index to eliminate NVIDIA/CUDA bloat)
 COPY requirements-extractor.txt .
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements-extractor.txt
+    && pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-extractor.txt
 
 # Copy all extraction workers code
 COPY extraction_workers/ /app/extraction_workers/
