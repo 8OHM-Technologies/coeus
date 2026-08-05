@@ -11,3 +11,4 @@ google-auth>=2.55.0
 PyGithub>=2.9.1
 python-dotenv
 spacy
+click
