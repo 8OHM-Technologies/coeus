@@ -284,7 +284,7 @@ def raw_scraped_pages(
         "network": DOCKER_NETWORK,
         "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
         "user": "root",
-        "auto_remove": True,
+        "auto_remove": False,
         "shm_size": "2g",
     }
     scraper_mem = _parse_mem_limit(SCRAPER_MEM_LIMIT)
@@ -351,7 +351,7 @@ def extracted_structured_data(
     container_kwargs = {
         "network": DOCKER_NETWORK,
         "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
-        "auto_remove": True,
+        "auto_remove": False,
     }
     extractor_mem = _parse_mem_limit(EXTRACTOR_MEM_LIMIT)
     if extractor_mem:
@@ -398,7 +398,7 @@ def scrubbed_extracted_records(
         "network": DOCKER_NETWORK,
         "volumes": [f"{HOST_DATA_DIR}:{CONTAINER_DATA_DIR}"],
         "command": ["python", "/app/scrub_entrypoint.py"],
-        "auto_remove": True,
+        "auto_remove": False,
     }
     extractor_mem = _parse_mem_limit(EXTRACTOR_MEM_LIMIT)
     if extractor_mem:
