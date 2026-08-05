@@ -356,27 +356,17 @@ class Command(BaseCommand):
                     deleted_count, _ = BookStackImport.objects.all().delete()
                 self.stdout.write(self.style.SUCCESS(f"Cleared {deleted_count} local BookStackImport tracking records."))
 
-        # Query unimported scrubbed records using O(1) indexed LEFT JOIN check
-        queryset = ScrubbedRecord.objects.select_related(
-            "extracted_record",
-            "extracted_record__target",
-            "extracted_record__target__entity",
-        ).filter(bookstack_import__isnull=True)
-
+        # Check total unimported count
+        base_queryset = ScrubbedRecord.objects.filter(bookstack_import__isnull=True)
         if record_type:
-            queryset = queryset.filter(extracted_record__record_type=record_type)
+            base_queryset = base_queryset.filter(extracted_record__record_type=record_type)
 
-        queryset = queryset.order_by("created_at")
-
-        total_unimported = queryset.count()
-        self.stdout.write(self.style.NOTICE(f"Found {total_unimported} unimported scrubbed records."))
+        total_unimported = base_queryset.count()
+        self.stdout.write(self.style.NOTICE(f"Found {total_unimported} total unimported scrubbed records to process."))
 
         if total_unimported == 0:
             self.stdout.write(self.style.SUCCESS("All scrubbed records are already imported into BookStack."))
             return
-
-        to_process = list(queryset[: limit if limit else batch_size])
-        self.stdout.write(self.style.NOTICE(f"Processing batch of {len(to_process)} records..."))
 
         if dry_run:
             shelf_id = 999
@@ -393,94 +383,131 @@ class Command(BaseCommand):
             book_cache = {}
             chapter_cache = {}
 
-        imported_count = 0
-        error_count = 0
+        total_imported_count = 0
+        total_error_count = 0
+        batch_index = 0
+        offset = 0
 
-        for record in to_process:
-            try:
-                data = record.data if isinstance(record.data, dict) else json.loads(record.data or "{}")
-                court_name = extract_court_name(record, data)
-                chapter_name = extract_chapter_name(record, data)
-                page_title = extract_page_title(record, data)
-                html_content = format_html_content(record, court_name, data)
+        while True:
+            # Query unimported scrubbed records using O(1) indexed LEFT JOIN check
+            queryset = ScrubbedRecord.objects.select_related(
+                "extracted_record",
+                "extracted_record__target",
+                "extracted_record__target__entity",
+            ).filter(bookstack_import__isnull=True)
 
-                tags = [
-                    {"name": "court", "value": court_name},
-                    {"name": "year", "value": chapter_name},
-                ]
-                
-                court_location = data.get("court_location")
-                if court_location:
-                    tags.append({"name": "court_location", "value": str(court_location)})
+            if record_type:
+                queryset = queryset.filter(extracted_record__record_type=record_type)
 
-                case_no = data.get("case_number")
-                if case_no:
-                    tags.append({"name": "case_number", "value": str(case_no)})
+            queryset = queryset.order_by("created_at")
 
-                employer = data.get("employer")
-                if employer:
-                    tags.append({"name": "employer", "value": str(employer)})
+            # Determine how many records to fetch for this batch
+            if limit is not None:
+                remaining_needed = limit - total_imported_count
+                if remaining_needed <= 0:
+                    break
+                current_batch_size = min(batch_size, remaining_needed)
+            else:
+                current_batch_size = batch_size
 
-                reason_for_dismissal = data.get("reason_for_dismissal")
-                if reason_for_dismissal:
-                    tags.append({"name": "reason_for_dismissal", "value": str(reason_for_dismissal)})
+            # In dry_run mode, bookstack_import rows are not created, so we slice using offset
+            if dry_run:
+                to_process = list(queryset[offset : offset + current_batch_size])
+                offset += len(to_process)
+            else:
+                to_process = list(queryset[:current_batch_size])
 
-                if dry_run:
+            if not to_process:
+                break
+
+            batch_index += 1
+            self.stdout.write(self.style.NOTICE(f"\n--- Batch #{batch_index}: Processing {len(to_process)} records ---"))
+
+            for record in to_process:
+                try:
+                    data = record.data if isinstance(record.data, dict) else json.loads(record.data or "{}")
+                    court_name = extract_court_name(record, data)
+                    chapter_name = extract_chapter_name(record, data)
+                    page_title = extract_page_title(record, data)
+                    html_content = format_html_content(record, court_name, data)
+
+                    tags = [
+                        {"name": "court", "value": court_name},
+                        {"name": "year", "value": chapter_name},
+                    ]
+                    
+                    court_location = data.get("court_location")
+                    if court_location:
+                        tags.append({"name": "court_location", "value": str(court_location)})
+
+                    case_no = data.get("case_number")
+                    if case_no:
+                        tags.append({"name": "case_number", "value": str(case_no)})
+
+                    employer = data.get("employer")
+                    if employer:
+                        tags.append({"name": "employer", "value": str(employer)})
+
+                    reason_for_dismissal = data.get("reason_for_dismissal")
+                    if reason_for_dismissal:
+                        tags.append({"name": "reason_for_dismissal", "value": str(reason_for_dismissal)})
+
+                    if dry_run:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"  [DRY RUN] Would import Record #{record.id} -> Book '{court_name}' | Chapter '{chapter_name}' | Title: '{page_title}'"
+                            )
+                        )
+                        total_imported_count += 1
+                        continue
+
+                    # Get or create Book for court / source
+                    if court_name not in book_cache:
+                        book_obj = client.get_or_create_book(court_name, shelf_id)
+                        book_cache[court_name] = book_obj["id"]
+
+                    book_id = book_cache[court_name]
+
+                    # Get or create Chapter for Year within Book
+                    chapter_key = (book_id, chapter_name)
+                    if chapter_key not in chapter_cache:
+                        chapter_obj = client.get_or_create_chapter(book_id, chapter_name)
+                        chapter_cache[chapter_key] = chapter_obj["id"]
+
+                    chapter_id = chapter_cache[chapter_key]
+
+                    # Create HTML Page in BookStack under Chapter
+                    page_obj = client.create_page(
+                        book_id=book_id,
+                        chapter_id=chapter_id,
+                        name=page_title,
+                        html=html_content,
+                        tags=tags,
+                    )
+                    page_id = page_obj["id"]
+
+                    # Record successful import in DB mapping table
+                    with transaction.atomic():
+                        BookStackImport.objects.create(
+                            scrubbed_record=record,
+                            bookstack_page_id=page_id,
+                            bookstack_book_id=book_id,
+                            court_name=court_name,
+                        )
+
+                    total_imported_count += 1
                     self.stdout.write(
-                        self.style.WARNING(
-                            f"  [DRY RUN] Would import Record #{record.id} -> Book '{court_name}' | Chapter '{chapter_name}' | Title: '{page_title}'"
+                        self.style.SUCCESS(
+                            f"  [OK] Imported Record {record.id} -> Court '{court_name}' (Book #{book_id}, Page #{page_id})"
                         )
                     )
-                    imported_count += 1
-                    continue
 
-                # Get or create Book for court / source
-                if court_name not in book_cache:
-                    book_obj = client.get_or_create_book(court_name, shelf_id)
-                    book_cache[court_name] = book_obj["id"]
-
-                book_id = book_cache[court_name]
-
-                # Get or create Chapter for Year within Book
-                chapter_key = (book_id, chapter_name)
-                if chapter_key not in chapter_cache:
-                    chapter_obj = client.get_or_create_chapter(book_id, chapter_name)
-                    chapter_cache[chapter_key] = chapter_obj["id"]
-
-                chapter_id = chapter_cache[chapter_key]
-
-                # Create HTML Page in BookStack under Chapter
-                page_obj = client.create_page(
-                    book_id=book_id,
-                    chapter_id=chapter_id,
-                    name=page_title,
-                    html=html_content,
-                    tags=tags,
-                )
-                page_id = page_obj["id"]
-
-                # Record successful import in DB mapping table
-                with transaction.atomic():
-                    BookStackImport.objects.create(
-                        scrubbed_record=record,
-                        bookstack_page_id=page_id,
-                        bookstack_book_id=book_id,
-                        court_name=court_name,
-                    )
-
-                imported_count += 1
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"  [OK] Imported Record {record.id} -> Court '{court_name}' (Book #{book_id}, Page #{page_id})"
-                    )
-                )
-
-            except Exception as exc:
-                error_count += 1
-                self.stderr.write(self.style.ERROR(f"  [ERROR] Failed to import Record {record.id}: {exc}"))
+                except Exception as exc:
+                    total_error_count += 1
+                    self.stderr.write(self.style.ERROR(f"  [ERROR] Failed to import Record {record.id}: {exc}"))
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Finished import run! Successfully imported: {imported_count}, Errors: {error_count}, Remaining: {total_unimported - imported_count}"
+                f"\n=== Finished import process! Total imported: {total_imported_count}, Errors: {total_error_count} ==="
             )
         )
