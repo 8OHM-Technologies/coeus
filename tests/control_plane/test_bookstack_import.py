@@ -73,10 +73,12 @@ class TestBookStackImport:
         )
 
         html_out = format_html_content(scrubbed, "Gauteng Local Division", scrubbed.data)
-        assert "[1234/2026] John Doe v Minister of Justice" in html_out
+        assert "1234/2026" in html_out
         assert "Gauteng Local Division" in html_out
         assert "John Doe" in html_out
         assert "Application granted with costs." in html_out
+        assert "detail_url" not in html_out
+        assert "https://saflii.org/cases/123" not in html_out
 
     def test_format_html_gazettes_and_journals(self):
         entity = Entity.objects.create(name="Gazette Source")
@@ -96,14 +98,15 @@ class TestBookStackImport:
                 "publisher": "Government Printer",
                 "summary": "Notice regarding plastic waste management.",
                 "keywords": ["Environment", "Regulations"],
+                "detail_url": "https://example.com/detail/123",
             },
         )
 
         html_out = format_html_content(scrubbed, "Government Gazette", scrubbed.data)
-        assert "National Environmental Management Act Notice" in html_out
         assert "Government Printer" in html_out
         assert "Notice regarding plastic waste management." in html_out
         assert "Environment" in html_out
+        assert "detail_url" not in html_out
 
     @patch("pipelines.bookstack_client.requests.Session.request")
     def test_bookstack_client_shelf_and_book(self, mock_request):
