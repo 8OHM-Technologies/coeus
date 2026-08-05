@@ -114,7 +114,6 @@ def format_html_content(
         "metadata",
     }
 
-    record_type_str = (extracted.record_type if extracted and extracted.record_type else "")
     doc_date = (
         data.get("judgment_date")
         or data.get("publication_date")
@@ -124,8 +123,6 @@ def format_html_content(
         or (str(extracted.document_date) if extracted and extracted.document_date else "N/A")
     )
     doc_date_esc = html.escape(str(doc_date))
-    rec_type_display = (data.get("Document Type") or record_type_str.replace("_", " ").title() or "Legal Document")
-    rec_type_esc = html.escape(str(rec_type_display))
     court_esc = html.escape(court_name)
 
     ref_number = (
@@ -138,7 +135,15 @@ def format_html_content(
     )
     ref_esc = html.escape(str(ref_number)) if ref_number else None
 
-    html_parts = ['<div class="page-content">']
+    html_parts = [
+        '<style>\n'
+        '.page-title, h1.page-title, h1 {\n'
+        '    font-size: 1.6rem !important;\n'
+        '    line-height: 1.3 !important;\n'
+        '}\n'
+        '</style>\n'
+        '<div class="page-content">'
+    ]
 
     # -------------------------------------------------------------------------
     # 1. Aligned Header Info Callout
@@ -147,7 +152,7 @@ def format_html_content(
     html_parts.append(f'<strong>Forum / Source:</strong> {court_esc}')
     if ref_esc:
         html_parts.append(f' &nbsp;|&nbsp; <strong>Reference:</strong> <code>{ref_esc}</code>')
-    html_parts.append(f' &nbsp;|&nbsp; <strong>Date:</strong> {doc_date_esc} &nbsp;|&nbsp; <strong>Type:</strong> {rec_type_esc}')
+    html_parts.append(f' &nbsp;|&nbsp; <strong>Date:</strong> {doc_date_esc}')
     html_parts.append('</p></div>')
 
     # -------------------------------------------------------------------------
@@ -213,19 +218,41 @@ def format_html_content(
         "full_text", "text", "content", "raw_text", "judgment_text",
         "title", "name", "heading",
     })
-    remaining_fields = {k: v for k, v in data.items() if k not in handled_keys and v is not None and v != ""}
+
+    # Consolidate Court and Forum entries into a single "Court/Forum" entry
+    court_forum_values: List[str] = []
+    court_forum_keys_to_exclude = set()
+
+    for k, v in data.items():
+        if v is None or v == "":
+            continue
+        k_norm = k.lower().replace("_", " ").strip()
+        if k_norm in {"court", "forum", "court forum", "court/forum", "forum/court", "court / forum"}:
+            court_forum_keys_to_exclude.add(k)
+            val_str = str(v).strip()
+            if val_str and val_str not in court_forum_values:
+                court_forum_values.append(val_str)
+
+    remaining_fields: Dict[str, str] = {}
+    if court_forum_values:
+        remaining_fields["Court/Forum"] = " / ".join(court_forum_values)
+
+    for k, v in data.items():
+        if k in handled_keys or k in court_forum_keys_to_exclude or v is None or v == "":
+            continue
+        k_label = k.replace("_", " ").title()
+        if isinstance(v, list):
+            v_str = ", ".join(str(item) for item in v)
+        elif isinstance(v, dict):
+            v_str = json.dumps(v, indent=2)
+        else:
+            v_str = str(v)
+        remaining_fields[k_label] = v_str
 
     if remaining_fields:
         html_parts.append('<h2>📋 Document Details</h2><ul>')
-        for k, v in remaining_fields.items():
-            k_label = k.replace("_", " ").title()
-            if isinstance(v, list):
-                v_str = ", ".join(str(item) for item in v)
-            elif isinstance(v, dict):
-                v_str = json.dumps(v, indent=2)
-            else:
-                v_str = str(v)
-            html_parts.append(f'<li><strong>{html.escape(k_label)}:</strong> {html.escape(v_str)}</li>')
+        for label, val_str in sorted(remaining_fields.items(), key=lambda item: item[0].lower()):
+            html_parts.append(f'<li><strong>{html.escape(label)}:</strong> {html.escape(val_str)}</li>')
         html_parts.append('</ul>')
 
     html_parts.append('</div>')

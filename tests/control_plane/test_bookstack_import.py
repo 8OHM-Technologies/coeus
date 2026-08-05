@@ -108,6 +108,55 @@ class TestBookStackImport:
         assert "Environment" in html_out
         assert "detail_url" not in html_out
 
+    def test_format_html_content_court_forum_sorting_and_type_removal(self):
+        entity = Entity.objects.create(name="CCMA Source")
+        target = Target.objects.create(entity=entity, target_name="CCMA")
+        extracted = ExtractedRecord.objects.create(
+            target=target,
+            document_date="1996-11-01",
+            record_type="sabinet_ccma",
+            data={},
+        )
+        data = {
+            "court": "CCMA",
+            "forum": "CCMA",
+            "employee": "Melikhaya [REDACTED]",
+            "employer": "Quattro Protection Services (Pty) Ltd",
+            "award_date": "1996-11-01",
+            "hearing_end": "1996-11-27",
+            "award_number": "WE54",
+            "date_modified": "2019-10-28",
+            "document_type": "CCMA Bargaining Council Awards",
+            "hearing_start": "1996-11-27",
+            "court_location": "Western Cape [Cape Town]"
+        }
+        scrubbed = ScrubbedRecord.objects.create(extracted_record=extracted, data=data)
+
+        html_out = format_html_content(scrubbed, "CCMA", data)
+
+        # 1. Check "Type:" is removed from top callout
+        assert "<strong>Type:</strong>" not in html_out
+
+        # 2. Check title styling is present
+        assert ".page-title, h1.page-title, h1" in html_out
+
+        # 3. Check Court/Forum consolidation
+        assert "<strong>Court/Forum:</strong> CCMA" in html_out
+        assert "<strong>Court:</strong>" not in html_out
+        assert "<strong>Forum:</strong>" not in html_out
+
+        # 4. Check alphabetical sorting of keys
+        pos_award_date = html_out.find("<strong>Award Date:</strong>")
+        pos_award_num = html_out.find("<strong>Award Number:</strong>")
+        pos_court_loc = html_out.find("<strong>Court Location:</strong>")
+        pos_court_forum = html_out.find("<strong>Court/Forum:</strong>")
+        pos_date_mod = html_out.find("<strong>Date Modified:</strong>")
+        pos_doc_type = html_out.find("<strong>Document Type:</strong>")
+        pos_employee = html_out.find("<strong>Employee:</strong>")
+        pos_employer = html_out.find("<strong>Employer:</strong>")
+
+        assert pos_award_date < pos_award_num < pos_court_loc < pos_court_forum < pos_date_mod < pos_doc_type < pos_employee < pos_employer
+
     @patch("pipelines.bookstack_client.requests.Session.request")
     def test_bookstack_client_shelf_and_book(self, mock_request):
         # Mock shelf search (found)
