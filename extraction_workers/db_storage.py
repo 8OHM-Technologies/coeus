@@ -9,6 +9,7 @@ old JSON-file + Google-Drive backup workflow.
 """
 
 import json
+import asyncio
 import logging
 import uuid
 from datetime import date
@@ -141,14 +142,22 @@ async def get_existing_case_numbers(
     record_type: str,
 ) -> set[str]:
     """Return the set of ``case_number`` values already stored in the ``data`` column for *record_type*."""
-    rows = await conn.fetch(
-        """
-        SELECT data->>'case_number' AS case_number FROM extracted_records
-        WHERE record_type = $1 AND (data->>'case_number') IS NOT NULL
-        """,
-        record_type,
-    )
-    return {row["case_number"] for row in rows if row["case_number"]}
+    try:
+        rows = await asyncio.wait_for(
+            conn.fetch(
+                """
+                SELECT data->>'case_number' AS case_number FROM extracted_records
+                WHERE record_type = $1 AND (data->>'case_number') IS NOT NULL
+                """,
+                record_type,
+            ),
+            timeout=5.0,
+        )
+        return {row["case_number"] for row in rows if row["case_number"]}
+    except Exception as exc:
+        logger.warning(f"Could not load existing case numbers for '{record_type}': {exc}")
+        return set()
+
 
 
 # ---------------------------------------------------------------------------
