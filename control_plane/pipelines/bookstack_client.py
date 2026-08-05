@@ -138,6 +138,25 @@ class BookStackClient:
             return self._request("PUT", f"shelves/{shelf_id}", json={"books": updated_book_ids})
         return shelf
 
+    def get_or_create_chapter(self, book_id: int, chapter_name: str) -> dict:
+        """
+        Finds a chapter by name within book_id or creates a new chapter under book_id.
+        Returns the chapter dict containing 'id', 'name', etc.
+        """
+        res = self._request("GET", "chapters", params={"filter[book_id]": book_id, "filter[name]": chapter_name})
+        data = res.get("data", [])
+        for chapter in data:
+            if chapter.get("name") == chapter_name:
+                return chapter
+
+        payload = {
+            "book_id": book_id,
+            "name": chapter_name,
+            "description": f"Records for {chapter_name}",
+        }
+        logger.info(f"Creating new BookStack Chapter '{chapter_name}' in Book #{book_id}")
+        return self._request("POST", "chapters", json=payload)
+
     def create_page(
         self,
         book_id: int,

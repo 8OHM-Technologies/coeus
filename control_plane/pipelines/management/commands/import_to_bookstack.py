@@ -13,7 +13,8 @@ Usage:
 import html
 import json
 import logging
-from typing import Any, Dict, List, Optional
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -46,6 +47,26 @@ def extract_court_name(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) ->
             return extracted.target.entity.name.strip()
 
     return "General Publications"
+
+
+def extract_chapter_name(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) -> str:
+    """Derive chapter name (Year) from document/judgment/publication date fields."""
+    extracted = scrubbed_record.extracted_record
+    doc_date = (
+        data.get("judgment_date")
+        or data.get("publication_date")
+        or data.get("Award Date")
+        or data.get("award_date")
+        or data.get("date")
+        or data.get("metadata", {}).get("document_date")
+        or (str(extracted.document_date) if extracted and extracted.document_date else None)
+    )
+    if doc_date:
+        match = re.search(r"\b(19\d\d|20\d\d)\b", str(doc_date))
+        if match:
+            return match.group(1)
+
+    return "Unknown Year"
 
 
 def extract_page_title(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) -> str:
@@ -360,6 +381,7 @@ class Command(BaseCommand):
         if dry_run:
             shelf_id = 999
             book_cache: Dict[str, int] = {}
+            chapter_cache: Dict[Tuple[int, str], int] = {}
         else:
             try:
                 shelf_obj = client.get_or_create_shelf(shelf_name, "Shelf containing South African court judgments, gazettes, and legal records.")
@@ -369,6 +391,7 @@ class Command(BaseCommand):
                 self.stderr.write(self.style.ERROR(f"Failed to connect to BookStack API: {exc}"))
                 return
             book_cache = {}
+            chapter_cache = {}
 
         imported_count = 0
         error_count = 0
@@ -377,11 +400,13 @@ class Command(BaseCommand):
             try:
                 data = record.data if isinstance(record.data, dict) else json.loads(record.data or "{}")
                 court_name = extract_court_name(record, data)
+                chapter_name = extract_chapter_name(record, data)
                 page_title = extract_page_title(record, data)
                 html_content = format_html_content(record, court_name, data)
 
                 tags = [
                     {"name": "court", "value": court_name},
+                    {"name": "year", "value": chapter_name},
                 ]
                 
                 court_location = data.get("court_location")
@@ -403,7 +428,7 @@ class Command(BaseCommand):
                 if dry_run:
                     self.stdout.write(
                         self.style.WARNING(
-                            f"  [DRY RUN] Would import Record #{record.id} -> Book '{court_name}' | Title: '{page_title}'"
+                            f"  [DRY RUN] Would import Record #{record.id} -> Book '{court_name}' | Chapter '{chapter_name}' | Title: '{page_title}'"
                         )
                     )
                     imported_count += 1
@@ -416,9 +441,18 @@ class Command(BaseCommand):
 
                 book_id = book_cache[court_name]
 
-                # Create HTML Page in BookStack
+                # Get or create Chapter for Year within Book
+                chapter_key = (book_id, chapter_name)
+                if chapter_key not in chapter_cache:
+                    chapter_obj = client.get_or_create_chapter(book_id, chapter_name)
+                    chapter_cache[chapter_key] = chapter_obj["id"]
+
+                chapter_id = chapter_cache[chapter_key]
+
+                # Create HTML Page in BookStack under Chapter
                 page_obj = client.create_page(
                     book_id=book_id,
+                    chapter_id=chapter_id,
                     name=page_title,
                     html=html_content,
                     tags=tags,
