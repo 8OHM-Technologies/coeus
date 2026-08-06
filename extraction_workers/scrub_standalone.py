@@ -1,7 +1,8 @@
 """Standalone PII Scrubber CLI Script.
 
-Can be run locally from host environment (.venv) or inside control plane container:
-    PYTHONPATH=. python extraction_workers/scrub_standalone.py [record_type]
+Can be run locally from host environment or inside worker/extractor container:
+    python extraction_workers/scrub_standalone.py [record_type]
+    python extraction_workers/scrub_standalone.py --record-type saflii_courts --batch-size 100
 """
 
 import os
@@ -9,13 +10,13 @@ import sys
 import json
 import logging
 import asyncio
+import argparse
 import uuid
 
 # Ensure root directory is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from extraction_workers.utils.pii_scrub import Scrub
-from extraction_workers.db import get_db_connection
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,11 +25,18 @@ logging.basicConfig(
 logger = logging.getLogger("coeus.standalone_scrubber")
 
 
-async def run_standalone_scrub(record_type: str = None, batch_size: int = 200) -> None:
+async def run_standalone_scrub(
+    record_type: str | None = None,
+    batch_size: int = 200,
+    model_name: str | None = None,
+    threshold: float = 0.5,
+) -> None:
     """Fetches unscrubbed detailed records in batches and scrubs PII."""
+    from extraction_workers.db import get_db_connection
+
     conn = await get_db_connection()
     try:
-        scrubber = Scrub()
+        scrubber = Scrub(model_name=model_name, threshold=threshold) if model_name else Scrub(threshold=threshold)
         total_scrubbed = 0
 
         while True:
@@ -88,6 +96,24 @@ async def run_standalone_scrub(record_type: str = None, batch_size: int = 200) -
         await conn.close()
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Standalone PII scrubber for extracted records.")
+    parser.add_argument("record_type_pos", nargs="?", default=None, help="Record type to scrub (positional)")
+    parser.add_argument("--record-type", "-r", dest="record_type_opt", default=None, help="Record type to scrub")
+    parser.add_argument("--batch-size", "-b", type=int, default=200, help="Batch size per fetch")
+    parser.add_argument("--threshold", "-t", type=float, default=0.5, help="GLiNER prediction confidence threshold")
+    parser.add_argument("--model", "-m", dest="model_name", default=None, help="Custom GLiNER model name")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    rec_type = sys.argv[1] if len(sys.argv) > 1 else None
-    asyncio.run(run_standalone_scrub(rec_type))
+    args = parse_args()
+    record_type = args.record_type_opt or args.record_type_pos
+    asyncio.run(
+        run_standalone_scrub(
+            record_type=record_type,
+            batch_size=args.batch_size,
+            model_name=args.model_name,
+            threshold=args.threshold,
+        )
+    )

@@ -18,10 +18,13 @@ def pytest_configure(config):
     unmanaged models (managed = False) to managed = True so that
     pytest-django's test DB creation creates tables for them.
     """
-    import django
-    django.setup()
+    try:
+        import django
+        django.setup()
 
-    from django.apps import apps
-    for model in apps.get_models():
-        if not model._meta.managed:
-            model._meta.managed = True
+        from django.apps import apps
+        for model in apps.get_models():
+            if not model._meta.managed:
+                model._meta.managed = True
+    except (ImportError, Exception):
+        pass

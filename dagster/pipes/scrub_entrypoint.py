@@ -11,9 +11,7 @@ import sys
 import json
 import logging
 import asyncio
-import asyncpg
 import uuid
-from datetime import datetime
 
 from dagster_pipes import PipesContext, open_dagster_pipes
 
@@ -39,7 +37,6 @@ async def run_scrub(pipes: PipesContext) -> None:
 
     logger.info(f"Starting PII scrubbing for partition/pipeline: '{partition_key}' (record type: '{record_type_to_scrub}')")
 
-    # Connect to PostgreSQL
     conn = None
     try:
         conn = await get_db_connection()
@@ -52,19 +49,13 @@ async def run_scrub(pipes: PipesContext) -> None:
         # Get total records for this pipeline
         total_records = await conn.fetchval(
             "SELECT COUNT(*) FROM extracted_records WHERE record_type = $1",
-            record_type_to_scrub
+            record_type_to_scrub,
         )
 
         # Get count of already scrubbed records
         already_scrubbed = await conn.fetchval(
             "SELECT COUNT(*) FROM extracted_records WHERE record_type = $1 AND cleaned_at IS NOT NULL",
-            record_type_to_scrub
-        )
-
-        # Fetch records that need scrubbing
-        records_to_scrub = await conn.fetch(
-            "SELECT id, data FROM extracted_records WHERE record_type = $1 AND status = 'detailed' AND cleaned_at IS NULL ORDER BY scraped_at ASC",
-            record_type_to_scrub
+            record_type_to_scrub,
         )
 
         logger.info(f"Total records in DB: {total_records}")
@@ -106,7 +97,7 @@ async def run_scrub(pipes: PipesContext) -> None:
                     """,
                     str(uuid.uuid4()),
                     record_id,
-                    json.dumps(scrubbed_data, ensure_ascii=False)
+                    json.dumps(scrubbed_data, ensure_ascii=False),
                 )
 
                 # Update the extracted_records entry's cleaned_at datetime
@@ -116,7 +107,7 @@ async def run_scrub(pipes: PipesContext) -> None:
                     SET cleaned_at = NOW()
                     WHERE id = $1
                     """,
-                    record_id
+                    record_id,
                 )
 
                 scrubbed_count += 1
@@ -131,12 +122,12 @@ async def run_scrub(pipes: PipesContext) -> None:
                 "partition_key": partition_key,
                 "total_records": total_records,
                 "already_scrubbed_before": already_scrubbed,
-                "scrubbed_this_run": len(records_to_scrub),
+                "scrubbed_this_run": scrubbed_this_run,
                 "total_scrubbed_after": scrubbed_count,
                 "status": "SUCCESS",
             }
         )
-        logger.info(f"Scrubbing complete for partition='{partition_key}'")
+        logger.info(f"Scrubbing complete for partition='{partition_key}'. Total scrubbed this run: {scrubbed_this_run}")
 
     finally:
         if conn:
