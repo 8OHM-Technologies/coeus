@@ -10,8 +10,10 @@ from typing import Any, Union
 
 try:
     from gliner import GLiNER
-except ImportError:
+    _gliner_import_error = None
+except Exception as exc:
     GLiNER = None
+    _gliner_import_error = exc
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ class Scrub:
         """Lazily load and cache the GLiNER model."""
         if self.model_name not in Scrub._models:
             if GLiNER is None:
-                logger.warning("GLiNER library is not installed. PII scrubbing will be bypassed.")
+                logger.warning(f"GLiNER library is not available ({_gliner_import_error}). PII scrubbing will be bypassed.")
                 return None
             try:
                 logger.info(f"Loading GLiNER model '{self.model_name}'...")

@@ -136,9 +136,12 @@ sync-shop:
 migrate-saflii:
 	docker compose exec control-plane python control_plane/manage.py migrate_saflii_records
 
-# Run standalone PII scrubber CLI script
+# Run standalone PII scrubber CLI script (uses active python/.venv, or run via extractor container)
 scrub:
-	docker compose exec control-plane python extraction_workers/scrub_standalone.py $(ARGS)
+	python extraction_workers/scrub_standalone.py $(ARGS)
+
+scrub-container:
+	docker compose run --rm coeus-extractor python extraction_workers/scrub_standalone.py $(ARGS)
 
 # Run CCMA court normalization cleanup
 clean-ccma:
