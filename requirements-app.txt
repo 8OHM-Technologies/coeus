@@ -9,3 +9,4 @@ django-tomselect>=2026.6.2
 gunicorn==22.0.0
 whitenoise>=6.7.0
 python-dotenv
+gliner
