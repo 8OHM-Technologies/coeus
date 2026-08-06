@@ -62,7 +62,7 @@ class Scrub:
                 return None
         return Scrub._models.get(self.model_name)
 
-    def _split_into_chunks(self, text: str, max_chars: int = 1500) -> list[str]:
+    def _split_into_chunks(self, text: str, max_chars: int = 600) -> list[str]:
         """Splits a long string into chunks under max_chars length, preserving formatting."""
         if not text:
             return []
