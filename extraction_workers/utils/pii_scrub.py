@@ -62,13 +62,52 @@ class Scrub:
                 return None
         return Scrub._models.get(self.model_name)
 
+    def _split_into_chunks(self, text: str, max_chars: int = 1500) -> list[str]:
+        """Splits a long string into chunks under max_chars length, preserving formatting."""
+        if not text:
+            return []
+
+        import re
+        # Split on sentence boundaries and newlines, preserving the delimiters
+        raw_tokens = re.split(r"(\n|\. |\? |\! )", text)
+
+        chunks = []
+        current_chunk = []
+        current_length = 0
+
+        for token in raw_tokens:
+            if not token:
+                continue
+            if current_length + len(token) > max_chars and current_chunk:
+                chunks.append("".join(current_chunk))
+                current_chunk = [token]
+                current_length = len(token)
+            else:
+                current_chunk.append(token)
+                current_length += len(token)
+
+        if current_chunk:
+            chunks.append("".join(current_chunk))
+
+        # Further split any exceptionally long individual tokens that exceed max_chars
+        final_chunks = []
+        for chunk in chunks:
+            if len(chunk) <= max_chars:
+                final_chunks.append(chunk)
+            else:
+                for i in range(0, len(chunk), max_chars):
+                    final_chunks.append(chunk[i : i + max_chars])
+
+        return final_chunks
+
     def scrub_text(
         self,
         text: str,
         labels: list[str] | None = None,
         threshold: float | None = None,
+        batch_size: int = 32,
     ) -> str:
-        """Redacts PII entities from text by replacing spans with `[LABEL_NAME]`."""
+        """Redacts PII entities from text by splitting it into chunks and batch processing with GLiNER."""
         if not text or not isinstance(text, str) or not text.strip():
             return text
 
@@ -78,24 +117,38 @@ class Scrub:
         active_labels = labels or self.default_labels
         active_threshold = threshold if threshold is not None else self.threshold
 
+        chunks = self._split_into_chunks(text)
+        if not chunks:
+            return text
+
         try:
-            entities = self.model.predict_entities(text, active_labels, threshold=active_threshold)
+            # Use GLiNER batch inference for all chunks
+            all_entities = self.model.inference(
+                chunks,
+                active_labels,
+                batch_size=batch_size,
+                threshold=active_threshold,
+            )
         except Exception as exc:
-            logger.error(f"GLiNER entity prediction failed: {exc}")
+            logger.error(f"GLiNER batch inference failed: {exc}")
             return text
 
-        if not entities:
-            return text
+        redacted_chunks = []
+        for chunk, entities in zip(chunks, all_entities):
+            if not entities:
+                redacted_chunks.append(chunk)
+                continue
 
-        # Sort entities by start index in reverse order to preserve substring offsets
-        redacted = text
-        for entity in sorted(entities, key=lambda e: e["start"], reverse=True):
-            start = entity["start"]
-            end = entity["end"]
-            label_tag = f"[{entity['label'].upper()}]"
-            redacted = redacted[:start] + label_tag + redacted[end:]
+            redacted_chunk = chunk
+            # Sort entities by start index in reverse order to preserve substring offsets
+            for entity in sorted(entities, key=lambda e: e["start"], reverse=True):
+                start = entity["start"]
+                end = entity["end"]
+                label_tag = f"[{entity['label'].upper()}]"
+                redacted_chunk = redacted_chunk[:start] + label_tag + redacted_chunk[end:]
+            redacted_chunks.append(redacted_chunk)
 
-        return redacted
+        return "".join(redacted_chunks)
 
     def scrub_dict(
         self,
