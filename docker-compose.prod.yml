@@ -214,6 +214,7 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Africa/Johannesburg
+      - PHP_MEMORY_LIMIT=1024M
       - APP_URL=https://ohmbase.8ohm.co.za
       - APP_KEY=base64:3qjlIoUX4Tw6fUQgZcxMbz6lb8+dAzqpvItqHvahW1c=
       - TOKEN_AUTH_ENABLED=true
