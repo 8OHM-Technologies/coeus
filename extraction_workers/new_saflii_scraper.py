@@ -1029,7 +1029,6 @@ class SafliiScraper(BaseScraper):
                                         title = pdf_title or sb.get_page_title() or c_id
                                         center_html = ""  # No HTML content for PDFs
                                         full_text = pdf_text
-                                        full_text = pdf_text
 
                                     else:
                                         # --- HTML document: parse with BeautifulSoup ---
@@ -1045,6 +1044,15 @@ class SafliiScraper(BaseScraper):
                                         h2_el = center_div.find("h2") if center_div else None
                                         title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title()
                                         full_text = center_div.get_text(separator="\n", strip=True) if center_div else ""
+
+                                    # If the PDF has no text extracted (scanned PDF or download failed), mark for review
+                                    requires_human_review = False
+                                    if is_pdf and not full_text.strip():
+                                        requires_human_review = True
+                                        logger.warning(
+                                            f"[Worker {worker_id}][{idx}/{total_cases}] Scanned PDF or empty text detected "
+                                            f"for {case_url}. Marking as requires_human_review = True."
+                                        )
 
                                     if not case_no:
                                         case_no = extract_case_number_from_text(title)
@@ -1066,6 +1074,7 @@ class SafliiScraper(BaseScraper):
                                         "full_text": full_text,
                                         "scraped_at": datetime.now(timezone.utc).isoformat(),
                                         "worker_id": worker_id,
+                                        "requires_human_review": requires_human_review,
                                     }
 
                                     try:
