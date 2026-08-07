@@ -861,7 +861,8 @@ class SafliiScraper(BaseScraper):
             logger.info(f"[Worker {worker_id}] Staggering startup by {stagger_delay:.1f}s...")
             time.sleep(stagger_delay)
 
-        sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
+        worker_original_use_proxy = self.use_proxy
+        worker_current_use_proxy = worker_original_use_proxy
         worker_profile = f"/tmp/saflii_worker_profile_{worker_id}"
         max_cases_per_session = 100
 
@@ -874,15 +875,16 @@ class SafliiScraper(BaseScraper):
             shutil.rmtree(worker_profile, ignore_errors=True)
             os.makedirs(worker_profile, exist_ok=True)
 
-            logger.info(f"[Worker {worker_id}] Launching browser session (profile: {worker_profile})...")
+            logger.info(f"[Worker {worker_id}] Launching browser session (profile: {worker_profile}) [Proxy: {worker_current_use_proxy}]...")
             session_cases = 0
 
             try:
+                sb_proxy = format_proxy_for_sb(self.proxy_url) if worker_current_use_proxy else None
                 with SB(
                     uc=True,
                     headless=self.headless,
                     proxy=sb_proxy,
-                    multi_proxy=self.use_proxy,
+                    multi_proxy=worker_current_use_proxy,
                     test=True,
                     xvfb=False,  # Global Xvfb display managed at process level in detailing()
                     user_data_dir=worker_profile,
@@ -918,12 +920,28 @@ class SafliiScraper(BaseScraper):
                             c_court, c_year, c_id = parse_case_url(case_url, default_court="SAFLII")
                             case_no = self.url_to_case_number.get(case_url)
 
+                            # Check if the case requires a different proxy setting
+                            # Pass 1-3 uses original proxy; Pass 4-6 uses opposite proxy
+                            expected_use_proxy = worker_original_use_proxy if pass_number <= 3 else (not worker_original_use_proxy)
+                            if worker_current_use_proxy != expected_use_proxy:
+                                logger.info(
+                                    f"[Worker {worker_id}] Case {c_id} requires different proxy state "
+                                    f"(current: {worker_current_use_proxy}, expected: {expected_use_proxy}). "
+                                    f"Recycling browser session to match..."
+                                )
+                                # Re-queue the item so we don't lose it
+                                work_queue.put(item)
+                                # Update the proxy setting for the next session
+                                worker_current_use_proxy = expected_use_proxy
+                                # Break the inner loop to close the current browser and trigger a new one
+                                break
+
                             if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
                                 logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Skipping pre-existing record: {case_url}")
                                 session_cases += 1
                                 continue
 
-                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active [Pass {pass_number}/3] -> {case_url}")
+                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active [Pass {pass_number}/6] -> {case_url}")
                             success = False
 
                             for attempt in range(1, 4):
@@ -1086,11 +1104,12 @@ class SafliiScraper(BaseScraper):
                                     break
 
                                 except BlockedException as be:
+                                    proxy_log = "for a new proxy IP" if worker_current_use_proxy else "to rotate IP/session clearance"
                                     logger.warning(
                                         f"[Worker {worker_id}][{idx}/{total_cases}] 🛑 Turnstile block detected on case page {case_url} ({be}). "
-                                        f"Assuming current IP is blocked by Cloudflare. Re-queueing case and recycling browser for a new proxy IP..."
+                                        f"Assuming current IP is blocked by Cloudflare. Re-queueing case and recycling browser {proxy_log}..."
                                     )
-                                    if pass_number < 3:
+                                    if pass_number < 6:
                                         work_queue.put((idx, case_url, pass_number + 1))
                                     raise  # Break out to recycle browser session and rotate proxy IP
                                 except Exception as err:
@@ -1105,7 +1124,7 @@ class SafliiScraper(BaseScraper):
                                     )
                                     if any(w in err_msg.lower() for w in _fatal_session_keywords):
                                         logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Window or session connection disrupted. Re-queueing item and recycling browser...")
-                                        if pass_number < 3:
+                                        if pass_number < 6:
                                             work_queue.put((idx, case_url, pass_number + 1))
                                         raise  # Break out to recycle browser session
 
@@ -1115,12 +1134,12 @@ class SafliiScraper(BaseScraper):
                             if success:
                                 sb.sleep(self.cooldown_seconds + random.uniform(0.3, 0.9))
                             else:
-                                if pass_number < 3:
-                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/3. Re-queueing for retry pass {pass_number + 1}...")
+                                if pass_number < 6:
+                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/6. Re-queueing for retry pass {pass_number + 1}...")
                                     work_queue.put((idx, case_url, pass_number + 1))
                                     sb.sleep(2)
                                 else:
-                                    logger.error(f"[Worker {worker_id}][{idx}/{total_cases}] ❌ Case {c_id} ({case_url}) permanently failed after 3 retry passes.")
+                                    logger.error(f"[Worker {worker_id}][{idx}/{total_cases}] ❌ Case {c_id} ({case_url}) permanently failed after 6 retry passes.")
 
                             session_cases += 1
 
