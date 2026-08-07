@@ -69,7 +69,7 @@ async def run_standalone_scrub(
                 else:
                     data = dict(data_raw) if data_raw else {}
 
-                scrubbed_data = scrubber.scrub_dict(data)
+                scrubbed_data = scrubber.scrub(data)
 
                 await conn.execute(
                     """

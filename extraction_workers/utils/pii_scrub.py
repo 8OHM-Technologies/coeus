@@ -22,11 +22,8 @@ DEFAULT_MODEL_NAME = "urchade/gliner_multi_pii-v1"
 DEFAULT_PII_LABELS = [
     "person",
     "date of birth",
-    "social security number",
     "email",
     "phone number",
-    "medical facility",
-    "insurance id",
     "address",
 ]
 
@@ -103,8 +100,8 @@ class Scrub:
     def scrub_text(
         self,
         text: str,
-        labels: list[str] | None = None,
-        threshold: float | None = None,
+        labels: list[str] | None = self.default_labels,
+        threshold: float | None = self.threshold,
         batch_size: int = 32,
     ) -> str:
         """Redacts PII entities from text by splitting it into chunks and batch processing with GLiNER."""
@@ -153,8 +150,8 @@ class Scrub:
     def scrub_dict(
         self,
         data: dict[str, Any],
-        labels: list[str] | None = None,
-        threshold: float | None = None,
+        labels: list[str] | None = self.default_labels,
+        threshold: float | None = self.threshold,
     ) -> dict[str, Any]:
         """Recursively traverses and redacts PII within nested dictionary structures."""
         scrubbed = {}
@@ -172,8 +169,8 @@ class Scrub:
     def _scrub_list(
         self,
         items: list[Any],
-        labels: list[str] | None = None,
-        threshold: float | None = None,
+        labels: list[str] | None = self.default_labels,
+        threshold: float | None = self.threshold,
     ) -> list[Any]:
         """Recursively redacts PII in list elements."""
         result = []
@@ -191,8 +188,8 @@ class Scrub:
     def scrub(
         self,
         input_data: Union[str, dict[str, Any]],
-        labels: list[str] | None = None,
-        threshold: float | None = None,
+        labels: list[str] | None = self.default_labels,
+        threshold: float | None = self.threshold,
     ) -> Union[str, dict[str, Any]]:
         """Convenience entry point for scrubbing either raw strings, JSON strings, or dicts."""
         if isinstance(input_data, dict):
