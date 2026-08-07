@@ -140,17 +140,25 @@ async def get_existing_urls_by_status(
 async def get_existing_case_numbers(
     conn: asyncpg.Connection,
     record_type: str,
+    status: str | None = None,
 ) -> set[str]:
     """Return the set of ``case_number`` values already stored in the ``data`` column for *record_type*."""
     try:
-        rows = await asyncio.wait_for(
-            conn.fetch(
-                """
+        if status is not None:
+            query = """
+                SELECT data->>'case_number' AS case_number FROM extracted_records
+                WHERE record_type = $1 AND status = $2 AND (data->>'case_number') IS NOT NULL
+            """
+            args = (record_type, status)
+        else:
+            query = """
                 SELECT data->>'case_number' AS case_number FROM extracted_records
                 WHERE record_type = $1 AND (data->>'case_number') IS NOT NULL
-                """,
-                record_type,
-            ),
+            """
+            args = (record_type,)
+
+        rows = await asyncio.wait_for(
+            conn.fetch(query, *args),
             timeout=5.0,
         )
         return {row["case_number"] for row in rows if row["case_number"]}

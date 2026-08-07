@@ -1170,7 +1170,7 @@ class SafliiScraper(BaseScraper):
         extraction_params = self.config.get("extraction_params", {})
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
 
-        # Refresh existing_urls to only contain URLs already detailed,
+        # Refresh existing_urls and existing_case_numbers to only contain records already detailed,
         # so indexed-but-not-yet-detailed records are NOT skipped
         try:
             detailed_urls = await db_storage.get_existing_urls_by_status(
@@ -1178,26 +1178,44 @@ class SafliiScraper(BaseScraper):
             )
             self.existing_urls = set(detailed_urls)
             logger.info(f"Refreshed existing_urls for detailing: {len(self.existing_urls)} already-detailed URLs.")
-        except AttributeError:
-            # Fallback if get_existing_urls_by_status doesn't exist yet
-            logger.warning("get_existing_urls_by_status not available; using unfiltered existing_urls.")
 
-        if not self.case_urls:
-            # Query extracted_records table dynamically to load all pending records needing detail
-            logger.info("No in-memory case URLs found; querying extracted_records for pending records needing detail...")
-            db_records = await db_storage.load_records_needing_detail(
-                self.conn,
-                db_record_type,
-                sort_desc=False,
-                limit=None,
-                include_data=False,
+            detailed_cases = await db_storage.get_existing_case_numbers(
+                self.conn, db_record_type, status="detailed"
             )
-            if db_records:
-                self.case_urls = [r["source_url"] for r in db_records if r.get("source_url")]
-                logger.info(f"Loaded {len(self.case_urls)} pending URLs from extracted_records.")
-            else:
-                logger.info("No pending records needing detail found in extracted_records. Detailing complete.")
-                return
+            self.existing_case_numbers = set(detailed_cases)
+            logger.info(f"Refreshed existing_case_numbers for detailing: {len(self.existing_case_numbers)} already-detailed case numbers.")
+        except Exception as refresh_err:
+            logger.warning(f"Failed to refresh deduplication state: {refresh_err}. Using baseline deduplication state.")
+
+        # Query extracted_records table dynamically to load all pending records needing detail
+        logger.info("Querying database for any additional pending records needing detail...")
+        db_records = await db_storage.load_records_needing_detail(
+            self.conn,
+            db_record_type,
+            sort_desc=False,
+            limit=None,
+            include_data=False,
+        )
+        db_pending_urls = [r["source_url"] for r in db_records if r.get("source_url")] if db_records else []
+
+        # Merge both sources, preserving order and removing duplicates
+        seen = set(self.case_urls)
+        merged_urls = list(self.case_urls)
+        for url in db_pending_urls:
+            if url not in seen:
+                seen.add(url)
+                merged_urls.append(url)
+
+        self.case_urls = merged_urls
+        if not self.case_urls:
+            logger.info("No pending records needing detail found. Detailing complete.")
+            return
+
+        logger.info(
+            f"Total case URLs scheduled for detailing: {len(self.case_urls)} "
+            f"({len(merged_urls) - len(db_pending_urls)} new from indexing, "
+            f"{len(db_pending_urls)} loaded from database)."
+        )
 
         concurrency = int(extraction_params.get("concurrency", 4))
         logger.info(f"[Stage 1B start] Starting detailing with {concurrency} SeleniumBase UC worker threads...")
