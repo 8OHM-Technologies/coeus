@@ -136,7 +136,6 @@ async def get_existing_urls_by_status(
     )
     return {row["source_url"] for row in rows if row["source_url"]}
 
-# TODO FIX THIS - USE URLS INSTEAD (NO CASE NUMBERS YET)
 async def get_existing_case_numbers(
     conn: asyncpg.Connection,
     record_type: str,

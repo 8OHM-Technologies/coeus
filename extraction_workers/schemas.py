@@ -54,9 +54,9 @@ class SafliiCaseExtraction(BaseModel):
         ..., 
         description="List of respondents or defendants."
     )
-    judgment_date: date = Field(
+    hearing_date: date = Field(
         ..., 
-        description="The date the judgment was delivered (YYYY-MM-DD)."
+        description="The date the hearing was heared and judgment was delivered (YYYY-MM-DD)."
     )
     case_number: str = Field(
         ..., 
@@ -78,10 +78,6 @@ class SafliiCaseExtraction(BaseModel):
         ..., 
         description="List of presiding judges."
     )
-    summary: str = Field(
-        ..., 
-        description="Headnotes or formal summary of the case."
-    )
     court_location: str = Field(
         ..., 
         description="The city or location of the court."
@@ -90,11 +86,15 @@ class SafliiCaseExtraction(BaseModel):
         ..., 
         description="The final order or ruling delivered by the court."
     )
-    ai_summary: str = Field(
+    summary: str = Field(
         ..., 
-        description="AI-generated narrative summary of the case."
+        description="The headnotes or narrative summary of the case."
     )
-    ai_keywords: List[str] = Field(
+    keywords: List[str] = Field(
         ..., 
-        description="List of AI-generated keywords relevant to the case."
+        description="List of keywords/slugs relevant to the case."
+    )
+    formatted_text: str = Field(
+        ..., 
+        description="The full formatted text of the case. Found between the <!-- sino index --> and <!-- sino noindex --> HTML comment markers in the center_content JSON field."
     )
