@@ -41,7 +41,7 @@ gui_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
-# SAFLII Databases Index & Court Discovery Constants
+# SAFLII Databases Index & Dataset Discovery Constants
 # ---------------------------------------------------------------------------
 
 DATABASES_INDEX_URL = "https://www.saflii.org/content/databases.html"
@@ -50,10 +50,10 @@ DATABASES_INDEX_URL = "https://www.saflii.org/content/databases.html"
 _VALID_ZA_PATH_PREFIXES = ("/za/cases/", "/za/gaz/", "/za/journals/", "/za/other/")
 
 
-def extract_court_code_from_url(url: str) -> Optional[str]:
-    """Extract the SAFLII court/dataset code from a URL path.
+def extract_dataset_code_from_url(url: str) -> Optional[str]:
+    """Extract the SAFLII dataset/dataset code from a URL path.
 
-    Recognises patterns: ``/za/cases/{CODE}/``, ``/za/gaz/{CODE}/``,
+    Recognises patterns: ``/za/datasets/{CODE}/``, ``/za/gaz/{CODE}/``,
     ``/za/journals/{CODE}/``, ``/za/other/{CODE}/``
     """
     parsed = urllib.parse.urlparse(url)
@@ -101,7 +101,7 @@ def check_page_state(page_title: str = "", h1_title: str = "", body_text: str = 
         return "BLOCKED"
 
     # Only match EXPLICIT 404 error page titles — not titles that merely contain
-    # the string "404" (e.g. a real case titled "ZALCJHB 404 [2025]" is NOT a 404 page).
+    # the string "404" (e.g. a real dataset titled "ZALCJHB 404 [2025]" is NOT a 404 page).
     _NOT_FOUND_TITLES = {
         "not found",
         "page not found",
@@ -146,23 +146,23 @@ def get_sb_page_signals(sb: SB) -> Tuple[str, str, str]:
     return title, h1, body
 
 
-def parse_case_url(case_url: str, default_court: str = "SAFLII") -> Tuple[str, str, str]:
+def parse_dataset_url(dataset_url: str, default_dataset: str = "SAFLII") -> Tuple[str, str, str]:
     """Parse a valid SAFLII asset path to map structural parameters."""
-    parsed = urllib.parse.urlparse(case_url)
+    parsed = urllib.parse.urlparse(dataset_url)
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) >= 3:
         for i in range(len(parts) - 2, 0, -1):
             if parts[i].isdigit() and len(parts[i]) == 4:
                 return parts[i - 1], parts[i], os.path.splitext(parts[i + 1])[0]
-    return default_court, "unknown", "unknown"
+    return default_dataset, "unknown", "unknown"
 
 
-def extract_case_number_from_text(text: str) -> Optional[str]:
-    """Extract standard SAFLII case numbers or formal citations from strings."""
+def extract_dataset_number_from_text(text: str) -> Optional[str]:
+    """Extract standard SAFLII dataset numbers or formal citations from strings."""
     if not text:
         return None
 
-    match = re.search(r'Case\s+(?:No|Number)\s*:\s*([A-Za-z0-9/\s-]+)', text, re.IGNORECASE)
+    match = re.search(r'Dataset\s+(?:No|Number)\s*:\s*([A-Za-z0-9/\s-]+)', text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
 
@@ -180,72 +180,6 @@ def extract_case_number_from_text(text: str) -> Optional[str]:
 
     return None
 
-
-def parse_saflii_case(raw_html: str, url: str) -> Optional[Dict[str, Any]]:
-    """
-    Parses a SAFLII case HTML page string into structured metadata and body text using BeautifulSoup (lxml).
-    Returns None if the page is a 404 or missing document.
-    Raises ValueError if stuck on a Cloudflare challenge screen.
-    """
-    soup = BeautifulSoup(raw_html, "lxml")
-    page_title = soup.title.string.strip() if soup.title and soup.title.string else ""
-    page_text = soup.get_text()
-
-    if "404" in page_title or "page not found" in page_text.lower():
-        return None
-
-    if "just a moment" in page_title.lower() or "enable javascript" in page_text.lower():
-        raise ValueError("Cloudflare challenge page detected; request was intercepted.")
-
-    heading_el = soup.find(["h1", "h2", "h3"])
-    case_name = heading_el.get_text(strip=True) if heading_el else page_title
-
-    citation = None
-    citation_match = re.search(r"\[\d{4}\]\s+[A-Z]+\s+\d+", page_text)
-    if citation_match:
-        citation = citation_match.group(0)
-
-    case_number = extract_case_number_from_text(page_text)
-
-    for elem in soup(["script", "style", "nav", "header", "footer"]):
-        elem.decompose()
-
-    content_container = (
-        soup.find("div", id="center")
-        or soup.find("div", class_="judgment")
-        or soup.find("article")
-        or soup.find("body")
-    )
-    clean_text = (
-        content_container.get_text(separator="\n", strip=True)
-        if content_container
-        else ""
-    )
-
-    return {
-        "url": url,
-        "title": case_name,
-        "citation": citation,
-        "case_number": case_number,
-        "center_content": str(content_container) if content_container else "",
-        "full_text": clean_text,
-    }
-
-
-async def wait_for_page_load(page, url_type: str = "case") -> str:
-    """Asynchronously checks page load status for Playwright/browser instances."""
-    title = await page.title() or ""
-    h1_loc = page.locator("h1")
-    h1_text = ""
-    if await h1_loc.count() > 0:
-        h1_text = await h1_loc.first.inner_text() or ""
-    body_loc = page.locator("body")
-    body_text = ""
-    if await body_loc.count() > 0:
-        body_text = await body_loc.inner_text() or ""
-    return check_page_state(title, h1_text, body_text)
-
-
 # ---------------------------------------------------------------------------
 # Core Framework Implementation (SeleniumBase UC Mode + Multithreaded Worker)
 # ---------------------------------------------------------------------------
@@ -253,7 +187,7 @@ async def wait_for_page_load(page, url_type: str = "case") -> str:
 class SafliiScraper(BaseScraper):
     """
     SAFLII Scraper subclassing BaseScraper.
-    Discovers all South African courts/datasets from the SAFLII databases index
+    Discovers all South African legal datasets from the SAFLII databases index
     page, uses SeleniumBase UC mode with lxml parsing, multithreaded detailing
     workers, database record persistence, progress tracking, and proxy support.
     """
@@ -261,14 +195,14 @@ class SafliiScraper(BaseScraper):
     def __init__(
         self,
         pipeline_name: str,
-        courts: Optional[List[str]] = None,
+        datasets: Optional[List[str]] = None,
         year: Optional[int] = None,
         headless: bool = False,
         use_xvfb: bool = True,
         skip_stages: Optional[str] = None,
     ):
         super().__init__(pipeline_name, skip_stages=skip_stages)
-        self.courts_filter: Optional[List[str]] = courts
+        self.dataset_filter: Optional[List[str]] = datasets
         self.year: Optional[int] = year
         self.headless: bool = headless
         self.use_xvfb: bool = use_xvfb
@@ -278,23 +212,23 @@ class SafliiScraper(BaseScraper):
         self.take_debug_screenshots: bool = False
         self.screenshots_dir: str = ""
 
-        # Multi-court state
-        self.court_base_urls: Dict[str, Tuple[str, str]] = {}  # code -> (display_name, base_url)
-        self.case_urls: List[str] = []
-        self.url_to_case_number: Dict[str, str] = {}
+        # Multi-dataset state
+        self.dataset_base_urls: Dict[str, Tuple[str, str]] = {}  # code -> (display_name, base_url)
+        self.dataset_urls: List[str] = []
+        self.url_to_dataset_number: Dict[str, str] = {}
         self.db_lock = asyncio.Lock()
-        self._court_target_ids: Dict[str, Any] = {}
+        self._dataset_target_ids: Dict[str, Any] = {}
 
-    async def _get_target_id_for_court(self, court_code: str, case_url: Optional[str] = None) -> Any:
-        """Resolve the target ID dynamically for a given court code."""
-        if court_code not in self._court_target_ids:
-            display_name = court_code
+    async def _get_target_id_for_dataset(self, dataset_code: str, dataset_url: Optional[str] = None) -> Any:
+        """Resolve the target ID dynamically for a given dataset code."""
+        if dataset_code not in self._dataset_target_ids:
+            display_name = dataset_code
             base_url = None
 
-            if court_code in self.court_base_urls:
-                display_name, base_url = self.court_base_urls[court_code]
-            elif case_url:
-                parsed = urllib.parse.urlparse(case_url)
+            if dataset_code in self.dataset_base_urls:
+                display_name, base_url = self.dataset_base_urls[dataset_code]
+            elif dataset_url:
+                parsed = urllib.parse.urlparse(dataset_url)
                 parts = [p for p in parsed.path.split("/") if p]
                 for i, part in enumerate(parts):
                     if part == "za" and i + 2 < len(parts):
@@ -304,16 +238,16 @@ class SafliiScraper(BaseScraper):
                             break
 
             if not base_url:
-                base_url = f"https://www.saflii.org/za/cases/{court_code}/"
+                base_url = f"https://www.saflii.org/za/cases/{dataset_code}/"
 
             entity_name = self.config.get("name") or self.pipeline_name
             target_id = await db_storage.resolve_target_id(
-                self.conn, entity_name, court_code, base_url
+                self.conn, entity_name, dataset_code, base_url
             )
-            self._court_target_ids[court_code] = target_id
-            logger.info(f"Resolved target ID for court {court_code}: {target_id}")
+            self._dataset_target_ids[dataset_code] = target_id
+            logger.info(f"Resolved target ID for dataset {dataset_code}: {target_id}")
 
-        return self._court_target_ids[court_code]
+        return self._dataset_target_ids[dataset_code]
 
     async def initialize(self) -> None:
         """Hydrate configuration, resolve target IDs, DB connections, and progress state."""
@@ -324,14 +258,14 @@ class SafliiScraper(BaseScraper):
         # Allow index URL override from config; fall back to DATABASES_INDEX_URL
         self.index_url = self.config.get("start_url") or DATABASES_INDEX_URL
 
-        # Court filter: CLI argument takes precedence, then config extraction_params
-        if not self.courts_filter:
-            cfg_courts = extraction_params.get("courts")
-            if cfg_courts:
-                if isinstance(cfg_courts, str):
-                    self.courts_filter = [c.strip() for c in cfg_courts.split(",") if c.strip()]
-                elif isinstance(cfg_courts, list):
-                    self.courts_filter = cfg_courts
+        # Dataset filter: CLI argument takes precedence, then config extraction_params
+        if not self.dataset_filter:
+            cfg_datasets = extraction_params.get("datasets")
+            if cfg_datasets:
+                if isinstance(cfg_datasets, str):
+                    self.dataset_filter = [c.strip() for c in cfg_datasets.split(",") if c.strip()]
+                elif isinstance(cfg_datasets, list):
+                    self.dataset_filter = cfg_datasets
 
         self.cooldown_seconds = float(extraction_params.get("cooldown_seconds", 1.5))
         self.take_debug_screenshots = self.config.get("take_debug_screenshots", False)
@@ -340,12 +274,12 @@ class SafliiScraper(BaseScraper):
             self.screenshots_dir = os.path.join(os.path.dirname(self.output_dir), "screenshots")
             os.makedirs(self.screenshots_dir, exist_ok=True)
 
-        courts_desc = ", ".join(self.courts_filter) if self.courts_filter else "ALL (auto-discover)"
+        datasets_desc = ", ".join(self.dataset_filter) if self.dataset_filter else "ALL (auto-discover)"
         year_desc = str(self.year) if self.year else "auto-discover"
 
         logger.info("==================================================")
         logger.info(f"🚀 COEUS SAFLII WORKER (SeleniumBase UC Mode) ({self.pipeline_name})")
-        logger.info(f"Target Courts: {courts_desc} | Year: {year_desc}")
+        logger.info(f"Target Datasets: {datasets_desc} | Year: {year_desc}")
         logger.info("==================================================")
 
     async def authenticate(self, headless: bool = False) -> None:
@@ -509,15 +443,15 @@ class SafliiScraper(BaseScraper):
         return state
 
     # ------------------------------------------------------------------
-    # Court & Year Discovery
+    # Dataset & Year Discovery
     # ------------------------------------------------------------------
 
-    def _discover_court_urls_from_page(self, sb: SB) -> Dict[str, Tuple[str, str]]:
-        """Navigate to SAFLII databases index page and extract all South African court/dataset URLs.
+    def _discover_dataset_urls_from_page(self, sb: SB) -> Dict[str, Tuple[str, str]]:
+        """Navigate to SAFLII databases index page and extract all South African dataset/dataset URLs.
 
-        Returns dict mapping ``court_code`` → ``(display_name, base_url)``.
+        Returns dict mapping ``dataset_code`` → ``(display_name, base_url)``.
         """
-        courts: Dict[str, Tuple[str, str]] = {}
+        datasets: Dict[str, Tuple[str, str]] = {}
 
         for attempt in range(1, 4):
             state = self._navigate_and_handle_turnstile(
@@ -548,27 +482,27 @@ class SafliiScraper(BaseScraper):
                 if not any(parsed.path.startswith(prefix) for prefix in _VALID_ZA_PATH_PREFIXES):
                     continue
 
-                court_code = extract_court_code_from_url(abs_url)
-                if court_code:
+                dataset_code = extract_dataset_code_from_url(abs_url)
+                if dataset_code:
                     base_url = abs_url.rstrip("/") + "/"
-                    courts[court_code] = (link_text, base_url)
+                    datasets[dataset_code] = (link_text, base_url)
 
-            if courts:
-                logger.info(f"Discovered {len(courts)} South African court/dataset URLs from index page.")
+            if datasets:
+                logger.info(f"Discovered {len(datasets)} South African dataset URLs from index page.")
                 break
             else:
                 logger.warning(
-                    f"No court URLs found on attempt {attempt}/3. Page may not have loaded correctly."
+                    f"No dataset URLs found on attempt {attempt}/3. Page may not have loaded correctly."
                 )
                 if attempt < 3:
                     sb.sleep(attempt * 4)
 
-        return courts
+        return datasets
 
     def _discover_year_links_from_page(
-        self, sb: SB, court_code: str, base_url: str
+        self, sb: SB, dataset_code: str, base_url: str
     ) -> List[Tuple[int, str]]:
-        """Navigate to a court's base page and discover available year directory links.
+        """Navigate to a dataset's base page and discover available year directory links.
 
         Year links typically appear as ``<a href="YYYY/">`` inside ``<h3>`` elements.
 
@@ -578,20 +512,20 @@ class SafliiScraper(BaseScraper):
 
         for attempt in range(1, 4):
             state = self._navigate_and_handle_turnstile(
-                sb, base_url, f"court_{court_code}_years_attempt_{attempt}"
+                sb, base_url, f"dataset_{dataset_code}_years_attempt_{attempt}"
             )
             if state == "BLOCKED":
-                logger.warning(f"Court page {court_code} blocked on attempt {attempt}/3.")
+                logger.warning(f"Dataset page {dataset_code} blocked on attempt {attempt}/3.")
                 if attempt < 3:
                     sb.sleep(attempt * 4)
                     continue
                 else:
                     logger.error(
-                        f"Failed to access court page {court_code} after 3 attempts. Skipping."
+                        f"Failed to access dataset page {dataset_code} after 3 attempts. Skipping."
                     )
                     return []
             if state == "NOT_FOUND":
-                logger.warning(f"Court page {court_code} returned NOT_FOUND. Skipping.")
+                logger.warning(f"Dataset page {dataset_code} returned NOT_FOUND. Skipping.")
                 return []
 
             soup = BeautifulSoup(sb.get_page_source(), "lxml")
@@ -624,12 +558,12 @@ class SafliiScraper(BaseScraper):
             if year_links:
                 year_links.sort(key=lambda x: x[0])
                 logger.info(
-                    f"Court {court_code}: Discovered {len(year_links)} year directories: "
+                    f"Dataset {dataset_code}: Discovered {len(year_links)} year directories: "
                     f"{[y for y, _ in year_links]}"
                 )
                 break
             else:
-                logger.warning(f"Court {court_code}: No year links found on attempt {attempt}/3.")
+                logger.warning(f"Dataset {dataset_code}: No year links found on attempt {attempt}/3.")
                 if attempt < 3:
                     sb.sleep(attempt * 4)
 
@@ -644,21 +578,21 @@ class SafliiScraper(BaseScraper):
     ) -> Tuple[List[str], Dict[str, str]]:
         """Synchronous indexing task running inside a dedicated SB UC context thread.
 
-        Discovers courts from the databases index page, auto-discovers available
-        years per court, and harvests document URLs.  Indexed URLs are batch-saved
-        to the database per-court for restart resilience.
+        Discovers datasets from the databases index page, auto-discovers available
+        years per dataset, and harvests document URLs.  Indexed URLs are batch-saved
+        to the database per-dataset for restart resilience.
         """
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
-        raw_case_urls: List[str] = []
-        url_to_case_map: Dict[str, str] = {}
+        raw_dataset_urls: List[str] = []
+        url_to_dataset_map: Dict[str, str] = {}
         indexed_this_run: set = set()  # Local dedup set for within-run indexing
 
         indexing_profile = "/tmp/saflii_indexing_profile"
 
-        # 1. Discover all court URLs from the databases index page using a short-lived session
+        # 1. Discover all dataset URLs from the databases index page using a short-lived session
         shutil.rmtree(indexing_profile, ignore_errors=True)
         os.makedirs(indexing_profile, exist_ok=True)
-        logger.info(f"Discovering court URLs from: {self.index_url}")
+        logger.info(f"Discovering dataset URLs from: {self.index_url}")
         try:
             with SB(
                 uc=True,
@@ -677,43 +611,43 @@ class SafliiScraper(BaseScraper):
                 # Verify and log outbound public IP
                 self.log_outbound_ip(sb, label="SAFLII Indexing Stage (Discovery)")
 
-                self.court_base_urls = self._discover_court_urls_from_page(sb)
+                self.dataset_base_urls = self._discover_dataset_urls_from_page(sb)
         except Exception as discovery_err:
-            logger.error(f"Failed to discover court URLs during indexing startup: {discovery_err}")
+            logger.error(f"Failed to discover dataset URLs during indexing startup: {discovery_err}")
             return [], {}
 
-        if not self.court_base_urls:
-            logger.error("No court URLs discovered from index page. Aborting indexing.")
+        if not self.dataset_base_urls:
+            logger.error("No dataset URLs discovered from index page. Aborting indexing.")
             return [], {}
 
-        # 2. Apply court filter if specified
-        if self.courts_filter:
-            filter_set = {c.upper() for c in self.courts_filter}
+        # 2. Apply dataset filter if specified
+        if self.dataset_filter:
+            filter_set = {c.upper() for c in self.dataset_filter}
             filtered = {
-                k: v for k, v in self.court_base_urls.items() if k.upper() in filter_set
+                k: v for k, v in self.dataset_base_urls.items() if k.upper() in filter_set
             }
-            skipped = set(self.court_base_urls.keys()) - set(filtered.keys())
+            skipped = set(self.dataset_base_urls.keys()) - set(filtered.keys())
             if skipped:
                 logger.info(
-                    f"Court filter active. Skipping {len(skipped)} courts: {sorted(skipped)}"
+                    f"Dataset filter active. Skipping {len(skipped)} datasets: {sorted(skipped)}"
                 )
-            self.court_base_urls = filtered
+            self.dataset_base_urls = filtered
 
-        total_courts = len(self.court_base_urls)
-        logger.info(f"Processing {total_courts} courts: {sorted(self.court_base_urls.keys())}")
+        total_datasets = len(self.dataset_base_urls)
+        logger.info(f"Processing {total_datasets} datasets: {sorted(self.dataset_base_urls.keys())}")
 
-        # 3. For each court, discover years and harvest document URLs in a recycled browser session
-        for court_idx, (court_code, (display_name, base_url)) in enumerate(
-            sorted(self.court_base_urls.items()), 1
+        # 3. For each dataset, discover years and harvest document URLs in a recycled browser session
+        for dataset_idx, (dataset_code, (display_name, base_url)) in enumerate(
+            sorted(self.dataset_base_urls.items()), 1
         ):
             logger.info(f"\n{'=' * 60}")
             logger.info(
-                f"[Court {court_idx}/{total_courts}] {display_name} ({court_code})"
+                f"[Dataset {dataset_idx}/{total_datasets}] {display_name} ({dataset_code})"
             )
             logger.info(f"Base URL: {base_url}")
             logger.info("=" * 60)
 
-            # Clean user data directory before launching browser session for this court
+            # Clean user data directory before launching browser session for this dataset
             shutil.rmtree(indexing_profile, ignore_errors=True)
             os.makedirs(indexing_profile, exist_ok=True)
 
@@ -733,35 +667,35 @@ class SafliiScraper(BaseScraper):
                     sb.driver.set_script_timeout(30)
 
                     # Verify and log outbound public IP
-                    self.log_outbound_ip(sb, label=f"SAFLII Indexing Stage - {court_code}")
+                    self.log_outbound_ip(sb, label=f"SAFLII Indexing Stage - {dataset_code}")
 
                     # 3a. Discover available years
                     if self.year:
                         year_links = [(self.year, f"{base_url}{self.year}/")]
                     else:
-                        year_links = self._discover_year_links_from_page(sb, court_code, base_url)
+                        year_links = self._discover_year_links_from_page(sb, dataset_code, base_url)
 
                     if not year_links:
-                        logger.warning(f"Court {court_code}: No year directories found. Skipping.")
+                        logger.warning(f"Dataset {dataset_code}: No year directories found. Skipping.")
                         continue
 
-                    court_new_urls: List[str] = []
+                    dataset_new_urls: List[str] = []
 
                     # 3b. Process each year directory
                     for year, year_url in year_links:
                         logger.info(
-                            f"Processing structural year context directory: {court_code}/{year} -> {year_url}"
+                            f"Processing structural year context directory: {dataset_code}/{year} -> {year_url}"
                         )
                         found_for_year = 0
                         for attempt in range(1, 4):
                             try:
                                 state = self._navigate_and_handle_turnstile(
                                     sb, year_url,
-                                    f"court_{court_code}_year_{year}_attempt_{attempt}"
+                                    f"dataset_{dataset_code}_year_{year}_attempt_{attempt}"
                                 )
                                 if state == "BLOCKED":
                                     logger.warning(
-                                        f"Year directory {court_code}/{year} blocked on attempt {attempt}/3."
+                                        f"Year directory {dataset_code}/{year} blocked on attempt {attempt}/3."
                                     )
                                     if attempt < 3:
                                         sb.sleep(attempt * 4)
@@ -771,7 +705,7 @@ class SafliiScraper(BaseScraper):
 
                                 if state == "NOT_FOUND":
                                     logger.info(
-                                        f"Court {court_code} year {year}: Directory not found."
+                                        f"Dataset {dataset_code} year {year}: Directory not found."
                                     )
                                     break
 
@@ -791,19 +725,19 @@ class SafliiScraper(BaseScraper):
                                         ):
                                             if not ("toc-" in filename or filename == "index.html"):
                                                 if abs_url not in self.existing_urls and abs_url not in indexed_this_run:
-                                                    case_no = extract_case_number_from_text(a_tag.get_text(strip=True))
-                                                    if case_no:
-                                                        url_to_case_map[abs_url] = case_no
-                                                    court_new_urls.append(abs_url)
+                                                    dataset_no = extract_dataset_number_from_text(a_tag.get_text(strip=True))
+                                                    if dataset_no:
+                                                        url_to_dataset_map[abs_url] = dataset_no
+                                                    dataset_new_urls.append(abs_url)
                                                     found_for_year += 1
                                 logger.info(
-                                    f"Court {court_code} year {year}: "
+                                    f"Dataset {dataset_code} year {year}: "
                                     f"Harvested {found_for_year} new candidate URLs."
                                 )
                                 break
                             except Exception as err:
                                 logger.warning(
-                                    f"Error isolating index structures for {court_code}/{year} "
+                                    f"Error isolating index structures for {dataset_code}/{year} "
                                     f"[Attempt {attempt}]: {err}"
                                 )
                                 if attempt < 3:
@@ -811,33 +745,33 @@ class SafliiScraper(BaseScraper):
 
                         sb.sleep(self.cooldown_seconds + random.uniform(0.2, 0.6))
 
-                    # Batch-save this court's newly discovered URLs to DB for restart resilience
-                    if court_new_urls:
+                    # Batch-save this dataset's newly discovered URLs to DB for restart resilience
+                    if dataset_new_urls:
                         batch_records = []
-                        for curl in court_new_urls:
-                            cc, cy, cid = parse_case_url(curl, default_court=court_code)
+                        for curl in dataset_new_urls:
+                            cc, cy, cid = parse_dataset_url(curl, default_dataset=dataset_code)
                             rec = {
                                 "detail_url": curl,
-                                "court": cc,
+                                "dataset": cc,
                                 "year": cy,
-                                "case_id": cid,
+                                "dataset_id": cid,
                             }
-                            cn = url_to_case_map.get(curl)
+                            cn = url_to_dataset_map.get(curl)
                             if cn:
-                                rec["case_number"] = cn
+                                rec["dataset_number"] = cn
                             batch_records.append(rec)
 
                         try:
-                            # Dynamically resolve target_id for the current court
-                            court_target_id = asyncio.run_coroutine_threadsafe(
-                                self._get_target_id_for_court(court_code),
+                            # Dynamically resolve target_id for the current dataset
+                            dataset_target_id = asyncio.run_coroutine_threadsafe(
+                                self._get_target_id_for_dataset(dataset_code),
                                 loop,
                             ).result()
 
                             future = asyncio.run_coroutine_threadsafe(
                                 db_storage.upsert_scraped_records_batch(
                                     self.conn,
-                                    court_target_id,
+                                    dataset_target_id,
                                     db_record_type,
                                     batch_records,
                                     url_key="detail_url",
@@ -847,41 +781,41 @@ class SafliiScraper(BaseScraper):
                             )
                             saved = future.result(timeout=60)
                             logger.info(
-                                f"Court {court_code}: Saved {saved} indexed records to database."
+                                f"Dataset {dataset_code}: Saved {saved} indexed records to database."
                             )
                         except Exception as save_err:
                             logger.error(
-                                f"Court {court_code}: Failed to batch-save indexed records: {save_err}"
+                                f"Dataset {dataset_code}: Failed to batch-save indexed records: {save_err}"
                             )
 
                         # Track newly indexed URLs locally for within-run dedup
                         # (don't add to self.existing_urls — that would cause detailing to skip them)
-                        indexed_this_run.update(court_new_urls)
-                        raw_case_urls.extend(court_new_urls)
-            except Exception as court_err:
-                logger.error(f"Court {court_code}: Browser session failed or crashed: {court_err}. Recycling browser session...")
+                        indexed_this_run.update(dataset_new_urls)
+                        raw_dataset_urls.extend(dataset_new_urls)
+            except Exception as dataset_err:
+                logger.error(f"Dataset {dataset_code}: Browser session failed or crashed: {dataset_err}. Recycling browser session...")
 
-        return sorted(list(set(raw_case_urls))), url_to_case_map
+        return sorted(list(set(raw_dataset_urls))), url_to_dataset_map
 
     async def indexing(self) -> None:
-        """Sub-process A: Harvest case entry indexes across all discovered courts."""
+        """Sub-process A: Harvest dataset entry indexes across all discovered datasets."""
         logger.info("[Stage 1A start] Starting indexing stage via SeleniumBase UC thread...")
         extraction_params = self.config.get("extraction_params", {})
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
         loop = asyncio.get_running_loop()
 
-        self.case_urls, self.url_to_case_number = await asyncio.to_thread(
+        self.dataset_urls, self.url_to_dataset_number = await asyncio.to_thread(
             self._indexing_sync, loop, db_record_type
         )
-        logger.info(f"[Stage 1A complete] Total downstream asset indexes harvested: {len(self.case_urls)}")
+        logger.info(f"[Stage 1A complete] Total downstream asset indexes harvested: {len(self.dataset_urls)}")
 
-    async def _save_record_to_db(self, case_url: str, record: dict, doc_date: dt_date) -> None:
+    async def _save_record_to_db(self, dataset_url: str, record: dict, doc_date: dt_date) -> None:
         """Thread-safe helper to write detailed scraped records to the database."""
-        court_code = record.get("court") or "SAFLII"
-        court_target_id = await self._get_target_id_for_court(court_code, case_url)
+        dataset_code = record.get("dataset") or "SAFLII"
+        dataset_target_id = await self._get_target_id_for_dataset(dataset_code, dataset_url)
         async with self.db_lock:
             await db_storage.upsert_scraped_record(
-                self.conn, court_target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
+                self.conn, dataset_target_id, self.pipeline_name, dataset_url, record, doc_date, status="detailed"
             )
 
     def _detailing_worker_thread(
@@ -889,9 +823,9 @@ class SafliiScraper(BaseScraper):
         worker_id: int,
         work_queue: queue.Queue,
         loop: asyncio.AbstractEventLoop,
-        total_cases: int,
+        total_datasets: int,
     ) -> None:
-        """Synchronous thread running a dedicated SB UC instance for processing case items."""
+        """Synchronous thread running a dedicated SB UC instance for processing dataset items."""
         logger.info(f"[Worker {worker_id}] Starting detailing worker thread...")
 
         # Stagger worker startup to avoid race conditions during concurrent Chrome process creation
@@ -903,7 +837,7 @@ class SafliiScraper(BaseScraper):
         worker_original_use_proxy = self.use_proxy
         worker_current_use_proxy = worker_original_use_proxy
         worker_profile = f"/tmp/saflii_worker_profile_{worker_id}"
-        max_cases_per_session = 100
+        max_datasets_per_session = 100
 
         while True:
             # Check if queue is empty before launching/re-launching browser
@@ -915,7 +849,7 @@ class SafliiScraper(BaseScraper):
             os.makedirs(worker_profile, exist_ok=True)
 
             logger.info(f"[Worker {worker_id}] Launching browser session (profile: {worker_profile}) [Proxy: {worker_current_use_proxy}]...")
-            session_cases = 0
+            session_datasets = 0
 
             try:
                 sb_proxy = format_proxy_for_sb(self.proxy_url) if worker_current_use_proxy else None
@@ -936,7 +870,7 @@ class SafliiScraper(BaseScraper):
                     # Verify and log outbound public IP
                     self.log_outbound_ip(sb, label=f"SAFLII Detailing Worker {worker_id}")
 
-                    while session_cases < max_cases_per_session:
+                    while session_datasets < max_datasets_per_session:
                         try:
                             item = work_queue.get(timeout=1.0)
                         except queue.Empty:
@@ -951,20 +885,20 @@ class SafliiScraper(BaseScraper):
 
                         try:
                             if len(item) == 3:
-                                idx, case_url, pass_number = item
+                                idx, dataset_url, pass_number = item
                             else:
-                                idx, case_url = item
+                                idx, dataset_url = item
                                 pass_number = 1
 
-                            c_court, c_year, c_id = parse_case_url(case_url, default_court="SAFLII")
-                            case_no = self.url_to_case_number.get(case_url)
+                            dataset_code, dataset_year, dataset_id = parse_dataset_url(dataset_url, default_dataset="SAFLII")
+                            dataset_no = self.url_to_dataset_number.get(dataset_url)
 
-                            # Check if the case requires a different proxy setting
+                            # Check if the dataset requires a different proxy setting
                             # Pass 1-3 uses original proxy; Pass 4-6 uses opposite proxy
                             expected_use_proxy = worker_original_use_proxy if pass_number <= 3 else (not worker_original_use_proxy)
                             if worker_current_use_proxy != expected_use_proxy:
                                 logger.info(
-                                    f"[Worker {worker_id}] Case {c_id} requires different proxy state "
+                                    f"[Worker {worker_id}] Dataset {dataset_id} requires different proxy state "
                                     f"(current: {worker_current_use_proxy}, expected: {expected_use_proxy}). "
                                     f"Recycling browser session to match..."
                                 )
@@ -975,30 +909,30 @@ class SafliiScraper(BaseScraper):
                                 # Break the inner loop to close the current browser and trigger a new one
                                 break
 
-                            if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
-                                logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Skipping pre-existing record: {case_url}")
-                                session_cases += 1
+                            if dataset_url in self.existing_urls:
+                                logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Skipping pre-existing record: {dataset_url}")
+                                session_datasets += 1
                                 continue
 
-                            logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Detailed enrichment active [Pass {pass_number}/6] -> {case_url}")
+                            logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Detailed enrichment active [Pass {pass_number}/6] -> {dataset_url}")
                             success = False
 
                             for attempt in range(1, 4):
                                 try:
                                     state = self._navigate_and_handle_turnstile(
-                                        sb, case_url, f"worker_{worker_id}_case_{c_id}_pass_{pass_number}_att_{attempt}"
+                                        sb, dataset_url, f"worker_{worker_id}_dataset_{dataset_id}_pass_{pass_number}_att_{attempt}"
                                     )
                                     if state == "BLOCKED":
-                                        raise BlockedException(f"Turnstile block on asset: {c_id}")
+                                        raise BlockedException(f"Turnstile block on asset: {dataset_id}")
                                     elif state == "NOT_FOUND":
                                         if attempt < 3:
                                             logger.warning(
-                                                f"[Worker {worker_id}][{idx}/{total_cases}] NOT_FOUND on case {c_id} "
+                                                f"[Worker {worker_id}][{idx}/{total_datasets}] NOT_FOUND on dataset {dataset_id} "
                                                 f"[Pass {pass_number}, attempt {attempt}] — may be Turnstile misclassification. "
                                                 f"Attempting UC reconnect solve before next attempt..."
                                             )
                                             try:
-                                                sb.uc_open_with_reconnect(case_url, reconnect_time=5)
+                                                sb.uc_open_with_reconnect(dataset_url, reconnect_time=5)
                                                 sb.sleep(3)
                                                 try:
                                                     with gui_lock:
@@ -1008,17 +942,17 @@ class SafliiScraper(BaseScraper):
                                                     pass
                                             except Exception:
                                                 pass
-                                            raise BlockedException(f"NOT_FOUND (possible Turnstile misclassification) on asset: {c_id}")
+                                            raise BlockedException(f"NOT_FOUND (possible Turnstile misclassification) on asset: {dataset_id}")
                                         else:
                                             raise Exception(f"Resource missing (state: {state})")
                                     elif state == "NAVIGATION_FAILED":
-                                        raise Exception(f"Browser stuck on previous page, failed to navigate to target URL '{case_url}'")
+                                        raise Exception(f"Browser stuck on previous page, failed to navigate to target URL '{dataset_url}'")
 
-                                    is_pdf = case_url.lower().endswith(".pdf")
+                                    is_pdf = dataset_url.lower().endswith(".pdf")
 
                                     if is_pdf:
                                         # --- PDF document: download via browser session and extract text ---
-                                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] PDF detected, downloading via browser session...")
+                                        logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] PDF detected, downloading via browser session...")
                                         pdf_bytes = None
 
                                         # Primary: use JavaScript fetch inside browser context (inherits session cookies & CF clearance)
@@ -1037,7 +971,7 @@ class SafliiScraper(BaseScraper):
                                             .catch(err => callback('ERROR:' + err));
                                         """
                                         try:
-                                            b64_data = sb.execute_async_script(js_script, case_url)
+                                            b64_data = sb.execute_async_script(js_script, dataset_url)
                                             if b64_data and not str(b64_data).startswith("ERROR:"):
                                                 import base64
                                                 pdf_bytes = base64.b64decode(b64_data)
@@ -1046,7 +980,7 @@ class SafliiScraper(BaseScraper):
 
                                         if not pdf_bytes:
                                             try:
-                                                pdf_bytes = sb.download_file(case_url)
+                                                pdf_bytes = sb.download_file(dataset_url)
                                             except Exception as dl_err:
                                                 logger.warning(f"[Worker {worker_id}] sb.download_file failed: {dl_err}")
 
@@ -1061,11 +995,11 @@ class SafliiScraper(BaseScraper):
                                                 pdf_text = "\n".join(pages_text)
                                                 doc.close()
                                             except Exception as pdf_err:
-                                                logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] PDF text extraction failed: {pdf_err}")
+                                                logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] PDF text extraction failed: {pdf_err}")
                                         elif pymupdf is None:
                                             logger.warning(f"[Worker {worker_id}] PyMuPDF/fitz not installed in worker environment; skipping PDF text extraction.")
 
-                                        title = pdf_title or sb.get_page_title() or c_id
+                                        title = pdf_title or sb.get_page_title() or dataset_id
                                         center_html = ""  # No HTML content for PDFs
                                         full_text = pdf_text
 
@@ -1089,25 +1023,24 @@ class SafliiScraper(BaseScraper):
                                     if is_pdf and not full_text.strip():
                                         requires_human_review = True
                                         logger.warning(
-                                            f"[Worker {worker_id}][{idx}/{total_cases}] Scanned PDF or empty text detected "
-                                            f"for {case_url}. Marking as requires_human_review = True."
+                                            f"[Worker {worker_id}][{idx}/{total_datasets}] Scanned PDF or empty text detected "
+                                            f"for {dataset_url}. Marking as requires_human_review = True."
                                         )
 
-                                    if not case_no:
-                                        case_no = extract_case_number_from_text(title)
+                                    if not dataset_no:
+                                        dataset_no = extract_dataset_number_from_text(title)
 
-                                    if case_no and case_no in self.existing_case_numbers:
-                                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Duplicate signature isolated via late mapping: {case_no}")
+                                    if dataset_no and dataset_no in self.existing_dataset_numbers:
+                                        logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Duplicate signature isolated via late mapping: {dataset_no}")
                                         success = True
                                         break
 
                                     record = {
-                                        "court": c_court,
-                                        "year": c_year,
-                                        "case_id": c_id,
+                                        "dataset": dataset_code,
+                                        "year": dataset_year,
+                                        "dataset_id": dataset_id,
                                         "title": title,
-                                        "url": case_url,
-                                        "case_number": case_no,
+                                        "url": dataset_url,
                                         "document_type": "pdf" if is_pdf else "html",
                                         "center_content": center_html,
                                         "full_text": full_text,
@@ -1117,52 +1050,52 @@ class SafliiScraper(BaseScraper):
                                     }
 
                                     try:
-                                        doc_date = dt_date(int(c_year), 1, 1)
+                                        doc_date = dt_date(int(dataset_year), 1, 1)
                                     except Exception:
                                         doc_date = dt_date.today()
 
                                     # Dispatch async DB save (with 30s timeout)
                                     future = asyncio.run_coroutine_threadsafe(
-                                        self._save_record_to_db(case_url, record, doc_date),
+                                        self._save_record_to_db(dataset_url, record, doc_date),
                                         loop
                                     )
                                     future.result(timeout=30)
 
                                     # Dispatch async progress state save (with 30s timeout)
-                                    current_y = int(c_year) if c_year.isdigit() else datetime.now().year
+                                    current_y = int(dataset_year) if dataset_year.isdigit() else datetime.now().year
                                     future_prog = asyncio.run_coroutine_threadsafe(
                                         self.save_progress(
                                             year=current_y,
-                                            court_code=c_court,
+                                            dataset_code=dataset_code,
                                             last_index=idx,
-                                            total_cases=total_cases,
-                                            last_url=case_url,
+                                            total_datasets=total_datasets,
+                                            last_url=dataset_url,
                                             completed=False,
                                         ),
                                         loop
                                     )
                                     future_prog.result(timeout=30)
 
-                                    self.existing_urls.add(case_url)
-                                    if case_no:
-                                        self.existing_case_numbers.add(case_no)
+                                    self.existing_urls.add(dataset_url)
+                                    if dataset_no:
+                                        self.existing_dataset_numbers.add(dataset_no)
 
-                                    logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] [+] Saved record: {c_court}_{c_year}_{c_id}")
+                                    logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] [+] Saved record: {dataset_code}_{dataset_year}_{dataset_id}")
                                     success = True
                                     break
 
                                 except BlockedException as be:
                                     proxy_log = "for a new proxy IP" if worker_current_use_proxy else "to rotate IP/session clearance"
                                     logger.warning(
-                                        f"[Worker {worker_id}][{idx}/{total_cases}] 🛑 Turnstile block detected on case page {case_url} ({be}). "
-                                        f"Assuming current IP is blocked by Cloudflare. Re-queueing case and recycling browser {proxy_log}..."
+                                        f"[Worker {worker_id}][{idx}/{total_datasets}] 🛑 Turnstile block detected on dataset page {dataset_url} ({be}). "
+                                        f"Assuming current IP is blocked by Cloudflare. Re-queueing dataset and recycling browser {proxy_log}..."
                                     )
                                     if pass_number < 6:
-                                        work_queue.put((idx, case_url, pass_number + 1))
+                                        work_queue.put((idx, dataset_url, pass_number + 1))
                                     raise  # Break out to recycle browser session and rotate proxy IP
                                 except Exception as err:
                                     err_msg = str(err)
-                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] Processing error on case {c_id} [Pass {pass_number}, attempt {attempt}]: {err}")
+                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] Processing error on dataset {dataset_id} [Pass {pass_number}, attempt {attempt}]: {err}")
                                     _fatal_session_keywords = (
                                         "no such window",
                                         "target window already closed",
@@ -1171,9 +1104,9 @@ class SafliiScraper(BaseScraper):
                                         "connection refused",
                                     )
                                     if any(w in err_msg.lower() for w in _fatal_session_keywords):
-                                        logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Window or session connection disrupted. Re-queueing item and recycling browser...")
+                                        logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Window or session connection disrupted. Re-queueing item and recycling browser...")
                                         if pass_number < 6:
-                                            work_queue.put((idx, case_url, pass_number + 1))
+                                            work_queue.put((idx, dataset_url, pass_number + 1))
                                         raise  # Break out to recycle browser session
 
                                     if attempt < 3:
@@ -1183,13 +1116,13 @@ class SafliiScraper(BaseScraper):
                                 sb.sleep(self.cooldown_seconds + random.uniform(0.3, 0.9))
                             else:
                                 if pass_number < 6:
-                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_cases}] ⚠️ Case {c_id} ({case_url}) failed all attempts on Pass {pass_number}/6. Re-queueing for retry pass {pass_number + 1}...")
-                                    work_queue.put((idx, case_url, pass_number + 1))
+                                    logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] ⚠️ Dataset {dataset_id} ({dataset_url}) failed all attempts on Pass {pass_number}/6. Re-queueing for retry pass {pass_number + 1}...")
+                                    work_queue.put((idx, dataset_url, pass_number + 1))
                                     sb.sleep(2)
                                 else:
-                                    logger.error(f"[Worker {worker_id}][{idx}/{total_cases}] ❌ Case {c_id} ({case_url}) permanently failed after 6 retry passes.")
+                                    logger.error(f"[Worker {worker_id}][{idx}/{total_datasets}] ❌ Dataset {dataset_id} ({dataset_url}) permanently failed after 6 retry passes.")
 
-                            session_cases += 1
+                            session_datasets += 1
 
                         finally:
                             work_queue.task_done()
@@ -1209,7 +1142,7 @@ class SafliiScraper(BaseScraper):
         extraction_params = self.config.get("extraction_params", {})
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
 
-        # Refresh existing_urls and existing_case_numbers to only contain records already detailed,
+        # Refresh existing_urls and existing_dataset_numbers to only contain records already detailed,
         # so indexed-but-not-yet-detailed records are NOT skipped
         try:
             detailed_urls = await db_storage.get_existing_urls_by_status(
@@ -1218,11 +1151,11 @@ class SafliiScraper(BaseScraper):
             self.existing_urls = set(detailed_urls)
             logger.info(f"Refreshed existing_urls for detailing: {len(self.existing_urls)} already-detailed URLs.")
 
-            detailed_cases = await db_storage.get_existing_case_numbers(
+            detailed_datasets = await db_storage.get_existing_dataset_numbers(
                 self.conn, db_record_type, status="detailed"
             )
-            self.existing_case_numbers = set(detailed_cases)
-            logger.info(f"Refreshed existing_case_numbers for detailing: {len(self.existing_case_numbers)} already-detailed case numbers.")
+            self.existing_dataset_numbers = set(detailed_datasets)
+            logger.info(f"Refreshed existing_dataset_numbers for detailing: {len(self.existing_dataset_numbers)} already-detailed dataset numbers.")
         except Exception as refresh_err:
             logger.warning(f"Failed to refresh deduplication state: {refresh_err}. Using baseline deduplication state.")
 
@@ -1238,20 +1171,20 @@ class SafliiScraper(BaseScraper):
         db_pending_urls = [r["source_url"] for r in db_records if r.get("source_url")] if db_records else []
 
         # Merge both sources, preserving order and removing duplicates
-        seen = set(self.case_urls)
-        merged_urls = list(self.case_urls)
+        seen = set(self.dataset_urls)
+        merged_urls = list(self.dataset_urls)
         for url in db_pending_urls:
             if url not in seen:
                 seen.add(url)
                 merged_urls.append(url)
 
-        self.case_urls = merged_urls
-        if not self.case_urls:
+        self.dataset_urls = merged_urls
+        if not self.dataset_urls:
             logger.info("No pending records needing detail found. Detailing complete.")
             return
 
         logger.info(
-            f"Total case URLs scheduled for detailing: {len(self.case_urls)} "
+            f"Total dataset URLs scheduled for detailing: {len(self.dataset_urls)} "
             f"({len(merged_urls) - len(db_pending_urls)} new from indexing, "
             f"{len(db_pending_urls)} loaded from database)."
         )
@@ -1274,15 +1207,15 @@ class SafliiScraper(BaseScraper):
 
         try:
             work_queue = queue.Queue()
-            for idx, case_url in enumerate(self.case_urls, start=1):
-                work_queue.put((idx, case_url))
+            for idx, dataset_url in enumerate(self.dataset_urls, start=1):
+                work_queue.put((idx, dataset_url))
 
             # Append sentinel None for each worker thread to signal completion
             for _ in range(concurrency):
                 work_queue.put(None)
 
             loop = asyncio.get_running_loop()
-            total_cases = len(self.case_urls)
+            total_datasets = len(self.dataset_urls)
 
             worker_tasks = [
                 asyncio.to_thread(
@@ -1290,7 +1223,7 @@ class SafliiScraper(BaseScraper):
                     worker_id=i,
                     work_queue=work_queue,
                     loop=loop,
-                    total_cases=total_cases,
+                    total_datasets=total_datasets,
                 )
                 for i in range(1, concurrency + 1)
             ]
@@ -1300,8 +1233,8 @@ class SafliiScraper(BaseScraper):
             # Mark completed state upon processing all candidate URLs
             await self.save_progress(
                 year=datetime.now().year,
-                last_index=total_cases,
-                total_cases=total_cases,
+                last_index=total_datasets,
+                total_datasets=total_datasets,
                 completed=True,
             )
             logger.info("[Stage 1B complete] ✅ Scraping execution layer completely processed.")
@@ -1333,10 +1266,10 @@ if __name__ == "__main__":
         help="Target pipeline setup configuration key matching environment presets"
     )
     parser.add_argument(
-        "--courts",
+        "--datasets",
         default=None,
-        help="Comma-separated SAFLII court codes to scrape (e.g. ZACC,ZALCJHB). "
-             "Omit to scrape all South African courts.",
+        help="Comma-separated SAFLII dataset codes to scrape (e.g. ZACC,ZALCJHB). "
+             "Omit to scrape all South African datasets.",
     )
     parser.add_argument(
         "--year",
@@ -1365,13 +1298,13 @@ if __name__ == "__main__":
     headless_value = args.headless.lower() == "true"
     use_xvfb_value = args.use_xvfb.lower() == "true"
 
-    courts_list = None
-    if args.courts:
-        courts_list = [c.strip() for c in args.courts.split(",") if c.strip()]
+    datasets_list = None
+    if args.datasets:
+        datasets_list = [c.strip() for c in args.datasets.split(",") if c.strip()]
 
     scraper = SafliiScraper(
         pipeline_name=args.pipeline_name,
-        courts=courts_list,
+        datasets=datasets_list,
         year=args.year,
         headless=headless_value,
         use_xvfb=use_xvfb_value,
