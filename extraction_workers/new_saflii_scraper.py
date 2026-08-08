@@ -283,6 +283,37 @@ class SafliiScraper(BaseScraper):
         self.case_urls: List[str] = []
         self.url_to_case_number: Dict[str, str] = {}
         self.db_lock = asyncio.Lock()
+        self._court_target_ids: Dict[str, Any] = {}
+
+    async def _get_target_id_for_court(self, court_code: str, case_url: Optional[str] = None) -> Any:
+        """Resolve the target ID dynamically for a given court code."""
+        if court_code not in self._court_target_ids:
+            display_name = court_code
+            base_url = None
+
+            if court_code in self.court_base_urls:
+                display_name, base_url = self.court_base_urls[court_code]
+            elif case_url:
+                parsed = urllib.parse.urlparse(case_url)
+                parts = [p for p in parsed.path.split("/") if p]
+                for i, part in enumerate(parts):
+                    if part == "za" and i + 2 < len(parts):
+                        category = parts[i + 1]
+                        if category in ("cases", "gaz", "journals", "other"):
+                            base_url = f"{parsed.scheme}://{parsed.netloc}/za/{category}/{parts[i + 2]}/"
+                            break
+
+            if not base_url:
+                base_url = f"https://www.saflii.org/za/cases/{court_code}/"
+
+            entity_name = self.config.get("name") or self.pipeline_name
+            target_id = await db_storage.resolve_target_id(
+                self.conn, entity_name, court_code, base_url
+            )
+            self._court_target_ids[court_code] = target_id
+            logger.info(f"Resolved target ID for court {court_code}: {target_id}")
+
+        return self._court_target_ids[court_code]
 
     async def initialize(self) -> None:
         """Hydrate configuration, resolve target IDs, DB connections, and progress state."""
@@ -797,10 +828,16 @@ class SafliiScraper(BaseScraper):
                             batch_records.append(rec)
 
                         try:
+                            # Dynamically resolve target_id for the current court
+                            court_target_id = asyncio.run_coroutine_threadsafe(
+                                self._get_target_id_for_court(court_code),
+                                loop,
+                            ).result()
+
                             future = asyncio.run_coroutine_threadsafe(
                                 db_storage.upsert_scraped_records_batch(
                                     self.conn,
-                                    self.target_id,
+                                    court_target_id,
                                     db_record_type,
                                     batch_records,
                                     url_key="detail_url",
@@ -840,9 +877,11 @@ class SafliiScraper(BaseScraper):
 
     async def _save_record_to_db(self, case_url: str, record: dict, doc_date: dt_date) -> None:
         """Thread-safe helper to write detailed scraped records to the database."""
+        court_code = record.get("court") or "SAFLII"
+        court_target_id = await self._get_target_id_for_court(court_code, case_url)
         async with self.db_lock:
             await db_storage.upsert_scraped_record(
-                self.conn, self.target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
+                self.conn, court_target_id, self.pipeline_name, case_url, record, doc_date, status="detailed"
             )
 
     def _detailing_worker_thread(

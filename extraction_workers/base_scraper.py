@@ -92,11 +92,11 @@ class BaseScraper(ABC):
         
         start_url = self.config.get("start_url")
         entity_name = self.config.get("name") or self.pipeline_name
-        target_name = self.config.get("subset") or "Default Target"
         db_record_type = (
             self.config.get("extraction_params", {}).get("shared_record_type")
             or self.pipeline_name
         )
+        target_name = self.config.get("subset") or db_record_type
 
         logger.info(f"Resolving database targets for entity='{entity_name}'...")
         self.target_id = await db_storage.resolve_target_id(
