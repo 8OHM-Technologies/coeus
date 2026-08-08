@@ -2,7 +2,7 @@
 export GITHUB_ACCESS_TOKEN
 
 # Define phony targets so Make doesn't look for actual files with these names
-.PHONY: up down status logs dagster stop-dagster publish pull-prod up-prod down-prod pull-portable up-portable down-portable restart-portable coeus stop-coeus scheduler stop-scheduler migrate seed setup sync-extracted import-bookstack sync-shop migrate-saflii scrub
+.PHONY: up down status logs dagster stop-dagster publish pull-prod up-prod down-prod pull-portable up-portable down-portable restart-portable coeus stop-coeus scheduler stop-scheduler migrate seed setup sync-extracted sync-shop
 
 # Default tag for Docker images built and published locally
 TAG ?= latest
@@ -131,21 +131,6 @@ import-bookstack:
 # Sync shop products
 sync-shop:
 	docker compose exec control-plane python control_plane/manage.py sync_shop_products
-
-# Migrate SAFLII records
-migrate-saflii:
-	docker compose exec control-plane python control_plane/manage.py migrate_saflii_records
-
-# Run standalone PII scrubber CLI script (uses active python/.venv, or run via extractor container)
-scrub:
-	python extraction_workers/scrub_standalone.py $(ARGS)
-
-scrub-container:
-	docker compose run --rm coeus-extractor python extraction_workers/scrub_standalone.py $(ARGS)
-
-# Run CCMA court normalization cleanup
-clean-ccma:
-	docker compose exec control-plane python extraction_workers/clean_ccma_courts.py
 
 # -----------------------------------------------------------------------------
 # DYNAMIC INDIVIDUAL SERVICE COMMANDS
