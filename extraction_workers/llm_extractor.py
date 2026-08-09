@@ -196,7 +196,6 @@ async def run_extraction(pipeline_name: str, schema_name: str) -> None:
 
     # -- Initialise LLM client --------------------------------------------------
     client = get_llm_client()
-    system_prompt = build_system_prompt(schema_cls, extraction_instructions)
 
     # -- Connect to DB ---------------------------------------------------------
     try:
@@ -249,7 +248,30 @@ async def run_extraction(pipeline_name: str, schema_name: str) -> None:
             else:
                 record_data = dict(raw_data) if raw_data else {}
 
-            # 2. Extract content for LLM (favoring center_content or specified content_field)
+            # 2. Determine schema class dynamically
+            current_schema_cls = schema_cls
+            category = None
+            if "saflii" in pipeline_name.lower():
+                category = record_data.get("category")
+                if not category and source_url:
+                    import urllib.parse
+                    parsed_path = [p for p in urllib.parse.urlparse(source_url).path.split("/") if p]
+                    for i, part in enumerate(parsed_path):
+                        if part == "za" and i + 1 < len(parsed_path):
+                            if parsed_path[i+1] in ("cases", "gaz", "journals", "other"):
+                                category = parsed_path[i+1]
+                                break
+                
+                if category == "cases":
+                    current_schema_cls = resolve_schema("SafliiCaseExtraction") or schema_cls
+                elif category in ("gaz", "journals"):
+                    current_schema_cls = resolve_schema("SafliiJournalGazetteExtraction") or schema_cls
+                elif category == "other":
+                    current_schema_cls = resolve_schema("SafliiCourtRollExtraction") or schema_cls
+
+            logger.info("  Using schema for extraction: %s (Category: %s)", current_schema_cls.__name__, category if "saflii" in pipeline_name.lower() else "N/A")
+
+            # 3. Extract content for LLM (favoring center_content or specified content_field)
             if content_field and content_field in record_data:
                 doc_text = str(record_data[content_field])
             else:
@@ -263,16 +285,19 @@ async def run_extraction(pipeline_name: str, schema_name: str) -> None:
                 failure_count += 1
                 continue
 
-            # 3. Call LLM
-            raw_result = call_ollama(client, ai_model, system_prompt, doc_text)
+            # 4. Build system prompt dynamically for the selected schema
+            current_system_prompt = build_system_prompt(current_schema_cls, extraction_instructions)
+
+            # 5. Call LLM
+            raw_result = call_ollama(client, ai_model, current_system_prompt, doc_text)
             if raw_result is None:
                 logger.error("  [!] LLM returned no result for record: %s", record_id)
                 failure_count += 1
                 continue
 
-            # 4. Validate against Pydantic schema
+            # 6. Validate against Pydantic schema
             try:
-                schema_instance = schema_cls.model_validate(raw_result)
+                schema_instance = current_schema_cls.model_validate(raw_result)
             except ValidationError as exc:
                 logger.error("  [!] Schema validation failed for record %s:\n%s", record_id, exc)
                 failure_count += 1

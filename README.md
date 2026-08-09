@@ -39,7 +39,6 @@ The platform uses a decoupled, microservices-oriented architecture designed for 
             ▼                                        ▼
 ┌──────────────────────────────────────────────────────┐
 │                  PostgreSQL Database                 │
-│              (& Optional Oracle DB Sync)             │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -231,7 +230,6 @@ Production is deployed on a VPS with automated builds and deployment via GitHub 
 
 * **Proxy Pool Auto-Scaling**: Dynamic proxy pool integration within `BaseScraper` with automated performance scoring and failover.
 * **Kubernetes Pipes Executor**: Transition from `PipesDockerClient` to `PipesK8sClient` for container autoscaling across Kubernetes clusters.
-* **Object Cloud Storage (GCS/S3)**: Offload raw PDF/JSON storage from local disk mounts to Google Cloud Storage or S3 buckets.
 * **Fleet Observability**: Prometheus metrics and OpenTelemetry tracing across ephemeral scraper execution workers.
 
 ---

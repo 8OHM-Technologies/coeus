@@ -330,12 +330,17 @@ class SafliiScraper(BaseScraper):
             if not base_url:
                 base_url = f"https://www.saflii.org/za/cases/{dataset_code}/"
 
+            target_type = "cases"
+            url_to_check = base_url or dataset_url
+            if url_to_check:
+                target_type = get_dataset_category_from_url(url_to_check)
+
             entity_name = self.config.get("name") or self.pipeline_name
             target_id = await db_storage.resolve_target_id(
-                self.conn, entity_name, dataset_code, base_url
+                self.conn, entity_name, dataset_code, base_url, target_type=target_type
             )
             self._dataset_target_ids[dataset_code] = target_id
-            logger.info(f"Resolved target ID for dataset {dataset_code}: {target_id}")
+            logger.info(f"Resolved target ID for dataset {dataset_code} ({target_type}): {target_id}")
 
         return self._dataset_target_ids[dataset_code]
 

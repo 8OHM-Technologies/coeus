@@ -252,7 +252,7 @@ The `TurnstileSolver` is the primary solver used by `saflii_scraper.py`:
 
 ```
 entities          (id UUID PK, name TEXT UNIQUE)
-    └── targets   (id UUID PK, entity_id FK, target_name TEXT, UNIQUE(entity_id, target_name))
+    └── targets   (id UUID PK, entity_id FK, target_name TEXT, location TEXT, target_type TEXT, UNIQUE(entity_id, target_name))
             └── extracted_records  (id UUID PK, target_id FK, document_date DATE,
                                     record_type TEXT, data JSONB,
                                     requires_human_review BOOL, review_reason TEXT,
@@ -267,8 +267,10 @@ entities          (id UUID PK, name TEXT UNIQUE)
 | `DataQualityFlags` | `requires_human_review` bool + `review_reason` string for LLM self-verification |
 | `BaseExtractedRecord` | Common metadata: `entity_name`, `target_name`, `document_date`, `record_type` |
 | `GenericDocumentExtraction` | Default schema: wraps `BaseExtractedRecord`, a free-form `extracted_data` dict, and `DataQualityFlags` |
+| `SafliiJournalGazetteExtraction` | For SAFLII Journals and Gazettes: extracts readable plain text under the `formatted_text` field |
+| `SafliiCourtRollExtraction` | For SAFLII Court Rolls (other): extracts tabular roll records into a list of row objects |
 
-The extractor dynamically resolves the schema class from `schemas.py` by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`.
+The extractor dynamically resolves the schema class from `schemas.py` by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, the schema is routed dynamically per record based on its `"category"` (mapping to `SafliiCaseExtraction` for cases, `SafliiJournalGazetteExtraction` for journals/gazettes, and `SafliiCourtRollExtraction` for court rolls).
 
 ---
 

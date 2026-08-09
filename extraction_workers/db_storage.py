@@ -64,12 +64,14 @@ async def resolve_target_id(
     entity_name: str,
     target_name: str,
     location_url: str | None = None,
+    target_type: str | None = None,
 ) -> uuid.UUID:
     """Upsert an Entity + Target pair and return the ``target_id``.
 
     * **entity_name** – derived from ``PipelineConfiguration.name``
     * **target_name** – derived from ``PipelineConfiguration.subset``
     * **location_url** – optional, stored on the Target row
+    * **target_type** – optional, category type of target
     """
     # 1. Upsert entity
     entity_id = await conn.fetchval(
@@ -86,16 +88,19 @@ async def resolve_target_id(
     # 2. Upsert target
     target_id = await conn.fetchval(
         """
-        INSERT INTO targets (id, entity_id, target_name, location, created_at)
-        VALUES ($1, $2, $3, $4, NOW())
+        INSERT INTO targets (id, entity_id, target_name, location, target_type, created_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
         ON CONFLICT (entity_id, target_name)
-        DO UPDATE SET location = COALESCE(EXCLUDED.location, targets.location)
+        DO UPDATE SET 
+            location = COALESCE(EXCLUDED.location, targets.location),
+            target_type = COALESCE(EXCLUDED.target_type, targets.target_type)
         RETURNING id
         """,
         uuid.uuid4(),
         entity_id,
         target_name,
         location_url,
+        target_type,
     )
 
     return target_id

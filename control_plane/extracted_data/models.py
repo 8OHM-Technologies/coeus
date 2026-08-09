@@ -41,6 +41,12 @@ class Target(models.Model):
     entity = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name="targets")
     target_name = models.CharField(max_length=255)
     location = models.URLField(blank=False, null=True)
+    target_type = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Category of target (e.g., cases, gaz, journals, other).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

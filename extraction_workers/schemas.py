@@ -103,3 +103,36 @@ class SafliiCaseExtraction(BaseModel):
     )
     
     data_quality_flags: DataQualityFlags
+
+
+class SafliiJournalGazetteExtraction(BaseModel):
+    metadata: BaseExtractedRecord
+    formatted_text: str = Field(
+        ...,
+        description="The clean, well-formatted, and highly readable plain text content of the journal or gazette document."
+    )
+    data_quality_flags: DataQualityFlags
+
+
+class SafliiCourtRollRow(BaseModel):
+    column_1: str = Field(
+        ...,
+        description="Value of the first column (Typically Date, Time, or Case/Roll Number)."
+    )
+    column_2: str = Field(
+        ...,
+        description="Value of the second column (Typically Parties, Case Name, or Matter details)."
+    )
+    column_3: Optional[str] = Field(
+        None,
+        description="Value of the third column if present (Typically Presiding Judge, Courtroom, or Status)."
+    )
+
+
+class SafliiCourtRollExtraction(BaseModel):
+    metadata: BaseExtractedRecord
+    rows: List[SafliiCourtRollRow] = Field(
+        ...,
+        description="Tabular data rows representing each entry in the court roll."
+    )
+    data_quality_flags: DataQualityFlags
