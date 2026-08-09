@@ -45,7 +45,10 @@ class GenericDocumentExtraction(BaseModel):
     )
     data_quality_flags: DataQualityFlags
 
+
 class SafliiCaseExtraction(BaseModel):
+    metadata: BaseExtractedRecord
+
     applicant_plaintiff: str = Field(
         ..., 
         description="The name of the applicant or plaintiff."
@@ -96,5 +99,7 @@ class SafliiCaseExtraction(BaseModel):
     )
     formatted_text: str = Field(
         ..., 
-        description="The full formatted text of the case. Found between the <!-- sino index --> and <!-- sino noindex --> HTML comment markers in the center_content JSON field."
+        description="The full formatted text of the judgment document. Found between the <!-- sino index --> and <!-- sino noindex --> HTML comment markers in the center_content JSON field."
     )
+    
+    data_quality_flags: DataQualityFlags
