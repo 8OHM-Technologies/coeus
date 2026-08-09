@@ -43,7 +43,7 @@ async def main():
               AND (status = 'indexed' OR (status IS NULL AND (data->>'details_scraped_at') IS NULL))
             """
         )
-        print("Pending cases with details needed:", pending_count)
+        print("Pending datasets with details needed:", pending_count)
             
         await conn.close()
     except Exception as e:

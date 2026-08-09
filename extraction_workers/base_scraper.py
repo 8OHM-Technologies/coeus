@@ -107,8 +107,8 @@ class BaseScraper(ABC):
         urls = await db_storage.get_existing_urls(self.conn, db_record_type)
         self.existing_urls = set(urls)
         
-        cases = await db_storage.get_existing_dataset_numbers(self.conn, db_record_type)
-        self.existing_dataset_numbers = set(cases)
+        datasets = await db_storage.get_existing_dataset_numbers(self.conn, db_record_type)
+        self.existing_dataset_numbers = set(datasets)
         
         self.progress_state = await db_storage.sync_dynamic_pipeline_state(
             self.conn, self.pipeline_name, db_record_type

@@ -9,10 +9,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 from coeus.extraction_workers.new_saflii_scraper import (
     check_page_state,
-    parse_case_url,
-    wait_for_page_load,
+    parse_dataset_url,
     extract_dataset_number_from_text,
-    extract_court_code_from_url,
+    extract_dataset_code_from_url,
+    extract_metadata_by_category,
     DATABASES_INDEX_URL,
 )
 
@@ -32,111 +32,70 @@ def test_check_page_state():
     assert check_page_state("SAFLII Judgments", "Constitutional Court", "Case details here...") == "OK"
 
 
-def test_parse_case_url():
+def test_parse_dataset_url():
     # Standard SAFLII URL: /za/cases/ZACC/2026/1.html
-    court, year, case_id = parse_case_url("https://www.saflii.org/za/cases/ZACC/2026/1.html")
+    court, year, dataset_id = parse_dataset_url("https://www.saflii.org/za/cases/ZACC/2026/1.html")
     assert court == "ZACC"
     assert year == "2026"
-    assert case_id == "1"
+    assert dataset_id == "1"
 
     # Deep URL: /za/cases/ZAGPJHC/2025/123.html
-    court, year, case_id = parse_case_url("https://www.saflii.org/za/cases/ZAGPJHC/2025/123.html")
+    court, year, dataset_id = parse_dataset_url("https://www.saflii.org/za/cases/ZAGPJHC/2025/123.html")
     assert court == "ZAGPJHC"
     assert year == "2025"
-    assert case_id == "123"
+    assert dataset_id == "123"
 
     # Non-conforming URL should fallback to default
-    court, year, case_id = parse_case_url("https://www.saflii.org/invalid/format")
+    court, year, dataset_id = parse_dataset_url("https://www.invalid/format")
     assert court == "SAFLII"
     assert year == "unknown"
-    assert case_id == "unknown"
+    assert dataset_id == "unknown"
 
 
-def test_extract_court_code_from_url():
+def test_extract_dataset_code_from_url():
     # Standard cases URL
-    assert extract_court_code_from_url("https://www.saflii.org/za/cases/ZACC/") == "ZACC"
-    assert extract_court_code_from_url("https://www.saflii.org/za/cases/ZAGPJHC/2025/1.html") == "ZAGPJHC"
+    assert extract_dataset_code_from_url("https://www.saflii.org/za/cases/ZACC/") == "ZACC"
+    assert extract_dataset_code_from_url("https://www.saflii.org/za/cases/ZAGPJHC/2025/1.html") == "ZAGPJHC"
 
     # Gazette URL
-    assert extract_court_code_from_url("https://www.saflii.org/za/gaz/ZANGAZ/") == "ZANGAZ"
+    assert extract_dataset_code_from_url("https://www.saflii.org/za/gaz/ZANGAZ/") == "ZANGAZ"
 
     # Journal URL
-    assert extract_court_code_from_url("https://www.saflii.org/za/journals/DEIJURE/") == "DEIJURE"
+    assert extract_dataset_code_from_url("https://www.saflii.org/za/journals/DEIJURE/") == "DEIJURE"
 
     # Other URL
-    assert extract_court_code_from_url("https://www.saflii.org/za/other/ZAJSC/") == "ZAJSC"
+    assert extract_dataset_code_from_url("https://www.saflii.org/za/other/ZAJSC/") == "ZAJSC"
 
     # Non-matching URL
-    assert extract_court_code_from_url("https://www.saflii.org/content/databases.html") is None
+    assert extract_dataset_code_from_url("https://www.saflii.org/content/databases.html") is None
 
     # Non-SA URL
-    assert extract_court_code_from_url("https://www.saflii.org/ls/cases/LSHC/") is None
+    assert extract_dataset_code_from_url("https://www.saflii.org/ls/cases/LSHC/") is None
 
 
-@pytest.mark.asyncio
-async def test_wait_for_page_load_ok():
-    # Mock driver page instance
-    mock_page = AsyncMock()
-    mock_page.title.return_value = "SAFLII Judgments"
-    
-    # Mock locator for h1
-    mock_h1 = AsyncMock()
-    mock_h1.count.return_value = 1
-    mock_h1.first = AsyncMock()
-    mock_h1.first.inner_text.return_value = "Constitutional Court"
-    
-    # Mock locator for body
-    mock_body = AsyncMock()
-    mock_body.count.return_value = 1
-    mock_body.inner_text.return_value = "A long body text with more than 500 characters..." * 15
-    
-    # Assign locator behavior
-    def locator_mock(selector):
-        if selector == "h1":
-            return mock_h1
-        return mock_body
-        
-    mock_page.locator = locator_mock
+def test_extract_metadata_by_category():
+    # 1. Cases
+    text_cases = "Case No: 123/2025\nCitation: [2025] ZACC 10"
+    meta_cases = extract_metadata_by_category("cases", "S v Zuma", text_cases)
+    assert meta_cases.get("case_number") == "123/2025"
+    assert meta_cases.get("citation") == "[2025] ZACC 10"
 
-    # Test "case" load type
-    state = await wait_for_page_load(mock_page, url_type="case")
-    assert state == "OK"
+    # 2. Gazettes
+    text_gaz = "Government Gazette No: 45678"
+    meta_gaz = extract_metadata_by_category("gaz", "Gazette Title", text_gaz)
+    assert meta_gaz.get("gazette_number") == "45678"
 
-
-@pytest.mark.asyncio
-async def test_wait_for_page_load_not_found():
-    # Mock playwright page
-    mock_page = AsyncMock()
-    mock_page.title.return_value = "404 Not Found"
-    
-    # Mock locator for h1
-    mock_h1 = AsyncMock()
-    mock_h1.count.return_value = 1
-    mock_h1.first = AsyncMock()
-    mock_h1.first.inner_text.return_value = "Not Found"
-    
-    # Mock locator for body
-    mock_body = AsyncMock()
-    mock_body.count.return_value = 1
-    mock_body.inner_text.return_value = "The requested URL was not found on this server."
-    
-    def locator_mock(selector):
-        if selector == "h1":
-            return mock_h1
-        return mock_body
-        
-    mock_page.locator = locator_mock
-
-    state = await wait_for_page_load(mock_page, url_type="case")
-    assert state == "NOT_FOUND"
+    # 3. Journals
+    text_journal = "DE JURE Vol 50 No 2"
+    meta_journal = extract_metadata_by_category("journals", "Journal Title", text_journal)
+    assert meta_journal.get("volume") == "50"
+    assert meta_journal.get("issue") == "2"
 
 
 def test_basic_scraper_connectivity():
     """
     A basic connectivity integration test to check that the scraper's
     target endpoint (SAFLII start_url or main site) is reachable.
-    Since SAFLII utilizes Cloudflare Turnstile, a 403 or 200 response
-    both verify that network connectivity to the host is functioning.
     """
     target_url = "https://www.saflii.org/"
     try:
@@ -170,7 +129,7 @@ async def test_saflii_scraper_initialize_defaults(mocker):
         "start_url": "",
         "document_type": "awards",
         "extraction_params": {
-            "courts": "ZACC,ZAGPJHB",
+            "datasets": "ZACC,ZAGPJHB",
             "shared_record_type": "saflii_courts",
         },
     }
@@ -190,20 +149,20 @@ async def test_saflii_scraper_initialize_defaults(mocker):
     # Default index URL should be used when start_url is empty
     assert scraper.index_url == DATABASES_INDEX_URL
 
-    # Court filter should be parsed from config extraction_params
-    assert scraper.courts_filter == ["ZACC", "ZAGPJHB"]
+    # Dataset filter should be parsed from config extraction_params
+    assert scraper.dataset_filter == ["ZACC", "ZAGPJHB"]
 
 
 @pytest.mark.asyncio
-async def test_saflii_scraper_courts_from_cli(mocker):
-    """Test that CLI-supplied courts take precedence over config."""
+async def test_saflii_scraper_datasets_from_cli(mocker):
+    """Test that CLI-supplied datasets take precedence over config."""
     from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
 
     mock_config = {
         "start_url": "",
         "document_type": "awards",
         "extraction_params": {
-            "courts": "ZACC",
+            "datasets": "ZACC",
             "shared_record_type": "saflii_courts",
         },
     }
@@ -217,15 +176,15 @@ async def test_saflii_scraper_courts_from_cli(mocker):
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
     mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
 
-    # CLI courts override config courts
-    scraper = SafliiScraper(pipeline_name="saflii_test", courts=["ZAGPJHB", "ZAWCHC"])
+    # CLI datasets override config datasets
+    scraper = SafliiScraper(pipeline_name="saflii_test", datasets=["ZAGPJHB", "ZAWCHC"])
     await scraper.initialize()
 
-    assert scraper.courts_filter == ["ZAGPJHB", "ZAWCHC"]
+    assert scraper.dataset_filter == ["ZAGPJHB", "ZAWCHC"]
 
 
 def test_turnstile_block_triggers_ip_rotation(mocker):
-    """Test that encountering a Turnstile block immediately re-queues the case item and raises to rotate IP."""
+    """Test that encountering a Turnstile block immediately re-queues the item and raises to rotate IP."""
     from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
 
     scraper = SafliiScraper(pipeline_name="saflii_test")
@@ -244,7 +203,6 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
     loop = AsyncMock()
 
     # Limit while True loop to 1 cycle by putting sentinel None after the first item is re-queued
-    # Mock log_outbound_ip to append None to work_queue on second session creation
     session_count = 0
     def mock_ip(sb, label=""):
         nonlocal session_count
@@ -258,7 +216,7 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
         worker_id=1,
         work_queue=work_queue,
         loop=loop,
-        total_cases=1,
+        total_datasets=1,
     )
 
     # Verify that item was re-queued with pass_number 2

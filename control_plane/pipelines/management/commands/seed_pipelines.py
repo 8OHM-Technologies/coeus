@@ -109,14 +109,14 @@ class Command(BaseCommand):
             }
         )
 
-        # ── SAFLII Unified All-Courts Pipeline ──────────────────────────────
-        # Single pipeline that auto-discovers all South African courts,
-        # gazettes, journals, and court rolls from the SAFLII databases
-        # index page. Individual courts can be filtered via extraction_params
-        # "courts" key (comma-separated court codes).
+        # ── SAFLII Unified All-Datasets Pipeline ─────────────────────────────
+        # Single pipeline that auto-discovers all South African datasets,
+        # including cases, gazettes, journals, and other datasets from the SAFLII
+        # databases index page. Individual datasets can be filtered via extraction_params
+        # "datasets" key (comma-separated dataset codes).
 
         get_or_create_pipeline(
-            name="Saflii All Courts",
+            name="Saflii All Datasets",
             defaults={
                 "scraper_type": saflii_scraper,
                 "industry": "Legal",
