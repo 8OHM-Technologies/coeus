@@ -11,7 +11,7 @@ from coeus.extraction_workers.new_saflii_scraper import (
     check_page_state,
     parse_case_url,
     wait_for_page_load,
-    extract_case_number_from_text,
+    extract_dataset_number_from_text,
     extract_court_code_from_url,
     DATABASES_INDEX_URL,
 )
@@ -153,12 +153,12 @@ def test_basic_scraper_connectivity():
         pytest.fail(f"Connectivity check failed for {target_url}: {e}")
 
 
-def test_extract_case_number_from_text():
-    assert extract_case_number_from_text("S v Zuma (1/2026)") == "1/2026"
-    assert extract_case_number_from_text("A v B (JR2672/2021) [2026] ZALC 1") == "JR2672/2021"
-    assert extract_case_number_from_text("Smith v State (123/15) (15 January 2026)") == "123/15"
-    assert extract_case_number_from_text("No case number in here") is None
-    assert extract_case_number_from_text("Date in paren (15 January 2026)") is None
+def test_extract_dataset_number_from_text():
+    assert extract_dataset_number_from_text("S v Zuma (1/2026)") == "1/2026"
+    assert extract_dataset_number_from_text("A v B (JR2672/2021) [2026] ZALC 1") == "JR2672/2021"
+    assert extract_dataset_number_from_text("Smith v State (123/15) (15 January 2026)") == "123/15"
+    assert extract_dataset_number_from_text("No case number in here") is None
+    assert extract_dataset_number_from_text("Date in paren (15 January 2026)") is None
 
 
 @pytest.mark.asyncio
@@ -182,7 +182,7 @@ async def test_saflii_scraper_initialize_defaults(mocker):
     mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
     mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
-    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
 
     scraper = SafliiScraper(pipeline_name="saflii_test")
     await scraper.initialize()
@@ -215,7 +215,7 @@ async def test_saflii_scraper_courts_from_cli(mocker):
     mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
     mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
-    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
 
     # CLI courts override config courts
     scraper = SafliiScraper(pipeline_name="saflii_test", courts=["ZAGPJHB", "ZAWCHC"])

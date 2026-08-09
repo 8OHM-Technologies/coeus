@@ -141,18 +141,18 @@ async def get_existing_dataset_numbers(
     record_type: str,
     status: str | None = None,
 ) -> set[str]:
-    """Return the set of ``case_number`` values already stored in the ``data`` column for *record_type*."""
+    """Return the set of ``dataset_number`` values already stored in the ``data`` column for *record_type*."""
     try:
         if status is not None:
             query = """
-                SELECT data->>'case_number' AS case_number FROM extracted_records
-                WHERE record_type = $1 AND status = $2 AND (data->>'case_number') IS NOT NULL
+                SELECT data->>'dataset_number' AS dataset_number FROM extracted_records
+                WHERE record_type = $1 AND status = $2 AND (data->>'dataset_number') IS NOT NULL
             """
             args = (record_type, status)
         else:
             query = """
-                SELECT data->>'case_number' AS case_number FROM extracted_records
-                WHERE record_type = $1 AND (data->>'case_number') IS NOT NULL
+                SELECT data->>'dataset_number' AS dataset_number FROM extracted_records
+                WHERE record_type = $1 AND (data->>'dataset_number') IS NOT NULL
             """
             args = (record_type,)
 
@@ -160,7 +160,7 @@ async def get_existing_dataset_numbers(
             conn.fetch(query, *args),
             timeout=5.0,
         )
-        return {row["case_number"] for row in rows if row["case_number"]}
+        return {row["dataset_number"] for row in rows if row["dataset_number"]}
     except Exception as exc:
         logger.warning(f"Could not load existing case numbers for '{record_type}': {exc}")
         return set()
@@ -355,10 +355,10 @@ async def is_record_complete(
     conn: asyncpg.Connection,
     record_type: str,
     source_url: str | None,
-    case_number: str | None = None,
+    dataset_number: str | None = None,
 ) -> bool:
     """Check if a record exists and has details scraped (details_scraped_at is not null)."""
-    if not source_url and not case_number:
+    if not source_url and not dataset_number:
         return False
 
     is_complete = await conn.fetchval(
@@ -368,14 +368,14 @@ async def is_record_complete(
             WHERE record_type = $1
               AND (
                 ($2::text IS NOT NULL AND source_url = $2)
-                OR ($3::text IS NOT NULL AND data->>'case_number' = $3)
+                OR ($3::text IS NOT NULL AND data->>'dataset_number' = $3)
               )
               AND (data->>'details_scraped_at') IS NOT NULL
         )
         """,
         record_type,
         source_url,
-        case_number,
+        dataset_number,
     )
     return bool(is_complete)
 

@@ -89,8 +89,8 @@ async def test_run_indexing_forward_setup(mocker):
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value={"url1"}))
     mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_urls", AsyncMock(return_value={"url1"}))
     
-    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value={"case1"}))
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_case_numbers", AsyncMock(return_value={"case1"}))
+    mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value={"case1"}))
+    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_dataset_numbers", AsyncMock(return_value={"case1"}))
 
     mock_progress = {
         "last_year": 2021,
@@ -160,8 +160,8 @@ async def test_run_indexing_reverse_setup(mocker):
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
     mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_urls", AsyncMock(return_value=set()))
     
-    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
+    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
 
     mock_progress = {
         "last_year": 2021,
@@ -231,8 +231,8 @@ async def test_detailing_batch_loop(mocker):
     mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
     mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_urls", AsyncMock(return_value=set()))
     
-    mocker.patch("db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_case_numbers", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
+    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
     
     mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value={}))
     mocker.patch("extraction_workers.sabinet_scraper.db_storage.load_pipeline_state", AsyncMock(return_value={}))

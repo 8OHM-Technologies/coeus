@@ -76,20 +76,20 @@ def extract_page_title(scrubbed_record: ScrubbedRecord, data: Dict[str, Any]) ->
     if title_field and isinstance(title_field, str) and title_field.strip():
         return title_field.strip()[:240]
 
-    case_number = data.get("case_number") or data.get("metadata", {}).get("case_number")
+    dataset_number = data.get("dataset_number") or data.get("metadata", {}).get("dataset_number")
     applicant = data.get("applicant_plaintiff")
     respondent = data.get("respondent_defendant")
 
     # Case law title format
-    if case_number and applicant:
+    if dataset_number and applicant:
         resp_str = respondent[0] if isinstance(respondent, list) and respondent else (respondent or "")
-        title = f"[{case_number}] {applicant}"
+        title = f"[{dataset_number}] {applicant}"
         if resp_str:
             title += f" v {resp_str}"
         return title[:240]
 
-    if case_number:
-        return f"Case Reference: {case_number}"[:240]
+    if dataset_number:
+        return f"Case Reference: {dataset_number}"[:240]
 
     # Gazette format
     gazette_no = data.get("gazette_number") or data.get("notice_number")
@@ -147,7 +147,7 @@ def format_html_content(
     court_esc = html.escape(court_name)
 
     ref_number = (
-        data.get("case_number")
+        data.get("dataset_number")
         or data.get("gazette_number")
         or data.get("notice_number")
         or data.get("Award Number")
@@ -440,9 +440,9 @@ class Command(BaseCommand):
                     if court_location:
                         tags.append({"name": "court_location", "value": str(court_location)})
 
-                    case_no = data.get("case_number")
+                    case_no = data.get("dataset_number")
                     if case_no:
-                        tags.append({"name": "case_number", "value": str(case_no)})
+                        tags.append({"name": "dataset_number", "value": str(case_no)})
 
                     employer = data.get("employer")
                     if employer:

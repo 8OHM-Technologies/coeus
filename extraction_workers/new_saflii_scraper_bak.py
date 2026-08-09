@@ -121,7 +121,7 @@ def parse_case_url(case_url: str, default_court: str = "SAFLII") -> Tuple[str, s
     return default_court, "unknown", "unknown"
 
 
-def extract_case_number_from_text(text: str) -> Optional[str]:
+def extract_dataset_number_from_text(text: str) -> Optional[str]:
     """Extract standard SAFLII case numbers or formal citations from strings."""
     if not text:
         return None
@@ -169,7 +169,7 @@ def parse_saflii_case(raw_html: str, url: str) -> Optional[Dict[str, Any]]:
     if citation_match:
         citation = citation_match.group(0)
 
-    case_number = extract_case_number_from_text(page_text)
+    dataset_number = extract_dataset_number_from_text(page_text)
 
     for elem in soup(["script", "style", "nav", "header", "footer"]):
         elem.decompose()
@@ -190,7 +190,7 @@ def parse_saflii_case(raw_html: str, url: str) -> Optional[Dict[str, Any]]:
         "url": url,
         "title": case_name,
         "citation": citation,
-        "case_number": case_number,
+        "dataset_number": dataset_number,
         "center_content": str(content_container) if content_container else "",
         "full_text": clean_text,
     }
@@ -244,7 +244,7 @@ class SafliiScraper(BaseScraper):
         self.screenshots_dir: str = ""
 
         self.case_urls: List[str] = []
-        self.url_to_case_number: Dict[str, str] = {}
+        self.url_to_dataset_number: Dict[str, str] = {}
         self.db_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
@@ -532,7 +532,7 @@ class SafliiScraper(BaseScraper):
                                 if parent_dir.isdigit() and len(parent_dir) == 4 and filename.endswith(".html"):
                                     if self.start_year <= int(parent_dir) <= self.end_year:
                                         if not ("toc-" in filename or filename == "index.html"):
-                                            case_no = extract_case_number_from_text(a_tag.get_text(strip=True))
+                                            case_no = extract_dataset_number_from_text(a_tag.get_text(strip=True))
                                             if case_no:
                                                 url_to_case_map[abs_url] = case_no
                                             raw_case_urls.append(abs_url)
@@ -554,7 +554,7 @@ class SafliiScraper(BaseScraper):
             return
 
         logger.info(f"[Stage 1A start] Starting indexing stage via SeleniumBase UC thread...")
-        self.case_urls, self.url_to_case_number = await asyncio.to_thread(self._indexing_sync)
+        self.case_urls, self.url_to_dataset_number = await asyncio.to_thread(self._indexing_sync)
         logger.info(f"[Stage 1A complete] Total downstream asset indexes harvested: {len(self.case_urls)}")
 
     async def _save_record_to_db(self, case_url: str, record: dict, doc_date: dt_date) -> None:
@@ -635,9 +635,9 @@ class SafliiScraper(BaseScraper):
                                 pass_number = 1
 
                             c_court, c_year, c_id = parse_case_url(case_url, default_court=self.court_code or "SAFLII")
-                            case_no = self.url_to_case_number.get(case_url)
+                            case_no = self.url_to_dataset_number.get(case_url)
 
-                            if case_url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
+                            if case_url in self.existing_urls or (case_no and case_no in self.existing_dataset_numbers):
                                 logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Skipping pre-existing record: {case_url}")
                                 session_cases += 1
                                 continue
@@ -689,9 +689,9 @@ class SafliiScraper(BaseScraper):
                                     title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title()
 
                                     if not case_no:
-                                        case_no = extract_case_number_from_text(title)
+                                        case_no = extract_dataset_number_from_text(title)
 
-                                    if case_no and case_no in self.existing_case_numbers:
+                                    if case_no and case_no in self.existing_dataset_numbers:
                                         logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] Duplicate signature isolated via late mapping: {case_no}")
                                         success = True
                                         break
@@ -702,7 +702,7 @@ class SafliiScraper(BaseScraper):
                                         "case_id": c_id,
                                         "title": title,
                                         "url": case_url,
-                                        "case_number": case_no,
+                                        "dataset_number": case_no,
                                         "center_content": center_html,
                                         "full_text": center_div.get_text(separator="\n", strip=True) if center_div else "",
                                         "scraped_at": datetime.now(timezone.utc).isoformat(),
@@ -738,7 +738,7 @@ class SafliiScraper(BaseScraper):
 
                                     self.existing_urls.add(case_url)
                                     if case_no:
-                                        self.existing_case_numbers.add(case_no)
+                                        self.existing_dataset_numbers.add(case_no)
 
                                     logger.info(f"[Worker {worker_id}][{idx}/{total_cases}] [+] Saved record: {c_court}_{c_year}_{c_id}")
                                     success = True

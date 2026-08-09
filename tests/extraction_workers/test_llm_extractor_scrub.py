@@ -33,7 +33,7 @@ def test_scrub_pii_data_recursive():
     # Test dictionary scrubbing
     data = {
         "applicant_plaintiff": "John Doe",
-        "case_number": "1234/2023",
+        "dataset_number": "1234/2023",
         "rsa_id": "8203155123087",
         "details": {
             "passport": "M98765432",
@@ -42,7 +42,7 @@ def test_scrub_pii_data_recursive():
     }
     expected = {
         "applicant_plaintiff": "John Doe",
-        "case_number": "1234/2023",
+        "dataset_number": "1234/2023",
         "rsa_id": "[RSA ID]",
         "details": {
             "passport": "[PASSPORT]",

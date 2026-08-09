@@ -58,7 +58,7 @@ class SafliiCaseExtraction(BaseModel):
         ..., 
         description="The date the hearing was heared and judgment was delivered (YYYY-MM-DD)."
     )
-    case_number: str = Field(
+    dataset_number: str = Field(
         ..., 
         description="The official case reference number."
     )

@@ -75,7 +75,7 @@ Dagster executes scrapers and extractors inside ephemeral containers via `PipesD
 
 ### **5. Dual-Database Storage & Multi-DB Synchronization**
 * **Direct Async Writes**: Scrapers write records directly to PostgreSQL using `db_storage.py` and `asyncpg`.
-* **Indexed Performance**: Database fields (`scraped_at`, `detailed_at`, `case_number`, `url`) are indexed for fast lookups.
+* **Indexed Performance**: Database fields (`scraped_at`, `detailed_at`, `dataset_number`, `url`) are indexed for fast lookups.
 * **Multi-DB Sync**: Includes Django management commands (`sync_oc_to_master`) to bi-directionally synchronize `ExtractedRecord` entries between dual Oracle DB and primary PostgreSQL databases using bulk operations and target caching.
 
 ### **6. Scraper-Type Analytics & Background Scheduler**

@@ -3,13 +3,13 @@ import re
 from datetime import datetime
 import pandas as pd
 
-def extract_case_year(case_number: str) -> int:
+def extract_case_year(dataset_number: str) -> int:
     """
     Extracts the initiation year from South African case numbers.
     Handles standard formats (e.g., 2026/061774) and specialized court formats (e.g., J1044/25).
     """
     # Matches /2026, /26, or leading 2026 digits
-    match = re.search(r'(20\d{2})|/(\d{2})$|/(\d{4})', case_number)
+    match = re.search(r'(20\d{2})|/(\d{2})$|/(\d{4})', dataset_number)
     if not match:
         return None
     
@@ -28,13 +28,13 @@ def process_legal_metrics(json_data: list) -> dict:
 
     for case in json_data:
         # 1. Temporal Analytics: Calculate case lifecycle duration
-        case_year = extract_case_year(case["case_number"])
+        case_year = extract_case_year(case["dataset_number"])
         judgment_year = datetime.strptime(case["judgment_date"], "%Y-%m-%d").year
         duration_years = max(0, judgment_year - case_year) if case_year else None
 
         # Flatten structure for easy Pandas processing
         records.append({
-            "case_number": case["case_number"],
+            "dataset_number": case["dataset_number"],
             "court": case["court"],
             "division": case["division_location"],
             "judge": case["judge"],
@@ -84,13 +84,13 @@ if __name__ == "__main__":
         # Mocking a collection array based on your inputs
         mock_data = [
             {
-                "case_number": "2026/061774", "court": "High Court", "division_location": "Gauteng [Johannesburg]",
+                "dataset_number": "2026/061774", "court": "High Court", "division_location": "Gauteng [Johannesburg]",
                 "judge": "Maduray [J]", "judgment_date": "2026-06-11", "reportable": False,
                 "parties": {"applicant_plaintiff": "GIB Insurance", "respondent_defendant": "Maduray"},
                 "subjects": ["Labour > Restraint of trade"], "result": {"outcome_type": "Dismissed", "costs_order": "Applicant to pay"}
             },
             {
-                "case_number": "2024/014290", "court": "High Court", "division_location": "Gauteng [Pretoria]",
+                "dataset_number": "2024/014290", "court": "High Court", "division_location": "Gauteng [Pretoria]",
                 "judge": "Mnguni [AJ]", "judgment_date": "2026-06-18", "reportable": True,
                 "parties": {"applicant_plaintiff": "Nedbank Ltd", "respondent_defendant": "Khumalo"},
                 "subjects": ["Commercial Law > Banking"], "result": {"outcome_type": "Granted", "costs_order": "Respondent to pay"}

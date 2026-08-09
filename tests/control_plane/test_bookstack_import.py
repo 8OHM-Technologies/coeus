@@ -42,7 +42,7 @@ class TestBookStackImport:
 
     def test_extract_page_title(self):
         data = {
-            "case_number": "CCT 123/25",
+            "dataset_number": "CCT 123/25",
             "applicant_plaintiff": "Alpha Corp",
             "respondent_defendant": ["Beta Ltd"],
         }
@@ -64,7 +64,7 @@ class TestBookStackImport:
         scrubbed = ScrubbedRecord.objects.create(
             extracted_record=extracted,
             data={
-                "case_number": "1234/2026",
+                "dataset_number": "1234/2026",
                 "applicant_plaintiff": "John Doe",
                 "respondent_defendant": ["Minister of Justice"],
                 "ai_summary": "Test legal judgment summary.",
@@ -202,7 +202,7 @@ class TestBookStackImport:
         )
         scrubbed = ScrubbedRecord.objects.create(
             extracted_record=extracted,
-            data={"court": "Labour Court", "case_number": "J100/26"},
+            data={"court": "Labour Court", "dataset_number": "J100/26"},
         )
 
         call_command("import_to_bookstack", "--dry-run")
@@ -219,7 +219,7 @@ class TestBookStackImport:
         )
         scrubbed = ScrubbedRecord.objects.create(
             extracted_record=extracted,
-            data={"court": "Labour Court", "case_number": "J200/26"},
+            data={"court": "Labour Court", "dataset_number": "J200/26"},
         )
         BookStackImport.objects.create(
             scrubbed_record=scrubbed,

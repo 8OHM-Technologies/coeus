@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 from extraction_workers.db_storage import (
     get_existing_urls,
-    get_existing_case_numbers,
+    get_existing_dataset_numbers,
     is_record_complete,
     upsert_scraped_record,
     upsert_scraped_records_batch,
@@ -36,21 +36,21 @@ async def test_get_existing_urls():
 
 
 @pytest.mark.asyncio
-async def test_get_existing_case_numbers():
+async def test_get_existing_dataset_numbers():
     mock_conn = AsyncMock()
     mock_conn.fetch.return_value = [
-        {"case_number": "JR123/2022"},
-        {"case_number": "JS456/2023"},
-        {"case_number": None},
+        {"dataset_number": "JR123/2022"},
+        {"dataset_number": "JS456/2023"},
+        {"dataset_number": None},
     ]
 
-    case_numbers = await get_existing_case_numbers(mock_conn, "test_pipeline")
+    dataset_numbers = await get_existing_dataset_numbers(mock_conn, "test_pipeline")
 
     mock_conn.fetch.assert_called_once()
     query = mock_conn.fetch.call_args[0][0]
-    assert "SELECT data->>'case_number' AS case_number FROM extracted_records" in query
+    assert "SELECT data->>'dataset_number' AS dataset_number FROM extracted_records" in query
     assert "record_type = $1" in query
-    assert case_numbers == {"JR123/2022", "JS456/2023"}
+    assert dataset_numbers == {"JR123/2022", "JS456/2023"}
 
 
 @pytest.mark.asyncio
@@ -68,7 +68,7 @@ async def test_is_record_complete():
     mock_conn.fetchval.assert_called_once()
     query = mock_conn.fetchval.call_args[0][0]
     assert "source_url = $2" in query
-    assert "data->>'case_number' = $3" in query
+    assert "data->>'dataset_number' = $3" in query
     assert "details_scraped_at" in query
 
     # 3. Only url present
@@ -80,14 +80,14 @@ async def test_is_record_complete():
     query = mock_conn.fetchval.call_args[0][0]
     assert "source_url = $2" in query
 
-    # 4. Only case_number present
+    # 4. Only dataset_number present
     mock_conn.fetchval.reset_mock()
     mock_conn.fetchval.return_value = True
     res = await is_record_complete(mock_conn, "test_pipeline", None, "JR123")
     assert res is True
     mock_conn.fetchval.assert_called_once()
     query = mock_conn.fetchval.call_args[0][0]
-    assert "data->>'case_number' = $3" in query
+    assert "data->>'dataset_number' = $3" in query
 
 
 @pytest.mark.asyncio

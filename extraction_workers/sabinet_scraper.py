@@ -499,9 +499,9 @@ class SabinetScraper(BaseScraper):
 
                         for item_data in page_items:
                             url = item_data.get("detail_url")
-                            case_no = item_data.get("case_number")
+                            case_no = item_data.get("dataset_number")
 
-                            if url in self.existing_urls or (case_no and case_no in self.existing_case_numbers):
+                            if url in self.existing_urls or (case_no and case_no in self.existing_dataset_numbers):
                                 continue
 
                             item_data["index_scraped_at"] = datetime.now(timezone.utc).isoformat()
@@ -509,7 +509,7 @@ class SabinetScraper(BaseScraper):
                             if url:
                                 self.existing_urls.add(url)
                             if case_no:
-                                self.existing_case_numbers.add(case_no)
+                                self.existing_dataset_numbers.add(case_no)
                             window_new += 1
 
                         if records_to_upsert:

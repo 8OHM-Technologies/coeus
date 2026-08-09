@@ -52,7 +52,7 @@ class BaseScraper(ABC):
         self.conn = None
         self.target_id: Any = None
         self.existing_urls: Set[str] = set()
-        self.existing_case_numbers: Set[str] = set()
+        self.existing_dataset_numbers: Set[str] = set()
         self.progress_state: Dict[str, Any] = {}
         self.db_lock = asyncio.Lock()
 
@@ -107,8 +107,8 @@ class BaseScraper(ABC):
         urls = await db_storage.get_existing_urls(self.conn, db_record_type)
         self.existing_urls = set(urls)
         
-        cases = await db_storage.get_existing_case_numbers(self.conn, db_record_type)
-        self.existing_case_numbers = set(cases)
+        cases = await db_storage.get_existing_dataset_numbers(self.conn, db_record_type)
+        self.existing_dataset_numbers = set(cases)
         
         self.progress_state = await db_storage.sync_dynamic_pipeline_state(
             self.conn, self.pipeline_name, db_record_type
