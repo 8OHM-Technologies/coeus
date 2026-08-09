@@ -136,7 +136,7 @@ async def get_existing_urls_by_status(
     )
     return {row["source_url"] for row in rows if row["source_url"]}
 
-async def get_existing_case_numbers(
+async def get_existing_dataset_numbers(
     conn: asyncpg.Connection,
     record_type: str,
     status: str | None = None,
