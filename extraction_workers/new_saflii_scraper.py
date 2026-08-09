@@ -71,6 +71,14 @@ class BlockedException(Exception):
     pass
 
 
+class RetryItemException(Exception):
+    """Raised when processing a queue item fails in a way that requires recycling the browser and retrying the same item immediately."""
+    def __init__(self, message, item, next_proxy=None):
+        super().__init__(message)
+        self.item = item
+        self.next_proxy = next_proxy
+
+
 # ---------------------------------------------------------------------------
 # Pure Utility Helpers
 # ---------------------------------------------------------------------------
@@ -1103,9 +1111,11 @@ class SafliiScraper(BaseScraper):
                 f"(current: {worker_current_use_proxy}, expected: {expected_use_proxy}). "
                 f"Recycling browser session to match..."
             )
-            # Re-queue the item
-            work_queue.put(item)
-            return True, expected_use_proxy
+            raise RetryItemException(
+                f"Proxy state transition to {expected_use_proxy}",
+                item,
+                next_proxy=expected_use_proxy
+            )
 
         if self._is_duplicate_url(dataset_url):
             logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Skipping pre-existing record: {dataset_url}")
@@ -1212,11 +1222,16 @@ class SafliiScraper(BaseScraper):
                 proxy_log = "for a new proxy IP" if worker_current_use_proxy else "to rotate IP/session clearance"
                 logger.warning(
                     f"[Worker {worker_id}][{idx}/{total_datasets}] 🛑 Turnstile block detected on dataset page {dataset_url} ({be}). "
-                    f"Assuming current IP is blocked. Re-queueing dataset and recycling browser {proxy_log}..."
+                    f"Assuming current IP is blocked. Recycling browser {proxy_log}..."
                 )
                 if pass_number < 6:
-                    work_queue.put((idx, dataset_url, pass_number + 1))
-                raise  # Break out to trigger browser recycle
+                    raise RetryItemException(
+                        f"Turnstile block on asset: {entry_id}",
+                        (idx, dataset_url, pass_number + 1)
+                    )
+                else:
+                    logger.error(f"[Worker {worker_id}][{idx}/{total_datasets}] ❌ Dataset {entry_id} ({dataset_url}) permanently failed after 6 retry passes.")
+                    raise
             except Exception as err:
                 err_msg = str(err)
                 logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] Processing error on dataset {entry_id} [Pass {pass_number}, attempt {attempt}]: {err}")
@@ -1228,9 +1243,12 @@ class SafliiScraper(BaseScraper):
                     "connection refused",
                 )
                 if any(w in err_msg.lower() for w in _fatal_session_keywords):
-                    logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Window or session connection disrupted. Re-queueing item and recycling browser...")
+                    logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Window or session connection disrupted. Recycling browser...")
                     if pass_number < 6:
-                        work_queue.put((idx, dataset_url, pass_number + 1))
+                        raise RetryItemException(
+                            f"Fatal browser error: {err_msg}",
+                            (idx, dataset_url, pass_number + 1)
+                        )
                     raise  # Break out to recycle browser session
 
                 if attempt < 3:
@@ -1260,9 +1278,10 @@ class SafliiScraper(BaseScraper):
         """Browser launcher and queue processor block."""
         worker_current_use_proxy = worker_original_use_proxy
         max_datasets_per_session = 100
+        current_item = None
 
         while True:
-            if work_queue.empty():
+            if work_queue.empty() and current_item is None:
                 break
 
             # Clean user data directory before launching browser session
@@ -1291,17 +1310,21 @@ class SafliiScraper(BaseScraper):
                     self.log_outbound_ip(sb, label=f"SAFLII Detailing Worker {worker_id}")
 
                     while session_datasets < max_datasets_per_session:
-                        try:
-                            item = work_queue.get(timeout=1.0)
-                        except queue.Empty:
-                            if work_queue.empty():
-                                break
-                            continue
+                        if current_item is not None:
+                            item = current_item
+                            current_item = None
+                        else:
+                            try:
+                                item = work_queue.get(timeout=1.0)
+                            except queue.Empty:
+                                if work_queue.empty():
+                                    break
+                                continue
 
-                        if item is None:
-                            work_queue.task_done()
-                            logger.info(f"[Worker {worker_id}] Sentinel received. Terminating thread execution.")
-                            return
+                            if item is None:
+                                work_queue.task_done()
+                                logger.info(f"[Worker {worker_id}] Sentinel received. Terminating thread execution.")
+                                return
 
                         try:
                             should_recycle, next_proxy = self._process_queue_item(
@@ -1317,11 +1340,19 @@ class SafliiScraper(BaseScraper):
                             if should_recycle:
                                 worker_current_use_proxy = next_proxy
                                 break
+                        except RetryItemException as retry_err:
+                            current_item = retry_err.item
+                            raise
                         finally:
                             pass
 
                         session_datasets += 1
 
+            except RetryItemException as retry_err:
+                logger.info(f"[Worker {worker_id}] Recycling browser session to retry same item immediately: {retry_err}")
+                if retry_err.next_proxy is not None:
+                    worker_current_use_proxy = retry_err.next_proxy
+                time.sleep(3)
             except Exception as browser_err:
                 logger.error(f"[Worker {worker_id}] Browser session failed or crashed: {browser_err}. Recycling browser session...")
                 time.sleep(3)

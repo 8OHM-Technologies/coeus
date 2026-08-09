@@ -184,7 +184,7 @@ async def test_saflii_scraper_datasets_from_cli(mocker):
 
 
 def test_turnstile_block_triggers_ip_rotation(mocker):
-    """Test that encountering a Turnstile block immediately re-queues the item and raises to rotate IP."""
+    """Test that encountering a Turnstile block retries the item immediately in the next browser sessions up to 6 passes."""
     from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
 
     scraper = SafliiScraper(pipeline_name="saflii_test")
@@ -194,7 +194,7 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
     work_queue = queue.Queue()
     work_queue.put((1, "https://www.saflii.org/za/cases/ZAGPPHC/2010/585.html", 1))
 
-    # Mock SB context manager to throw BlockedException on exit when _navigate_and_handle_turnstile returns BLOCKED
+    # Mock SB context manager
     mock_sb_ctx = MagicMock()
     mock_sb = MagicMock()
     mock_sb_ctx.__enter__.return_value = mock_sb
@@ -202,7 +202,7 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
 
     loop = AsyncMock()
 
-    # Limit while True loop to 1 cycle by putting sentinel None after the first item is re-queued
+    # Limit while True loop: put None to terminate if it attempts to read next queue item
     session_count = 0
     def mock_ip(sb, label=""):
         nonlocal session_count
@@ -219,11 +219,18 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
         total_datasets=1,
     )
 
-    # Verify that item was re-queued with pass_number 2
+    # Verify that the scraper retried the same item immediately for 6 passes
+    calls = scraper._navigate_and_handle_turnstile.call_args_list
+    assert len(calls) == 6
+    assert calls[0][0][2] == "worker_1_dataset_585_pass_1_att_1"
+    assert calls[1][0][2] == "worker_1_dataset_585_pass_2_att_1"
+    assert calls[5][0][2] == "worker_1_dataset_585_pass_6_att_1"
+
+    # Verify that the item was not re-queued to the back of the shared queue
     items = []
     while not work_queue.empty():
         item = work_queue.get_nowait()
         if item is not None:
             items.append(item)
 
-    assert (1, "https://www.saflii.org/za/cases/ZAGPPHC/2010/585.html", 2) in items
+    assert (1, "https://www.saflii.org/za/cases/ZAGPPHC/2010/585.html", 2) not in items
