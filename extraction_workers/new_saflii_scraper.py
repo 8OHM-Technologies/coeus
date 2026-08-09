@@ -795,7 +795,7 @@ class SafliiScraper(BaseScraper):
                     "detail_url": curl,
                     "dataset": cc,
                     "year": cy,
-                    "dataset_id": cid,
+                    "entry_id": cid,
                 }
                 cn = url_to_dataset_map.get(curl)
                 if cn:
@@ -858,12 +858,12 @@ class SafliiScraper(BaseScraper):
         logger.info(f"Processing {total_datasets} datasets: {sorted(self.dataset_base_urls.keys())}")
 
         # 2. For each dataset, discover years and harvest document URLs in a recycled browser session
-        for dataset_idx, (dataset_code, (display_name, base_url)) in enumerate(
+        for entry_idx, (dataset_code, (display_name, base_url)) in enumerate(
             sorted(self.dataset_base_urls.items()), 1
         ):
             logger.info(f"\n{'=' * 60}")
             logger.info(
-                f"[Dataset {dataset_idx}/{total_datasets}] {display_name} ({dataset_code})"
+                f"[Dataset {entry_idx}/{total_datasets}] {display_name} ({dataset_code})"
             )
             logger.info(f"Base URL: {base_url}")
             logger.info("=" * 60)
@@ -946,7 +946,7 @@ class SafliiScraper(BaseScraper):
         self,
         sb: SB,
         dataset_url: str,
-        dataset_id: str,
+        entry_id: str,
         is_pdf: bool,
         worker_id: int,
         idx: int,
@@ -955,7 +955,7 @@ class SafliiScraper(BaseScraper):
         """Route content extraction depending on target file type (PDF vs HTML)."""
         requires_human_review = False
         if is_pdf:
-            title, full_text = self._extract_text_from_pdf(sb, dataset_url, dataset_id, worker_id, idx, total_datasets)
+            title, full_text = self._extract_text_from_pdf(sb, dataset_url, entry_id, worker_id, idx, total_datasets)
             center_html = ""
             if not full_text.strip():
                 requires_human_review = True
@@ -964,7 +964,7 @@ class SafliiScraper(BaseScraper):
                     f"for {dataset_url}. Marking as requires_human_review = True."
                 )
         else:
-            title, center_html, full_text = self._extract_content_from_html(sb, dataset_id)
+            title, center_html, full_text = self._extract_content_from_html(sb, entry_id)
 
         return title, center_html, full_text, requires_human_review
 
@@ -972,7 +972,7 @@ class SafliiScraper(BaseScraper):
         self,
         sb: SB,
         dataset_url: str,
-        dataset_id: str,
+        entry_id: str,
         worker_id: int,
         idx: int,
         total_datasets: int
@@ -1025,10 +1025,10 @@ class SafliiScraper(BaseScraper):
         elif pymupdf is None:
             logger.warning(f"[Worker {worker_id}] PyMuPDF/fitz not installed; skipping PDF text extraction.")
 
-        title = pdf_title or sb.get_page_title() or dataset_id
+        title = pdf_title or sb.get_page_title() or entry_id
         return title, pdf_text
 
-    def _extract_content_from_html(self, sb: SB, dataset_id: str) -> Tuple[str, str, str]:
+    def _extract_content_from_html(self, sb: SB, entry_id: str) -> Tuple[str, str, str]:
         """Locate text containers and extract HTML/CleanText details for HTML records."""
         soup = BeautifulSoup(sb.get_page_source(), "lxml")
         center_div = (
@@ -1040,7 +1040,7 @@ class SafliiScraper(BaseScraper):
         center_html = str(center_div) if center_div else ""
 
         h2_el = center_div.find("h2") if center_div else None
-        title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title() or dataset_id
+        title = h2_el.get_text(strip=True) if h2_el else sb.get_page_title() or entry_id
         full_text = center_div.get_text(separator="\n", strip=True) if center_div else ""
 
         return title, center_html, full_text
@@ -1092,14 +1092,14 @@ class SafliiScraper(BaseScraper):
         """Process a single queue item. Returns (should_recycle_browser, next_proxy_state)."""
         idx, dataset_url, pass_number = item if len(item) == 3 else (item[0], item[1], 1)
 
-        dataset_code, dataset_year, dataset_id = parse_dataset_url(dataset_url, default_dataset="SAFLII")
+        dataset_code, dataset_year, entry_id = parse_dataset_url(dataset_url, default_dataset="SAFLII")
         dataset_no = self.url_to_dataset_number.get(dataset_url)
 
         # Check if the dataset requires a different proxy setting
         expected_use_proxy = worker_original_use_proxy if pass_number <= 3 else (not worker_original_use_proxy)
         if worker_current_use_proxy != expected_use_proxy:
             logger.info(
-                f"[Worker {worker_id}] Dataset {dataset_id} requires different proxy state "
+                f"[Worker {worker_id}] Dataset {entry_id} requires different proxy state "
                 f"(current: {worker_current_use_proxy}, expected: {expected_use_proxy}). "
                 f"Recycling browser session to match..."
             )
@@ -1117,14 +1117,14 @@ class SafliiScraper(BaseScraper):
         for attempt in range(1, 4):
             try:
                 state = self._navigate_and_handle_turnstile(
-                    sb, dataset_url, f"worker_{worker_id}_dataset_{dataset_id}_pass_{pass_number}_att_{attempt}"
+                    sb, dataset_url, f"worker_{worker_id}_dataset_{entry_id}_pass_{pass_number}_att_{attempt}"
                 )
                 if state == "BLOCKED":
-                    raise BlockedException(f"Turnstile block on asset: {dataset_id}")
+                    raise BlockedException(f"Turnstile block on asset: {entry_id}")
                 elif state == "NOT_FOUND":
                     if attempt < 3:
                         logger.warning(
-                            f"[Worker {worker_id}][{idx}/{total_datasets}] NOT_FOUND on dataset {dataset_id} "
+                            f"[Worker {worker_id}][{idx}/{total_datasets}] NOT_FOUND on dataset {entry_id} "
                             f"[Pass {pass_number}, attempt {attempt}] — may be Turnstile misclassification. "
                             f"Attempting UC reconnect solve before next attempt..."
                         )
@@ -1136,7 +1136,7 @@ class SafliiScraper(BaseScraper):
                             sb.sleep(2)
                         except Exception:
                             pass
-                        raise BlockedException(f"NOT_FOUND (possible Turnstile misclassification) on asset: {dataset_id}")
+                        raise BlockedException(f"NOT_FOUND (possible Turnstile misclassification) on asset: {entry_id}")
                     else:
                         raise Exception(f"Resource missing (state: {state})")
                 elif state == "NAVIGATION_FAILED":
@@ -1146,7 +1146,7 @@ class SafliiScraper(BaseScraper):
                 title, center_html, full_text, requires_human_review = self._extract_page_content(
                     sb=sb,
                     dataset_url=dataset_url,
-                    dataset_id=dataset_id,
+                    entry_id=entry_id,
                     is_pdf=is_pdf,
                     worker_id=worker_id,
                     idx=idx,
@@ -1165,7 +1165,7 @@ class SafliiScraper(BaseScraper):
                 record = {
                     "dataset": dataset_code,
                     "year": dataset_year,
-                    "dataset_id": dataset_id,
+                    "entry_id": entry_id,
                     "title": title,
                     "url": dataset_url,
                     "document_type": "pdf" if is_pdf else "html",
@@ -1204,7 +1204,7 @@ class SafliiScraper(BaseScraper):
 
                 self._mark_scraped_state(dataset_url, dataset_no)
 
-                logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] [+] Saved record: {dataset_code}_{dataset_year}_{dataset_id}")
+                logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] [+] Saved record: {dataset_code}_{dataset_year}_{entry_id}")
                 success = True
                 break
 
@@ -1219,7 +1219,7 @@ class SafliiScraper(BaseScraper):
                 raise  # Break out to trigger browser recycle
             except Exception as err:
                 err_msg = str(err)
-                logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] Processing error on dataset {dataset_id} [Pass {pass_number}, attempt {attempt}]: {err}")
+                logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] Processing error on dataset {entry_id} [Pass {pass_number}, attempt {attempt}]: {err}")
                 _fatal_session_keywords = (
                     "no such window",
                     "target window already closed",
@@ -1240,11 +1240,11 @@ class SafliiScraper(BaseScraper):
             sb.sleep(self.cooldown_seconds + random.uniform(0.3, 0.9))
         else:
             if pass_number < 6:
-                logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] ⚠️ Dataset {dataset_id} ({dataset_url}) failed all attempts on Pass {pass_number}/6. Re-queueing for retry pass {pass_number + 1}...")
+                logger.warning(f"[Worker {worker_id}][{idx}/{total_datasets}] ⚠️ Dataset {entry_id} ({dataset_url}) failed all attempts on Pass {pass_number}/6. Re-queueing for retry pass {pass_number + 1}...")
                 work_queue.put((idx, dataset_url, pass_number + 1))
                 sb.sleep(2)
             else:
-                logger.error(f"[Worker {worker_id}][{idx}/{total_datasets}] ❌ Dataset {dataset_id} ({dataset_url}) permanently failed after 6 retry passes.")
+                logger.error(f"[Worker {worker_id}][{idx}/{total_datasets}] ❌ Dataset {entry_id} ({dataset_url}) permanently failed after 6 retry passes.")
 
         return False, worker_current_use_proxy
 

@@ -34,22 +34,22 @@ def test_check_page_state():
 
 def test_parse_dataset_url():
     # Standard SAFLII URL: /za/cases/ZACC/2026/1.html
-    court, year, dataset_id = parse_dataset_url("https://www.saflii.org/za/cases/ZACC/2026/1.html")
+    court, year, entry_id = parse_dataset_url("https://www.saflii.org/za/cases/ZACC/2026/1.html")
     assert court == "ZACC"
     assert year == "2026"
-    assert dataset_id == "1"
+    assert entry_id == "1"
 
     # Deep URL: /za/cases/ZAGPJHC/2025/123.html
-    court, year, dataset_id = parse_dataset_url("https://www.saflii.org/za/cases/ZAGPJHC/2025/123.html")
+    court, year, entry_id = parse_dataset_url("https://www.saflii.org/za/cases/ZAGPJHC/2025/123.html")
     assert court == "ZAGPJHC"
     assert year == "2025"
-    assert dataset_id == "123"
+    assert entry_id == "123"
 
     # Non-conforming URL should fallback to default
-    court, year, dataset_id = parse_dataset_url("https://www.invalid/format")
+    court, year, entry_id = parse_dataset_url("https://www.invalid/format")
     assert court == "SAFLII"
     assert year == "unknown"
-    assert dataset_id == "unknown"
+    assert entry_id == "unknown"
 
 
 def test_extract_dataset_code_from_url():
