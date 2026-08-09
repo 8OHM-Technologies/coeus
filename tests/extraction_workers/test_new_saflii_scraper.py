@@ -234,3 +234,57 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
             items.append(item)
 
     assert (1, "https://www.saflii.org/za/cases/ZAGPPHC/2010/585.html", 2) not in items
+
+
+def test_proxy_state_transition_triggers_recycling(mocker):
+    """Test that a proxy state transition correctly updates worker_current_use_proxy and recycles the SB session."""
+    from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
+
+    scraper = SafliiScraper(pipeline_name="saflii_test")
+    scraper.proxy_url = "http://username:password@proxy.example.com:8080"
+    scraper.use_proxy = False  # Start with proxy disabled (worker_original_use_proxy)
+
+    import queue
+    work_queue = queue.Queue()
+    # pass_number = 4 triggers proxy state transition expected_use_proxy = True
+    work_queue.put((1, "https://www.saflii.org/za/cases/ZACC/2026/1.html", 4))
+
+    # Mock all extraction operations to avoid real calls
+    scraper._is_duplicate_url = MagicMock(return_value=False)
+    scraper._navigate_and_handle_turnstile = MagicMock(return_value="OK")
+    scraper._extract_page_content = MagicMock(return_value=("Title", "HTML", "Text", False))
+    scraper._save_scraped_result = MagicMock()
+    scraper._mark_scraped_state = MagicMock()
+    scraper.log_outbound_ip = MagicMock()
+
+    # Track how SB is initialized
+    sb_calls = []
+    mock_sb_ctx = MagicMock()
+    mock_sb = MagicMock()
+    mock_sb_ctx.__enter__.return_value = mock_sb
+
+    def mock_sb_init(*args, **kwargs):
+        sb_calls.append(kwargs)
+        return mock_sb_ctx
+
+    mocker.patch("coeus.extraction_workers.new_saflii_scraper.SB", side_effect=mock_sb_init)
+
+    loop = AsyncMock()
+
+    scraper._detailing_worker_thread(
+        worker_id=1,
+        work_queue=work_queue,
+        loop=loop,
+        total_datasets=1,
+    )
+
+    # The detailing thread should run, encounter the proxy transition exception, recycle,
+    # and then run the second session with proxy enabled.
+    assert len(sb_calls) == 2
+    # First SB session (proxy disabled)
+    assert sb_calls[0].get("proxy") is None
+    assert sb_calls[0].get("multi_proxy") is False
+    # Second SB session (proxy enabled)
+    assert sb_calls[1].get("proxy") == "username:password@proxy.example.com:8080"
+    assert sb_calls[1].get("multi_proxy") is True
+

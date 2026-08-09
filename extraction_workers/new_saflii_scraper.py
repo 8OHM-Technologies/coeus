@@ -1285,15 +1285,18 @@ class SafliiScraper(BaseScraper):
         max_datasets_per_session = 100
         current_item = None
 
+        session_idx = 0
         while True:
             if work_queue.empty() and current_item is None:
                 break
 
-            # Clean user data directory before launching browser session
-            shutil.rmtree(worker_profile, ignore_errors=True)
-            os.makedirs(worker_profile, exist_ok=True)
+            # Create a unique profile path for this session to prevent lock conflicts with previous slow-terminating sessions
+            session_idx += 1
+            session_profile = f"{worker_profile}_{session_idx}"
+            shutil.rmtree(session_profile, ignore_errors=True)
+            os.makedirs(session_profile, exist_ok=True)
 
-            logger.info(f"[Worker {worker_id}] Launching browser session (profile: {worker_profile}) [Proxy: {worker_current_use_proxy}]...")
+            logger.info(f"[Worker {worker_id}] Launching browser session (profile: {session_profile}) [Proxy: {worker_current_use_proxy}]...")
             session_datasets = 0
 
             try:
@@ -1305,7 +1308,7 @@ class SafliiScraper(BaseScraper):
                     multi_proxy=worker_current_use_proxy,
                     test=True,
                     xvfb=False,  # Global Xvfb display managed at process level in detailing()
-                    user_data_dir=worker_profile,
+                    user_data_dir=session_profile,
                     chromium_arg="--no-sandbox,--disable-dev-shm-usage"
                 ) as sb:
                     sb.set_window_size(1280, 720)
@@ -1346,21 +1349,23 @@ class SafliiScraper(BaseScraper):
                                 worker_current_use_proxy = next_proxy
                                 break
                         except RetryItemException as retry_err:
+                            logger.info(f"[Worker {worker_id}] Recycling browser session to retry same item immediately: {retry_err}")
                             current_item = retry_err.item
-                            raise
+                            if retry_err.next_proxy is not None:
+                                worker_current_use_proxy = retry_err.next_proxy
+                            time.sleep(3)
+                            break
                         finally:
                             pass
 
                         session_datasets += 1
 
-            except RetryItemException as retry_err:
-                logger.info(f"[Worker {worker_id}] Recycling browser session to retry same item immediately: {retry_err}")
-                if retry_err.next_proxy is not None:
-                    worker_current_use_proxy = retry_err.next_proxy
-                time.sleep(3)
             except Exception as browser_err:
                 logger.error(f"[Worker {worker_id}] Browser session failed or crashed: {browser_err}. Recycling browser session...")
                 time.sleep(3)
+            finally:
+                # Clean up session profile directory to prevent disk bloat
+                shutil.rmtree(session_profile, ignore_errors=True)
 
     def _detailing_worker_thread(
         self,
