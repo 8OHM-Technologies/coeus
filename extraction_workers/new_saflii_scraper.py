@@ -279,6 +279,7 @@ class SafliiScraper(BaseScraper):
 
         self.index_url: str = DATABASES_INDEX_URL
         self.cooldown_seconds: float = 1.5
+        self.max_datasets_per_session: int = 20
         self.take_debug_screenshots: bool = False
         self.screenshots_dir: str = ""
 
@@ -363,6 +364,7 @@ class SafliiScraper(BaseScraper):
                     self.dataset_filter = cfg_datasets
 
         self.cooldown_seconds = float(extraction_params.get("cooldown_seconds", 1.5))
+        self.max_datasets_per_session = int(extraction_params.get("max_datasets_per_session", 20))
         self.take_debug_screenshots = self.config.get("take_debug_screenshots", False)
 
         if self.output_dir:
@@ -387,6 +389,7 @@ class SafliiScraper(BaseScraper):
         url: str,
         attempt_prefix: str,
         timeout: float = 15.0,
+        direct_uc: bool = False,
     ) -> str:
         """Open a URL with single-window navigation, wait for URL commit, and attempt Turnstile solving."""
         logger.info(f"Navigating to: {url} [{attempt_prefix}]")
@@ -412,15 +415,20 @@ class SafliiScraper(BaseScraper):
         path_parts = [p for p in urllib.parse.urlparse(url).path.split("/") if p]
         target_filename = path_parts[-1] if path_parts else ""
 
-        # 2. Open URL via sb.open()
+        # 2. Open URL via sb.open() or direct UC reconnect
         try:
-            sb.open(url)
+            if direct_uc:
+                logger.info(f"Opening directly with UC mode reconnect: {url}")
+                sb.uc_open_with_reconnect(url, reconnect_time=2)
+            else:
+                sb.open(url)
         except Exception as open_err:
-            logger.warning(f"sb.open failed on {url} ({open_err}); attempting uc_open_with_reconnect fallback...")
-            try:
-                sb.uc_open_with_reconnect(url, reconnect_time=1)
-            except Exception:
-                pass
+            if not direct_uc:
+                logger.warning(f"sb.open failed on {url} ({open_err}); attempting uc_open_with_reconnect fallback...")
+                try:
+                    sb.uc_open_with_reconnect(url, reconnect_time=1)
+                except Exception:
+                    pass
 
         # 3. Wait for browser URL transition to commit to target resource endpoint
         navigated = False
@@ -1132,7 +1140,8 @@ class SafliiScraper(BaseScraper):
         for attempt in range(1, 4):
             try:
                 state = self._navigate_and_handle_turnstile(
-                    sb, dataset_url, f"worker_{worker_id}_dataset_{entry_id}_pass_{pass_number}_att_{attempt}"
+                    sb, dataset_url, f"worker_{worker_id}_dataset_{entry_id}_pass_{pass_number}_att_{attempt}",
+                    direct_uc=True
                 )
                 if state == "BLOCKED":
                     raise BlockedException(f"Turnstile block on asset: {entry_id}")
@@ -1282,7 +1291,7 @@ class SafliiScraper(BaseScraper):
     ) -> None:
         """Browser launcher and queue processor block."""
         worker_current_use_proxy = worker_original_use_proxy
-        max_datasets_per_session = 100
+        max_datasets_per_session = self.max_datasets_per_session
         current_item = None
 
         session_idx = 0
