@@ -288,3 +288,34 @@ def test_proxy_state_transition_triggers_recycling(mocker):
     assert sb_calls[1].get("proxy") == "username:password@proxy.example.com:8080"
     assert sb_calls[1].get("multi_proxy") is True
 
+
+@pytest.mark.asyncio
+async def test_saflii_scraper_skip_stages_from_config(mocker):
+    """Test that skip_stages is correctly loaded from extraction_params configuration."""
+    from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
+
+    mock_config = {
+        "start_url": "",
+        "document_type": "awards",
+        "extraction_params": {
+            "datasets": "ZACC",
+            "shared_record_type": "saflii_courts",
+            "skip_stages": "1",
+        },
+    }
+    mock_conn = AsyncMock()
+    mock_conn.fetchval = AsyncMock(return_value=None)
+    mocker.patch("coeus.extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
+    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
+    mocker.patch("coeus.extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
+    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
+    mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
+    mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
+    mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
+
+    scraper = SafliiScraper(pipeline_name="saflii_test")
+    await scraper.initialize()
+
+    # skip_stages should be parsed from config extraction_params
+    assert scraper.skip_stages == frozenset({1})
+
