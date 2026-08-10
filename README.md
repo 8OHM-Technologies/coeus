@@ -58,7 +58,7 @@ High-security targets (such as SAFLII and Sabinet) utilize a high-stealth scrapi
 * **Automatic Proxy Rotation**: On Turnstile block detection or rate limits, the scraper rotates proxy IPs and verifies connectivity via `browser_helper.py` and `debug_helper.py`.
 * **Staggered Worker Startup**: Concurrently spawned browser sessions stagger their startup to prevent CPU/memory spikes and race conditions during initial navigation.
 * **Thread-Safe DB & GUI Locking**: Multi-threaded detailing coordinates database commits via `self.db_lock` and thread locks for UC GUI interactions.
-* **Stage Control & Driver Timeouts**: Supports `skip_stages` execution flags (e.g. indexing-only or detailing-only) and explicit driver timeouts for increased stability.
+* **Stage Control & Driver Timeouts**: Supports `skip_stages` execution flags (either via the `--skip_stages` CLI argument or defined inside Django `extraction_params` configuration) to control pipeline stages (e.g., detailing-only or indexing-only) for increased stability.
 
 ### **3. BaseScraper Framework & Dynamic Progress Tracking**
 Scrapers subclass `BaseScraper` (`extraction_workers/base_scraper.py`), managing state and execution lifecycles:
