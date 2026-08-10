@@ -351,6 +351,13 @@ class SafliiScraper(BaseScraper):
 
         extraction_params = self.config.get("extraction_params", {})
 
+        # skip_stages: CLI argument/constructor parameter takes precedence, then config extraction_params
+        if not self.skip_stages:
+            cfg_skip = extraction_params.get("skip_stages")
+            if cfg_skip:
+                self.skip_stages = self._parse_skip_stages(str(cfg_skip))
+                logger.info(f"🔧 Loaded skip_stages from extraction_params configuration: {sorted(self.skip_stages)}")
+
         # Allow index URL override from config; fall back to DATABASES_INDEX_URL
         self.index_url = self.config.get("start_url") or DATABASES_INDEX_URL
 
