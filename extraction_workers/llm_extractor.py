@@ -168,7 +168,11 @@ def scrub_pii_data(data: Any) -> Any:
     return data
 
 
-async def run_extraction(pipeline_name: str, schema_name: str) -> None:
+async def run_extraction(
+    pipeline_name: str,
+    schema_name: str,
+    record_id_filter: str | None = None,
+) -> None:
     config = await fetch_pipeline_config(pipeline_name)
 
     extraction_instructions: str = os.getenv("EXTRACTION_INSTRUCTIONS") or config.get(
@@ -207,20 +211,46 @@ async def run_extraction(pipeline_name: str, schema_name: str) -> None:
 
     try:
         # -- Fetch records needing extraction ----------------------------------
-        # We select records where record_type matches pipeline_name, status is 'detailed',
-        # and there is no entry in the scrubbed_records table yet.
-        records = await conn.fetch(
-            """
-            SELECT e.id, e.data, e.source_url
-            FROM extracted_records e
-            LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
-            WHERE e.record_type = $1
-              AND e.status = 'detailed'
-              AND s.extracted_record_id IS NULL
-            ORDER BY e.scraped_at ASC
-            """,
-            pipeline_name,
-        )
+        if record_id_filter:
+            # MANUAL TEST MODE: fetch a single record by UUID, ignoring status/scrubbed state.
+            logger.info("🔬 MANUAL TEST MODE — targeting single record: %s", record_id_filter)
+            try:
+                target_uuid = uuid.UUID(record_id_filter)
+            except ValueError:
+                logger.error("Invalid UUID supplied for --record-id: '%s'", record_id_filter)
+                sys.exit(1)
+
+            records = await conn.fetch(
+                """
+                SELECT e.id, e.data, e.source_url
+                FROM extracted_records e
+                WHERE e.id = $1
+                """,
+                target_uuid,
+            )
+
+            if not records:
+                logger.error(
+                    "No extracted_record found with id '%s'. "
+                    "Verify the UUID is correct and the record exists in the database.",
+                    record_id_filter,
+                )
+                sys.exit(1)
+        else:
+            # BATCH MODE: select records where record_type matches pipeline_name, status is
+            # 'detailed', and there is no entry in the scrubbed_records table yet.
+            records = await conn.fetch(
+                """
+                SELECT e.id, e.data, e.source_url
+                FROM extracted_records e
+                LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
+                WHERE e.record_type = $1
+                  AND e.status = 'detailed'
+                  AND s.extracted_record_id IS NULL
+                ORDER BY e.scraped_at ASC
+                """,
+                pipeline_name,
+            )
 
         if not records:
             logger.info("No detailed records found needing LLM extraction for pipeline '%s'.", pipeline_name)
@@ -366,6 +396,18 @@ if __name__ == "__main__":
             "Defaults to GenericDocumentExtraction."
         ),
     )
+    parser.add_argument(
+        "--record-id",
+        default=None,
+        dest="record_id",
+        metavar="UUID",
+        help=(
+            "UUID of a single extracted_record to process. "
+            "Bypasses the batch query (status / scrubbed-record filters) so any record "
+            "can be tested directly. Useful for manual end-to-end testing of the LLM "
+            "extractor without touching DB state."
+        ),
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_extraction(args.pipeline_name, args.schema))
+    asyncio.run(run_extraction(args.pipeline_name, args.schema, args.record_id))
