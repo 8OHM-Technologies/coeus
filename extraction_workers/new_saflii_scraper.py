@@ -267,20 +267,37 @@ class SafliiScraper(BaseScraper):
         pipeline_name: str,
         datasets: Optional[List[str]] = None,
         year: Optional[int] = None,
-        headless: bool = False,
-        use_xvfb: bool = True,
+        headless: Optional[bool] = None,
+        use_xvfb: Optional[bool] = None,
         skip_stages: Optional[str] = None,
+        use_proxy: Optional[bool] = None,
+        shared_record_type: Optional[str] = None,
+        cooldown_seconds: Optional[float] = None,
+        max_datasets_per_session: Optional[int] = None,
+        warmup_session: Optional[bool] = None,
+        concurrency: Optional[int] = None,
     ):
-        super().__init__(pipeline_name, skip_stages=skip_stages)
+        super().__init__(
+            pipeline_name,
+            skip_stages=skip_stages,
+            use_proxy=use_proxy,
+            shared_record_type=shared_record_type,
+        )
         self.dataset_filter: Optional[List[str]] = datasets
         self.year: Optional[int] = year
-        self.headless: bool = headless
-        self.use_xvfb: bool = use_xvfb
+        self.headless: Optional[bool] = headless
+        self.use_xvfb: Optional[bool] = use_xvfb
+
+        self.cooldown_seconds_cli: Optional[float] = cooldown_seconds
+        self.max_datasets_per_session_cli: Optional[int] = max_datasets_per_session
+        self.warmup_session_cli: Optional[bool] = warmup_session
+        self.concurrency_cli: Optional[int] = concurrency
 
         self.index_url: str = DATABASES_INDEX_URL
         self.cooldown_seconds: float = 1.5
         self.max_datasets_per_session: int = 20
         self.warmup_session: bool = True
+        self.concurrency: int = 4
         self.take_debug_screenshots: bool = False
         self.screenshots_dir: str = ""
 
@@ -371,9 +388,50 @@ class SafliiScraper(BaseScraper):
                 elif isinstance(cfg_datasets, list):
                     self.dataset_filter = cfg_datasets
 
-        self.cooldown_seconds = float(extraction_params.get("cooldown_seconds", 1.5))
-        self.max_datasets_per_session = int(extraction_params.get("max_datasets_per_session", 20))
-        self.warmup_session = bool(extraction_params.get("warmup_session", True))
+        # Headless: CLI parameter takes precedence, then config extraction_params
+        if self.headless is None:
+            if "headless" in extraction_params:
+                self.headless = to_bool(extraction_params.get("headless"))
+            else:
+                self.headless = False
+
+        # Use Xvfb: CLI parameter takes precedence, then config extraction_params
+        if self.use_xvfb is None:
+            if "use_xvfb" in extraction_params:
+                self.use_xvfb = to_bool(extraction_params.get("use_xvfb"))
+            else:
+                self.use_xvfb = True
+
+        # Year: CLI parameter takes precedence, then config extraction_params
+        if self.year is None:
+            cfg_year = extraction_params.get("year") or extraction_params.get("start_year")
+            if cfg_year is not None:
+                self.year = int(cfg_year)
+
+        # Cooldown seconds: CLI parameter takes precedence, then config extraction_params
+        if self.cooldown_seconds_cli is not None:
+            self.cooldown_seconds = self.cooldown_seconds_cli
+        else:
+            self.cooldown_seconds = float(extraction_params.get("cooldown_seconds", 1.5))
+
+        # Max datasets per session: CLI parameter takes precedence, then config extraction_params
+        if self.max_datasets_per_session_cli is not None:
+            self.max_datasets_per_session = self.max_datasets_per_session_cli
+        else:
+            self.max_datasets_per_session = int(extraction_params.get("max_datasets_per_session", 20))
+
+        # Warmup session: CLI parameter takes precedence, then config extraction_params
+        if self.warmup_session_cli is not None:
+            self.warmup_session = self.warmup_session_cli
+        else:
+            self.warmup_session = to_bool(extraction_params.get("warmup_session", True))
+
+        # Concurrency: CLI parameter takes precedence, then config extraction_params
+        if self.concurrency_cli is not None:
+            self.concurrency = self.concurrency_cli
+        else:
+            self.concurrency = int(extraction_params.get("concurrency", 4))
+
         self.take_debug_screenshots = self.config.get("take_debug_screenshots", False)
 
         if self.output_dir:
@@ -940,8 +998,7 @@ class SafliiScraper(BaseScraper):
     async def indexing(self) -> None:
         """Sub-process A: Harvest dataset entry indexes across all discovered datasets."""
         logger.info("[Stage 1A start] Starting indexing stage via SeleniumBase UC thread...")
-        extraction_params = self.config.get("extraction_params", {})
-        db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
+        db_record_type = self.db_record_type
         loop = asyncio.get_running_loop()
 
         self.dataset_urls, self.url_to_dataset_number = await asyncio.to_thread(
@@ -1450,8 +1507,7 @@ class SafliiScraper(BaseScraper):
         if "-n" not in sys.argv:
             sys.argv.append("-n")
 
-        extraction_params = self.config.get("extraction_params", {})
-        db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
+        db_record_type = self.db_record_type
 
         # Refresh existing_urls and existing_dataset_numbers to only contain records already detailed
         try:
@@ -1501,7 +1557,7 @@ class SafliiScraper(BaseScraper):
             f"{len(db_pending_urls)} loaded from database)."
         )
 
-        concurrency = int(extraction_params.get("concurrency", 4))
+        concurrency = self.concurrency
         logger.info(f"[Stage 1B start] Starting detailing with {concurrency} SeleniumBase UC worker threads...")
 
         # Start a single global Xvfb display for the process if in non-headless/Xvfb mode
@@ -1591,12 +1647,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--headless",
-        default="false",
+        default=None,
         help="Orchestrate worker browser processes via headless mode (true/false)"
     )
     parser.add_argument(
         "--use_xvfb",
-        default="true",
+        default=None,
         help="Run browser with Xvfb display (true/false)",
     )
     parser.add_argument(
@@ -1605,10 +1661,56 @@ if __name__ == "__main__":
         help="Comma-separated stage numbers to skip, e.g. '1' or '1,2'. "
              "Stage 1=Indexing, Stage 2=Detailing, Stage 3=Extraction."
     )
+    parser.add_argument(
+        "--use_proxy",
+        default=None,
+        help="Use proxy for requests (true/false)"
+    )
+    parser.add_argument(
+        "--shared_record_type",
+        default=None,
+        help="Override target database record type / shared record type"
+    )
+    parser.add_argument(
+        "--cooldown_seconds",
+        type=float,
+        default=None,
+        help="Time in seconds to wait between browser actions"
+    )
+    parser.add_argument(
+        "--max_datasets_per_session",
+        type=int,
+        default=None,
+        help="Maximum datasets to process per browser session before restarting browser"
+    )
+    parser.add_argument(
+        "--warmup_session",
+        default=None,
+        help="Warmup browser session by loading a test page first (true/false)"
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Number of concurrent worker threads to use for detailing"
+    )
     args = parser.parse_args()
 
-    headless_value = args.headless.lower() == "true"
-    use_xvfb_value = args.use_xvfb.lower() == "true"
+    headless_value = None
+    if args.headless is not None:
+        headless_value = args.headless.lower() == "true"
+
+    use_xvfb_value = None
+    if args.use_xvfb is not None:
+        use_xvfb_value = args.use_xvfb.lower() == "true"
+
+    use_proxy_value = None
+    if args.use_proxy is not None:
+        use_proxy_value = args.use_proxy.lower() == "true"
+
+    warmup_session_value = None
+    if args.warmup_session is not None:
+        warmup_session_value = args.warmup_session.lower() == "true"
 
     datasets_list = None
     if args.datasets:
@@ -1621,6 +1723,12 @@ if __name__ == "__main__":
         headless=headless_value,
         use_xvfb=use_xvfb_value,
         skip_stages=args.skip_stages,
+        use_proxy=use_proxy_value,
+        shared_record_type=args.shared_record_type,
+        cooldown_seconds=args.cooldown_seconds,
+        max_datasets_per_session=args.max_datasets_per_session,
+        warmup_session=warmup_session_value,
+        concurrency=args.concurrency,
     )
 
     asyncio.run(scraper.run())

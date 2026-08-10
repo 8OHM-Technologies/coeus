@@ -37,7 +37,13 @@ class BaseScraper(ABC):
     STAGE_DETAILING: int = 2
     STAGE_EXTRACTION: int = 3
 
-    def __init__(self, pipeline_name: str, skip_stages: Optional[str] = None):
+    def __init__(
+        self,
+        pipeline_name: str,
+        skip_stages: Optional[str] = None,
+        use_proxy: Optional[bool] = None,
+        shared_record_type: Optional[str] = None,
+    ):
         self.pipeline_name: str = pipeline_name
         self.env: Dict[str, str] = dict(os.environ)
         self.config: Dict[str, Any] = {}
@@ -56,9 +62,14 @@ class BaseScraper(ABC):
         self.progress_state: Dict[str, Any] = {}
         self.db_lock = asyncio.Lock()
 
-        # Proxy Configuration
+        # Proxy Configuration (CLI override takes precedence)
+        self.use_proxy_cli: Optional[bool] = use_proxy
         self.use_proxy: bool = False
         self.proxy_url: Optional[str] = None
+
+        # Shared Record Type (CLI override takes precedence)
+        self.shared_record_type_cli: Optional[str] = shared_record_type
+        self.db_record_type: Optional[str] = None
 
     @staticmethod
     def _parse_skip_stages(skip_stages: Optional[str]) -> FrozenSet[int]:
@@ -92,11 +103,12 @@ class BaseScraper(ABC):
         
         start_url = self.config.get("start_url")
         entity_name = self.config.get("name") or self.pipeline_name
-        db_record_type = (
-            self.config.get("extraction_params", {}).get("shared_record_type")
+        self.db_record_type = (
+            self.shared_record_type_cli
+            or self.config.get("extraction_params", {}).get("shared_record_type")
             or self.pipeline_name
         )
-        target_name = self.config.get("subset") or db_record_type
+        target_name = self.config.get("subset") or self.db_record_type
 
         logger.info(f"Resolving database targets for entity='{entity_name}'...")
         self.target_id = await db_storage.resolve_target_id(
@@ -104,24 +116,27 @@ class BaseScraper(ABC):
         )
         
         # Hydrate deduplication sets
-        urls = await db_storage.get_existing_urls(self.conn, db_record_type)
+        urls = await db_storage.get_existing_urls(self.conn, self.db_record_type)
         self.existing_urls = set(urls)
         
-        datasets = await db_storage.get_existing_dataset_numbers(self.conn, db_record_type)
+        datasets = await db_storage.get_existing_dataset_numbers(self.conn, self.db_record_type)
         self.existing_dataset_numbers = set(datasets)
         
         self.progress_state = await db_storage.sync_dynamic_pipeline_state(
-            self.conn, self.pipeline_name, db_record_type
+            self.conn, self.pipeline_name, self.db_record_type
         )
         logger.info(f"Progress state loaded (dynamic): {self.progress_state}")
 
         # Hydrate proxy flags from pipeline config, extraction_params & environment
         extraction_params = self.config.get("extraction_params", {})
-        self.use_proxy = (
-            to_bool(extraction_params.get("use_proxy"))
-            or to_bool(self.config.get("use_proxy"))
-            or to_bool(os.getenv("USE_PROXY"))
-        )
+        if self.use_proxy_cli is not None:
+            self.use_proxy = self.use_proxy_cli
+        else:
+            self.use_proxy = (
+                to_bool(extraction_params.get("use_proxy"))
+                or to_bool(self.config.get("use_proxy"))
+                or to_bool(os.getenv("USE_PROXY"))
+            )
         self.proxy_url = self.config.get("proxy_url") or os.getenv("PROXY_URL")
 
         if self.use_proxy:
@@ -178,13 +193,9 @@ class BaseScraper(ABC):
             "last_completed": completed,
             **kwargs,
         }
-        db_record_type = (
-            self.config.get("extraction_params", {}).get("shared_record_type")
-            or self.pipeline_name
-        )
         async with self.db_lock:
             self.progress_state = await db_storage.sync_dynamic_pipeline_state(
-                self.conn, self.pipeline_name, db_record_type, extra_state=extra_updates
+                self.conn, self.pipeline_name, self.db_record_type, extra_state=extra_updates
             )
 
     async def cleanup(self) -> None:
