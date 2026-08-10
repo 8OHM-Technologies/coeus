@@ -280,6 +280,7 @@ class SafliiScraper(BaseScraper):
         self.index_url: str = DATABASES_INDEX_URL
         self.cooldown_seconds: float = 1.5
         self.max_datasets_per_session: int = 20
+        self.warmup_session: bool = True
         self.take_debug_screenshots: bool = False
         self.screenshots_dir: str = ""
 
@@ -372,6 +373,7 @@ class SafliiScraper(BaseScraper):
 
         self.cooldown_seconds = float(extraction_params.get("cooldown_seconds", 1.5))
         self.max_datasets_per_session = int(extraction_params.get("max_datasets_per_session", 20))
+        self.warmup_session = bool(extraction_params.get("warmup_session", True))
         self.take_debug_screenshots = self.config.get("take_debug_screenshots", False)
 
         if self.output_dir:
@@ -1025,13 +1027,35 @@ class SafliiScraper(BaseScraper):
             .catch(err => callback('ERROR:' + err));
         """
         try:
-            b64_data = sb.execute_async_script(js_script, dataset_url)
+            b64_data = sb.driver.execute_async_script(js_script, dataset_url)
             if b64_data and not str(b64_data).startswith("ERROR:"):
                 import base64
                 pdf_bytes = base64.b64decode(b64_data)
         except Exception as js_err:
             logger.warning(f"[Worker {worker_id}] JS fetch failed: {js_err}")
 
+        # Fallback 1: requests download with active browser session cookies
+        if not pdf_bytes:
+            try:
+                import requests
+                session = requests.Session()
+                for cookie in sb.driver.get_cookies():
+                    session.cookies.set(cookie['name'], cookie['value'], domain=cookie.get('domain'))
+                
+                headers = {
+                    "User-Agent": sb.get_user_agent(),
+                    "Referer": dataset_url,
+                }
+                logger.info(f"[Worker {worker_id}] Attempting PDF download fallback via requests library...")
+                response = session.get(dataset_url, headers=headers, timeout=15)
+                if response.status_code == 200:
+                    pdf_bytes = response.content
+                else:
+                    logger.warning(f"[Worker {worker_id}] Requests fallback returned status code {response.status_code}")
+            except Exception as req_err:
+                logger.warning(f"[Worker {worker_id}] Requests fallback failed: {req_err}")
+
+        # Fallback 2: SeleniumBase download_file
         if not pdf_bytes:
             try:
                 pdf_bytes = sb.download_file(dataset_url)
@@ -1332,6 +1356,13 @@ class SafliiScraper(BaseScraper):
                     sb.driver.set_script_timeout(30)
 
                     self.log_outbound_ip(sb, label=f"SAFLII Detailing Worker {worker_id}")
+
+                    # Warm up the browser session by navigating to the index page to solve any initial Turnstile check
+                    if self.warmup_session:
+                        logger.info(f"[Worker {worker_id}] Warming up browser session via index page...")
+                        self._navigate_and_handle_turnstile(
+                            sb, self.index_url, f"worker_{worker_id}_warmup", direct_uc=True
+                        )
 
                     while session_datasets < max_datasets_per_session:
                         if current_item is not None:

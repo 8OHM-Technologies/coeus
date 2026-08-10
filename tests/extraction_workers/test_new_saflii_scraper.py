@@ -188,6 +188,7 @@ def test_turnstile_block_triggers_ip_rotation(mocker):
     from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
 
     scraper = SafliiScraper(pipeline_name="saflii_test")
+    scraper.warmup_session = False
     mocker.patch.object(scraper, "_navigate_and_handle_turnstile", return_value="BLOCKED")
 
     import queue
@@ -241,6 +242,7 @@ def test_proxy_state_transition_triggers_recycling(mocker):
     from coeus.extraction_workers.new_saflii_scraper import SafliiScraper
 
     scraper = SafliiScraper(pipeline_name="saflii_test")
+    scraper.warmup_session = False
     scraper.proxy_url = "http://username:password@proxy.example.com:8080"
     scraper.use_proxy = False  # Start with proxy disabled (worker_original_use_proxy)
 
