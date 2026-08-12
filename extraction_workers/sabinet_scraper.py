@@ -176,6 +176,10 @@ class SabinetScraper(BaseScraper):
         """Hydrate configuration variables and session state references."""
         await super().initialize()
 
+    async def authenticate(self, headless: bool = False) -> None:
+        """No-op: Sabinet does not require session authentication."""
+        pass
+
     def _navigate_with_reconnect(self, sb: SB, url: str, label: str = "nav") -> None:
         """Helper to navigate to a page with Turnstile auto-solver and cookie dismissal."""
         logger.info(f"[{label}] Navigating with UC reconnect: {url}")
