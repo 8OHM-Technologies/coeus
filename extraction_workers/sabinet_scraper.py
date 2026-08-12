@@ -8,7 +8,7 @@ import sys
 import time
 import urllib.parse
 from datetime import datetime, date, timezone
-from typing import Any, Optional
+from typing import Optional
 
 from bs4 import BeautifulSoup
 from seleniumbase import SB
@@ -93,80 +93,47 @@ _EXTRACT_ITEMS_JS = r"""
 """
 
 _EXTRACT_DETAIL_JS = r"""
-    const result = { auth_ok: false, content_loaded: false, metadata: {} };
+    const result = { content_loaded: false, metadata: {} };
 
-    const paywallDiv = document.querySelector('div.paywall-content.item-content-loaded');
-    const contentOnlyDiv = document.querySelector('div.item-content-loaded');
-
-    if (paywallDiv) {
-        result.auth_ok = true;
-        result.content_loaded = true;
-    } else if (contentOnlyDiv) {
-        result.auth_ok = false;
-        result.content_loaded = true;
-        return result;
-    } else {
-        result.auth_ok = false;
-        result.content_loaded = false;
+    const contentDiv = document.querySelector('div.item-content-loaded');
+    if (!contentDiv) {
         return result;
     }
+    result.content_loaded = true;
 
-    const expandButtons = paywallDiv.querySelectorAll('.ant-typography-expand');
-    expandButtons.forEach(btn => { try { btn.click(); } catch(e) {} });
-
-    const h1El = paywallDiv.querySelector('h1');
+    // Extract title from h1
+    const h1El = contentDiv.querySelector('h1');
     if (h1El) {
         const clone = h1El.cloneNode(true);
-        const icons = clone.querySelectorAll('.anticon, [role="img"]');
-        icons.forEach(icon => icon.remove());
+        clone.querySelectorAll('.anticon, [role="img"]').forEach(el => el.remove());
         const titleText = clone.innerText.trim();
         if (titleText) {
             result.metadata['detail_title'] = titleText;
         }
     }
 
-    const rows = paywallDiv.querySelectorAll('.ant-row');
-    rows.forEach(row => {
-        const labelEl = row.querySelector('.metaDataLabel');
-        const valueEl = row.querySelector('.metaDataValue');
-        if (!labelEl || !valueEl) return;
+    // Extract key/value pairs from item-meta-data spans
+    const tags = Array.from(contentDiv.querySelectorAll('.item-meta-data .ant-tag'));
+    tags.forEach(tag => {
+        const strongEl = tag.querySelector('strong');
+        if (!strongEl) return;
 
-        const labelText = labelEl.innerText.trim();
-        if (!labelText) return;
+        const rawKey = strongEl.innerText.replace(/:$/, '').trim();
+        // Remove the label node to get only the value text
+        const clone = tag.cloneNode(true);
+        clone.querySelector('strong').remove();
+        const value = clone.innerText.trim();
 
-        let value = "";
-        const listItems = Array.from(
-            valueEl.querySelectorAll('.ant-list-items .ant-list-item')
-        );
-        if (listItems.length > 0) {
-            value = listItems.map(li => li.innerText.trim()).filter(Boolean);
-            if (value.length === 1) value = value[0];
-        } else {
-            const ellipsisEl = valueEl.querySelector(
-                '.ant-typography-ellipsis[aria-label]'
-            );
-            if (ellipsisEl) {
-                value = ellipsisEl.getAttribute('aria-label').trim();
-            } else {
-                value = valueEl.innerText.trim();
-            }
-        }
-
-        const key = labelText
+        const key = rawKey
             .toLowerCase()
             .replace(/[^a-z0-9_]/g, '_')
             .replace(/_+/g, '_')
             .replace(/^_+|_+$/g, '');
 
-        if (key) {
+        if (key && value) {
             result.metadata[key] = value;
         }
     });
-
-    const previewImg = paywallDiv.querySelector('.ant-image img');
-    if (previewImg && previewImg.src) {
-        result.metadata['preview_image_url'] = previewImg.src;
-    }
 
     return result;
 """
@@ -202,17 +169,12 @@ class SabinetScraper(BaseScraper):
         self.headless = headless
         self.use_proxy: bool = False
         self.proxy_url: Optional[str] = None
-        self.cookies_filepath: str = ""
         self.db_lock = asyncio.Lock()
         self.failed_ids = []
 
     async def initialize(self) -> None:
         """Hydrate configuration variables and session state references."""
         await super().initialize()
-
-        cookies_dir = os.path.join(os.path.dirname(self.output_dir), "cookies")
-        os.makedirs(cookies_dir, exist_ok=True)
-        self.cookies_filepath = os.path.join(cookies_dir, f"{self.pipeline_name}_cookies.pkl")
 
     def _navigate_with_reconnect(self, sb: SB, url: str, label: str = "nav") -> None:
         """Helper to navigate to a page with Turnstile auto-solver and cookie dismissal."""
@@ -230,71 +192,7 @@ class SabinetScraper(BaseScraper):
         except Exception:
             pass
 
-    def _authenticate_sync(self) -> bool:
-        """Perform GUI authentication and persist session cookies to disk."""
-        scrape_url = (
-            "https://discover.sabinet.co.za/search?"
-            "Search=&ProductType=ccmabargainingcouncilawards"
-            "&resultsortOption=%22Date+Oldest+first%22"
-        )
-        username = os.getenv("SABINET_USERNAME", "TiaanF")
-        password = os.getenv("SABINET_PASSWORD", "G7fR7Bzv4$@ea5!")
 
-        sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
-        logger.info("[Auth] Launching browser for automated authentication state generation...")
-
-        use_xvfb = False
-        if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
-            use_xvfb = True
-        # Setup isolated profile path for auth to avoid collision
-        auth_profile_dir = "/tmp/sabinet_auth_profile"
-        shutil.rmtree(auth_profile_dir, ignore_errors=True)
-        os.makedirs(auth_profile_dir, exist_ok=True)
-
-        with SB(
-            uc=True,
-            headless=self.headless,
-            proxy=sb_proxy,
-            xvfb=use_xvfb,
-            test=True,
-            user_data_dir=auth_profile_dir,
-            multi_proxy=self.use_proxy,
-            chromium_arg="--no-sandbox,--disable-dev-shm-usage"
-        ) as sb:
-            sb.set_window_size(1280, 800)
-            sb.driver.set_page_load_timeout(30)
-            sb.driver.set_script_timeout(30)
-
-            # Verify and log outbound public IP
-            self.log_outbound_ip(sb, label="Sabinet Auth Stage")
-
-            self._navigate_with_reconnect(sb, scrape_url, label="Auth_Gate")
-
-            logger.info("🔐 Triggering security workflow context drawer...")
-            sb.wait_for_element_visible('button:contains("Sign in login")', timeout=15)
-            sb.uc_click('button:contains("Sign in login")')
-            sb.sleep(1)
-
-            logger.info("✏️ Filling credentials fields...")
-            sb.wait_for_element_visible('input[placeholder*="Username"]', timeout=10)
-            sb.type('input[placeholder*="Username"]', username)
-            sb.type('input[placeholder*="Password"]', password)
-
-            logger.info("🚀 Submitting authentication payload tokens...")
-            sb.uc_click('button:contains("Sign into Account")')
-
-            logger.info("⏳ Waiting for identity authorization response...")
-            sb.wait_for_element_visible('button:contains("user myDiscover down")', timeout=30)
-            logger.info("✅ Authentication validated successfully.")
-
-            # Save session cookies to file
-            sb.save_cookies(name=self.cookies_filepath)
-            logger.info(f"✅ Session cookies successfully saved to: {self.cookies_filepath}")
-            return True
-
-    async def authenticate(self, headless: bool = False) -> None:
-        """Automatically log in to Sabinet and persist session cookies to disk."""
-        await asyncio.to_thread(self._authenticate_sync)
 
     def _setup_search_page(self, sb: SB, start_url: str) -> None:
         """Configures cookie conditions and list scaling presentation values."""
@@ -318,7 +216,6 @@ class SabinetScraper(BaseScraper):
     def _indexing_sync(
         self,
         start_url: str,
-        reverse_direction: bool,
         incremental: bool,
         resume_year: int,
         resume_month: int,
@@ -355,11 +252,6 @@ class SabinetScraper(BaseScraper):
             # Verify and log outbound public IP
             self.log_outbound_ip(sb, label="Sabinet Indexing Stage")
 
-            # Load cookies if available
-            if os.path.exists(self.cookies_filepath):
-                sb.open(start_url)
-                sb.load_cookies(name=self.cookies_filepath)
-
             self._setup_search_page(sb, start_url)
 
             # Parse year entries from sidebar
@@ -388,26 +280,21 @@ class SabinetScraper(BaseScraper):
                     if not year_entries:
                         year_entries = [(current_year, 1)]
                 else:
-                    year_entries.sort(key=lambda x: x[0], reverse=reverse_direction)
+                    year_entries.sort(key=lambda x: x[0])
             except Exception as ye:
                 logger.warning(f"Could not read dynamic timeline sidebars: {ye}. Defaulting to current year.")
                 year_entries = [(datetime.now().year, 1)]
 
             for year, year_count in year_entries:
-                if reverse_direction and resume_year > 0 and year > resume_year:
-                    continue
-                elif not reverse_direction and resume_year > 0 and year < resume_year:
+                if resume_year > 0 and year < resume_year:
                     continue
 
                 logger.info(f"📅 Processing year {year} (~{year_count} entries)...")
-                months = list(range(12, 0, -1)) if reverse_direction else list(range(1, 13))
+                months = list(range(1, 13))
 
                 for month in months:
-                    if year == resume_year:
-                        if reverse_direction and month > resume_month:
-                            continue
-                        elif not reverse_direction and month < resume_month:
-                            continue
+                    if year == resume_year and month < resume_month:
+                        continue
 
                     last_day = calendar.monthrange(year, month)[1]
                     date_from = date(year, month, 1).strftime("%m/%d/%Y")
@@ -562,12 +449,11 @@ class SabinetScraper(BaseScraper):
         is_fully_complete = self.progress_state.get("fully_complete", False)
         incremental = extraction_params.get("incremental", False) or is_fully_complete
 
-        reverse_direction = extraction_params.get("reverse_direction", False)
         incomplete_years = self.progress_state.get("incomplete_years", [])
 
         resume_year = self.progress_state.get("last_year", 0)
         if not incremental and resume_year == 0 and incomplete_years:
-            resume_year = max(incomplete_years) if reverse_direction else min(incomplete_years)
+            resume_year = min(incomplete_years)
         if incremental:
             resume_year = 0
 
@@ -577,7 +463,6 @@ class SabinetScraper(BaseScraper):
         total_new, skipped_any = await asyncio.to_thread(
             self._indexing_sync,
             start_url,
-            reverse_direction,
             incremental,
             resume_year,
             resume_month,
@@ -648,10 +533,6 @@ class SabinetScraper(BaseScraper):
                     # Verify and log outbound public IP
                     self.log_outbound_ip(sb, label=f"Sabinet Detailing Worker {worker_id}")
 
-                    if os.path.exists(self.cookies_filepath):
-                        sb.open("https://discover.sabinet.co.za/")
-                        sb.load_cookies(name=self.cookies_filepath)
-
                     while True:
                         item = work_queue.get()
                         if item is None:
@@ -672,7 +553,6 @@ class SabinetScraper(BaseScraper):
 
                             payload = {
                                 "details_scraped_at": datetime.now(timezone.utc).isoformat(),
-                                "auth_ok": detail_res.get("auth_ok", False),
                                 "content_loaded": detail_res.get("content_loaded", False),
                                 **metadata,
                             }
@@ -718,7 +598,6 @@ class SabinetScraper(BaseScraper):
     async def detailing(self) -> None:
         """Sub-process B: Asset Enrichment Layer via concurrent SB UC threads."""
         extraction_params = self.config.get("extraction_params") or {}
-        reverse_direction = extraction_params.get("reverse_direction", False)
         index_pipeline_name = extraction_params.get("index_pipeline_name") or re.sub(r'_(details?)$', '', self.pipeline_name)
         db_record_type = extraction_params.get("shared_record_type") or index_pipeline_name
 
@@ -772,7 +651,6 @@ class SabinetScraper(BaseScraper):
                 cases = await db_storage.load_records_needing_detail(
                     self.conn,
                     db_record_type,
-                    sort_desc=reverse_direction,
                     limit=batch_size,
                     exclude_ids=self.failed_ids if self.failed_ids else None,
                     include_data=False,

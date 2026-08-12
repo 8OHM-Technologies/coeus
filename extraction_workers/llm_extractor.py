@@ -47,7 +47,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
 # Compile regex patterns for post-processing PII scrubbing
 # RSA ID: 13-digit number
@@ -92,20 +92,18 @@ def build_system_prompt(
     extraction_instructions: str,
 ) -> str:
     schema_json = json.dumps(schema_cls.model_json_schema(), indent=2)
+    field_names = list(schema_cls.model_fields.keys())
+    
     base = (
         "You are a precise data extraction assistant. "
-        "Extract structured information from the document provided by the user.\n\n"
+        "Extract structured legal information from the document provided.\n\n"
+        "STRICT CRITICAL RULE:\n"
+        f"Your JSON object MUST contain the following root keys: {', '.join(field_names)}.\n"
+        "Do NOT introduce generic section titles like 'Introduction', 'Background', or 'Body' as root keys.\n\n"
         "IMPORTANT:\n"
-        "- Respond ONLY with a valid JSON object that exactly matches the schema below.\n"
-        "- Do not include any markdown, explanations, or extra text.\n"
-        "- If a required field cannot be determined, use null.\n\n"
-        "PII / POPIA REDACTION RULES:\n"
-        "- Case Name / Title: Retain the original case name/title exactly. Do not redact or modify it.\n"
-        "- Case / Roll Number: Retain the case/roll number exactly. Do not redact or modify it.\n"
-        "- Presiding Judge / Forum: Retain the judge names and court/forum names exactly. Do not redact or modify them.\n"
-        "- RSA ID / Passport Numbers: Redact them completely (replace with [RSA ID] or [PASSPORT]).\n"
-        "- Bank / Tax Numbers: Redact them completely (replace with [BANK ACCOUNT] or [TAX NUMBER]).\n"
-        "- Minor / Sexual Offence Names: Pseudonymize them (e.g. replace with initials like 'A.B.', or pseudonyms like 'Minor X', 'Child A') in all fields, including the full text and summaries.\n\n"
+        "- Respond ONLY with a valid JSON object strictly adhering to the schema keys above.\n"
+        "- Do not include markdown code blocks or explanatory text.\n"
+        "- If a field value is missing or unknown, set it to null or an empty array.\n\n"
         f"JSON SCHEMA:\n{schema_json}"
     )
     if extraction_instructions:
@@ -118,12 +116,25 @@ def call_ollama(
     model: str,
     system_prompt: str,
     document_text: str,
+    schema_cls: type[BaseModel] | None = None,
 ) -> dict[str, Any] | None:
     """
     Call the Ollama OpenAI-compatible endpoint and return the parsed JSON dict,
     or ``None`` on failure.
     """
     ollama_model = model.removeprefix("ollama/")
+
+    response_format: dict[str, Any] = {"type": "json_object"}
+    if schema_cls:
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_cls.__name__,
+                "strict": True,
+                "schema": schema_cls.model_json_schema(),
+            },
+        }
+
     try:
         response = client.chat.completions.create(
             model=ollama_model,
@@ -133,12 +144,14 @@ def call_ollama(
                     "role": "user",
                     "content": (
                         "Extract structured data from the following document:\n\n"
-                        f"{document_text[:60000]}"  # guard against context overrun, increased to support large cases
+                        f"{document_text[:60000]}"
                     ),
                 },
             ],
-            response_format={"type": "json_object"},
-            temperature=0.0,
+            response_format=response_format,
+            temperature=0.2,
+            top_p=0.05,
+            max_completion_tokens=8192
         )
         raw = response.choices[0].message.content
         return json.loads(str(raw))
@@ -293,7 +306,7 @@ async def run_extraction(
                                 break
                 
                 if category == "cases":
-                    current_schema_cls = resolve_schema("SafliiCaseExtraction") or schema_cls
+                    current_schema_cls = resolve_schema("SafliiExtractedData") or schema_cls
                 elif category in ("gaz", "journals"):
                     current_schema_cls = resolve_schema("SafliiJournalGazetteExtraction") or schema_cls
                 elif category == "other":
@@ -301,14 +314,11 @@ async def run_extraction(
 
             logger.info("  Using schema for extraction: %s (Category: %s)", current_schema_cls.__name__, category if "saflii" in pipeline_name.lower() else "N/A")
 
-            # 3. Extract content for LLM (favoring center_content or specified content_field)
+            # 3. Extract content for LLM
             if content_field and content_field in record_data:
                 doc_text = str(record_data[content_field])
             else:
-                doc_text = record_data.get("center_content") or ""
-                # Robust fallback for other scrapers / document formats
-                if not doc_text.strip():
-                    doc_text = record_data.get("full_text") or record_data.get("content") or ""
+                doc_text = record_data.get("full_text") or record_data.get("center_content") or ""
 
             if not doc_text.strip():
                 logger.warning("  [!] Empty content for record %s, skipping.", record_id)
@@ -319,7 +329,7 @@ async def run_extraction(
             current_system_prompt = build_system_prompt(current_schema_cls, extraction_instructions)
 
             # 5. Call LLM
-            raw_result = call_ollama(client, ai_model, current_system_prompt, doc_text)
+            raw_result = call_ollama(client, ai_model, current_system_prompt, doc_text, current_schema_cls)
             if raw_result is None:
                 logger.error("  [!] LLM returned no result for record: %s", record_id)
                 failure_count += 1

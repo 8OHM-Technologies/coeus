@@ -40,15 +40,18 @@ class GenericDocumentExtraction(BaseModel):
     """A completely flexible schema for any document type."""
 
     metadata: BaseExtractedRecord
+    title: str = Field(
+        ...,
+        description="The title of the case.."
+    )
+    
     extracted_data: Dict[str, Any] = Field(
         ..., description="Key-value pairs of the core data points."
     )
     data_quality_flags: DataQualityFlags
 
 
-class SafliiCaseExtraction(BaseModel):
-    metadata: BaseExtractedRecord
-
+class SafliiExtractedData(BaseModel):
     applicant_plaintiff: str = Field(
         ..., 
         description="The name of the applicant or plaintiff."
@@ -61,10 +64,7 @@ class SafliiCaseExtraction(BaseModel):
         ..., 
         description="The date the hearing was heared and judgment was delivered (YYYY-MM-DD)."
     )
-    dataset_number: str = Field(
-        ..., 
-        description="The official case reference number."
-    )
+
     reportable: bool = Field(
         ..., 
         description="Indicates whether the case is reportable."
@@ -87,21 +87,24 @@ class SafliiCaseExtraction(BaseModel):
     )
     result: str = Field(
         ..., 
-        description="The final order or ruling delivered by the court."
+        description="A concise and precise summary of the court's final order or ruling."
     )
     summary: str = Field(
         ..., 
-        description="The headnotes or narrative summary of the case."
+        description="A comprehensive narrative summary of the case, covering the key legal issues, arguments presented, and the court's reasoning."
     )
     keywords: List[str] = Field(
         ..., 
-        description="List of keywords/slugs relevant to the case."
+        description="List of key legal concepts, terms, and themes discussed in the case. These should be concise and specific to the legal context."
     )
-    formatted_text: str = Field(
-        ..., 
-        description="The full formatted text of the judgment document. Found between the <!-- sino index --> and <!-- sino noindex --> HTML comment markers in the center_content JSON field."
+
+
+class SafliiCaseExtraction(BaseModel):
+    metadata: BaseExtractedRecord
+    extracted_data: SafliiExtractedData = Field(
+        ...,
+        description="Structured core data points specific to a SAFLII case."
     )
-    
     data_quality_flags: DataQualityFlags
 
 
