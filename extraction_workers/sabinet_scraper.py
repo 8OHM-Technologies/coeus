@@ -258,36 +258,49 @@ class SabinetScraper(BaseScraper):
 
             self._setup_search_page(sb, start_url)
 
-            # Parse year entries from sidebar
+            # Parse year entries from sidebar — retry up to 3 times to allow
+            # the React sidebar to finish rendering before reading the DOM.
+            _YEAR_SIDEBAR_JS = r"""
+                const listbox = document.querySelector('ul[aria-label="Year-items"]');
+                if (!listbox) return [];
+                const results = [];
+                listbox.querySelectorAll('li').forEach(li => {
+                    const label = li.querySelector('label div');
+                    if (!label) return;
+                    const yearText = (label.childNodes[0]?.textContent || '').trim();
+                    const countSpan = label.querySelector('span');
+                    const countText = countSpan ? countSpan.textContent.replace(/[(),\s]/g, '') : '0';
+                    const year = parseInt(yearText, 10);
+                    const count = parseInt(countText, 10);
+                    if (!isNaN(year) && !isNaN(count) && count > 0) results.push([year, count]);
+                });
+                return results;
+            """
             year_entries: list[tuple[int, int]] = []
-            try:
-                raw_years = sb.execute_script(r"""
-                    const listbox = document.querySelector('ul[aria-label="Year-items"]');
-                    if (!listbox) return [];
-                    const results = [];
-                    listbox.querySelectorAll('li').forEach(li => {
-                        const label = li.querySelector('label div');
-                        if (!label) return;
-                        const yearText = (label.childNodes[0]?.textContent || '').trim();
-                        const countSpan = label.querySelector('span');
-                        const countText = countSpan ? countSpan.textContent.replace(/[(),\s]/g, '') : '0';
-                        const year = parseInt(yearText, 10);
-                        const count = parseInt(countText, 10);
-                        if (!isNaN(year) && !isNaN(count) && count > 0) results.push([year, count]);
-                    });
-                    return results;
-                """)
-                year_entries = [(int(y), int(c)) for y, c in (raw_years or [])]
-                if incremental:
-                    current_year = datetime.now().year
-                    year_entries = [entry for entry in year_entries if entry[0] == current_year]
-                    if not year_entries:
-                        year_entries = [(current_year, 1)]
-                else:
-                    year_entries.sort(key=lambda x: x[0])
-            except Exception as ye:
-                logger.warning(f"Could not read dynamic timeline sidebars: {ye}. Defaulting to current year.")
-                year_entries = [(datetime.now().year, 1)]
+            if incremental:
+                current_year = datetime.now().year
+                year_entries = [(current_year, 1)]
+            else:
+                raw_years = []
+                for _attempt in range(3):
+                    try:
+                        raw_years = sb.execute_script(_YEAR_SIDEBAR_JS) or []
+                    except Exception as ye:
+                        logger.warning(f"Year sidebar JS error (attempt {_attempt + 1}/3): {ye}")
+                    if raw_years:
+                        break
+                    logger.info(f"Year sidebar returned empty (attempt {_attempt + 1}/3), waiting 3s...")
+                    sb.sleep(3)
+
+                if not raw_years:
+                    raise RuntimeError(
+                        "Year sidebar returned no entries after 3 attempts. "
+                        "The page may not have loaded correctly or the selector has changed."
+                    )
+
+                year_entries = [(int(y), int(c)) for y, c in raw_years]
+                year_entries.sort(key=lambda x: x[0])
+                logger.info(f"Found {len(year_entries)} years in sidebar: {[y for y, _ in year_entries]}")
 
             for year, year_count in year_entries:
                 if resume_year > 0 and year < resume_year:
@@ -450,18 +463,21 @@ class SabinetScraper(BaseScraper):
         )
         extraction_params = self.config.get("extraction_params") or {}
         db_record_type = extraction_params.get("shared_record_type") or self.pipeline_name
-        is_fully_complete = self.progress_state.get("fully_complete", False)
-        incremental = extraction_params.get("incremental", False) or is_fully_complete
+        # incremental is ONLY driven by explicit config — never by fully_complete.
+        # A fully_complete pipeline should re-run from scratch (resume_year=0),
+        # not collapse into a current-year-only incremental pass.
+        incremental = extraction_params.get("incremental", False)
 
         incomplete_years = self.progress_state.get("incomplete_years", [])
+        is_fully_complete = self.progress_state.get("fully_complete", False)
 
-        resume_year = self.progress_state.get("last_year", 0)
-        if not incremental and resume_year == 0 and incomplete_years:
-            resume_year = min(incomplete_years)
-        if incremental:
-            resume_year = 0
+        resume_year = 0
+        if not incremental and not is_fully_complete:
+            resume_year = self.progress_state.get("last_year", 0)
+            if resume_year == 0 and incomplete_years:
+                resume_year = min(incomplete_years)
 
-        resume_month = 0 if incremental else self.progress_state.get("last_month", 0)
+        resume_month = 0 if (incremental or is_fully_complete) else self.progress_state.get("last_month", 0)
 
         loop = asyncio.get_running_loop()
         total_new, skipped_any = await asyncio.to_thread(
