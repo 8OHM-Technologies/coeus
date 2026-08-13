@@ -205,17 +205,20 @@ class SabinetScraper(BaseScraper):
         try:
             logger.info("Configuring layout adjustments to 100 entries per page...")
             dropdown_selector = 'div.ant-select[aria-label="How many results to show in list"]'
-            if sb.is_element_visible(dropdown_selector):
-                sb.uc_click(dropdown_selector)
-                sb.sleep(1)
+            
+            # Wait for dropdown to be visible (up to 15 seconds) to allow React SPA to load
+            sb.wait_for_element_visible(dropdown_selector, timeout=15)
+            sb.uc_click(dropdown_selector)
+            sb.sleep(1)
 
-                option_selector = '.ant-select-item-option-content:contains("100 per page")'
-                if sb.is_element_visible(option_selector):
-                    sb.uc_click(option_selector)
-                    logger.info("Successfully selected '100 per page' option.")
-                    sb.sleep(2)
+            option_selector = '.ant-select-item-option-content:contains("100 per page")'
+            sb.wait_for_element_visible(option_selector, timeout=5)
+            sb.uc_click(option_selector)
+            logger.info("Successfully selected '100 per page' option.")
+            sb.sleep(2)
         except Exception as pag_err:
             logger.warning(f"Could not configure pagination parameters: {pag_err}. Defaulting scaling.")
+
 
     # Maximum number of times a single (year, month) window is retried on crash/error
     _MAX_WINDOW_RETRIES = 3
@@ -392,7 +395,7 @@ class SabinetScraper(BaseScraper):
                 future.result()
 
             # Pagination
-            next_selector = 'li.ant-pagination-next:not(.ant-pagination-disabled) a'
+            next_selector = 'a[rel="next"]'
             if sb.is_element_visible(next_selector):
                 if current_page % 100 == 0:
                     logger.info(f"Scraped {current_page} pages. Rate-limiting pause...")

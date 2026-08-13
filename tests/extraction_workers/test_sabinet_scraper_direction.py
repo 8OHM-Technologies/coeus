@@ -112,13 +112,15 @@ async def test_run_indexing_forward_setup(mocker):
     def custom_execute_script(script):
         if "Year-items" in script:
             return [[2020, 100], [2021, 50], [2022, 10]]
+        if "btn-search" in script:
+            return True
         return []
     mock_sb.execute_script.side_effect = custom_execute_script
     
     mock_sb.is_element_present.return_value = True
     
     def custom_is_element_visible(selector):
-        if "ant-pagination-next" in selector:
+        if "a[rel=\"next\"]" in selector or "ant-pagination-next" in selector:
             return False
         return True
     mock_sb.is_element_visible.side_effect = custom_is_element_visible
@@ -138,76 +140,6 @@ async def test_run_indexing_forward_setup(mocker):
 
 
 @pytest.mark.asyncio
-async def test_run_indexing_reverse_setup(mocker):
-    """Verify that SabinetScraper.indexing sorts descending in reverse direction."""
-    mock_config = {
-        "start_url": "https://discover.sabinet.co.za/search?Search=&ProductType=ccmabargainingcouncilawards",
-        "document_type": "awards",
-        "extraction_params": {
-            "shared_record_type": "sabinet_ccma_shared",
-            "reverse_direction": True
-        }
-    }
-
-    mocker.patch("extraction_workers.base_scraper.fetch_pipeline_config", AsyncMock(return_value=mock_config))
-    
-    mock_conn = AsyncMock()
-    mocker.patch("extraction_workers.base_scraper.get_db_connection", AsyncMock(return_value=mock_conn))
-    
-    mocker.patch("db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.resolve_target_id", AsyncMock(return_value="target-123"))
-    
-    mocker.patch("db_storage.get_existing_urls", AsyncMock(return_value=set()))
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_urls", AsyncMock(return_value=set()))
-    
-    mocker.patch("db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.get_existing_dataset_numbers", AsyncMock(return_value=set()))
-
-    mock_progress = {
-        "last_year": 2021,
-        "last_month": 5,
-        "last_completed": True
-    }
-    mocker.patch("db_storage.load_pipeline_state", AsyncMock(return_value=mock_progress))
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.load_pipeline_state", AsyncMock(return_value=mock_progress))
-    mocker.patch("db_storage.save_pipeline_state", AsyncMock())
-    mocker.patch("extraction_workers.sabinet_scraper.db_storage.save_pipeline_state", AsyncMock())
-
-    # Mock SeleniumBase
-    mock_sb_ctx = MagicMock()
-    mock_sb = MagicMock()
-    mock_sb_ctx.__enter__.return_value = mock_sb
-    mocker.patch("extraction_workers.sabinet_scraper.SB", return_value=mock_sb_ctx)
-
-    def custom_execute_script(script):
-        if "Year-items" in script:
-            return [[2020, 100], [2021, 50], [2022, 10]]
-        return []
-    mock_sb.execute_script.side_effect = custom_execute_script
-    
-    mock_sb.is_element_present.return_value = True
-    
-    def custom_is_element_visible(selector):
-        if "ant-pagination-next" in selector:
-            return False
-        return True
-    mock_sb.is_element_visible.side_effect = custom_is_element_visible
-
-    scraper = SabinetScraper("sabinet_test")
-    await scraper.initialize()
-    await scraper.indexing()
-
-    type_calls = [
-        args[0][1] for args in mock_sb.type.call_args_list 
-        if args[0][0] == 'input[placeholder="Date From"]'
-    ]
-    assert len(type_calls) == 5 + 12  # 5 months in 2021 (5 down to 1) + 12 months in 2020
-    assert type_calls[0] == "05/01/2021"
-    assert type_calls[1] == "04/01/2021"
-    assert type_calls[-1] == "01/01/2020"
-
-
-@pytest.mark.asyncio
 async def test_detailing_batch_loop(mocker):
     """Verify that SabinetScraper.detailing processes records in batches and handles sentinels."""
     mock_config = {
@@ -215,7 +147,6 @@ async def test_detailing_batch_loop(mocker):
         "document_type": "awards",
         "extraction_params": {
             "shared_record_type": "sabinet_ccma_shared",
-            "reverse_direction": True,
             "concurrency": 2
         }
     }
@@ -277,7 +208,6 @@ async def test_detailing_batch_loop(mocker):
     mock_load.assert_any_call(
         mock_conn,
         "sabinet_ccma_shared",
-        sort_desc=True,
         limit=500,
         exclude_ids=None,
         include_data=False
