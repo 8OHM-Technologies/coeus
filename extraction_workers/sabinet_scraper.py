@@ -208,13 +208,42 @@ class SabinetScraper(BaseScraper):
             
             # Wait for dropdown to be visible (up to 15 seconds) to allow React SPA to load
             sb.wait_for_element_visible(dropdown_selector, timeout=15)
-            sb.uc_click(dropdown_selector)
-            sb.sleep(1)
+            
+            # Open dropdown and select 100 per page via robust JS execution
+            res = sb.execute_script("""
+                const dropdown = document.querySelector('div.ant-select[aria-label="How many results to show in list"]');
+                if (!dropdown) return "dropdown_not_found";
 
-            option_selector = '.ant-select-item-option-content:contains("100 per page")'
-            sb.wait_for_element_visible(option_selector, timeout=5)
-            sb.uc_click(option_selector)
-            logger.info("Successfully selected '100 per page' option.")
+                const selector = dropdown.querySelector('.ant-select-selector');
+                if (selector) {
+                    selector.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                    selector.click();
+                } else {
+                    dropdown.click();
+                }
+
+                return new Promise((resolve) => {
+                    let attempts = 0;
+                    const interval = setInterval(() => {
+                        const option = Array.from(document.querySelectorAll('.ant-select-item-option'))
+                            .find(el => el.innerText.includes('100 per page'));
+                        if (option) {
+                            clearInterval(interval);
+                            option.click();
+                            resolve("success");
+                        } else {
+                            attempts++;
+                            if (attempts > 50) { // 5 seconds timeout
+                                clearInterval(interval);
+                                resolve("option_not_found");
+                            }
+                        }
+                    }, 100);
+                });
+            """)
+            if res != "success":
+                raise RuntimeError(f"Failed to select 100 per page option: {res}")
+            logger.info("Successfully selected '100 per page' option via JS.")
             sb.sleep(2)
         except Exception as pag_err:
             logger.warning(f"Could not configure pagination parameters: {pag_err}. Defaulting scaling.")
