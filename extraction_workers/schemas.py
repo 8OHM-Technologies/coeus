@@ -42,7 +42,7 @@ class GenericDocumentExtraction(BaseModel):
     metadata: BaseExtractedRecord
     title: str = Field(
         ...,
-        description="The title of the case.."
+        description="The title of the case."
     )
     
     extracted_data: Dict[str, Any] = Field(
@@ -54,11 +54,11 @@ class GenericDocumentExtraction(BaseModel):
 class SafliiExtractedData(BaseModel):
     applicant_plaintiff: str = Field(
         ..., 
-        description="The name of the applicant or plaintiff."
+        description="The full name of the applicant or plaintiff in this case."
     )
     respondent_defendant: List[str] = Field(
         ..., 
-        description="List of respondents or defendants."
+        description="List of respondents or defendants in this case."
     )
     hearing_date: date = Field(
         ..., 
@@ -69,17 +69,13 @@ class SafliiExtractedData(BaseModel):
         ..., 
         description="Indicates whether the case is reportable."
     )
-    subjects: List[str] = Field(
-        ..., 
-        description="List of legal subject areas or classifications."
-    )
     court: str = Field(
         ..., 
-        description="The court where the case was heard."
+        description="The court where the case was heard (e.g., Constitutional Court, Supreme Court of Appeal, High Court)."
     )
     judges: List[str] = Field(
         ..., 
-        description="List of presiding judges."
+        description="Full list of all judges that presided over this case (including those that gave the judgments and coram members)."
     )
     court_location: str = Field(
         ..., 
@@ -101,6 +97,10 @@ class SafliiExtractedData(BaseModel):
 
 class SafliiCaseExtraction(BaseModel):
     metadata: BaseExtractedRecord
+    title: str = Field(
+        ...,
+        description="The title of the case (as per the source document)."
+    )
     extracted_data: SafliiExtractedData = Field(
         ...,
         description="Structured core data points specific to a SAFLII case."
@@ -110,6 +110,10 @@ class SafliiCaseExtraction(BaseModel):
 
 class SafliiJournalGazetteExtraction(BaseModel):
     metadata: BaseExtractedRecord
+    title: str = Field(
+        ...,
+        description="The title of the article/journal or gazette (as per the source document)."
+    )
     formatted_text: str = Field(
         ...,
         description="The clean, well-formatted, and highly readable plain text content of the journal or gazette document."

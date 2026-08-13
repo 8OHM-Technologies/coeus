@@ -57,6 +57,7 @@ def test_generic_document_extraction_validation():
             "document_date": "2026-07-06",
             "record_type": "Production Report",
         },
+        "title": "Test Title",
         "extracted_data": {
             "gold_grade": "1.25 g/t",
             "tonnes_milled": 45000,

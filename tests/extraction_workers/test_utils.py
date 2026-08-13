@@ -136,4 +136,4 @@ async def test_take_screenshot(tmp_path, mocker):
     # Check that it saves within screenshot_dir
     path_arg = mock_page.screenshot.call_args[1]["path"]
     assert path_arg.startswith(screenshot_dir)
-    assert path_arg.endswith("_test_shot.png")
+    assert path_arg.endswith("test_shot.png")

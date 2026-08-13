@@ -31,10 +31,12 @@ try:
     from .base_scraper import BaseScraper, setup_logger
     from . import db_storage
     from .utils.browser_helper import format_sb_proxy
+    from .utils.utils import to_bool
 except ImportError:
     from base_scraper import BaseScraper, setup_logger
     import db_storage
     from utils.browser_helper import format_sb_proxy
+    from utils.utils import to_bool
 
 logger = setup_logger("saflii_scraper")
 gui_lock = threading.Lock()

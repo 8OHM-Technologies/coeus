@@ -270,7 +270,13 @@ entities          (id UUID PK, name TEXT UNIQUE)
 | `SafliiJournalGazetteExtraction` | For SAFLII Journals and Gazettes: extracts readable plain text under the `formatted_text` field |
 | `SafliiCourtRollExtraction` | For SAFLII Court Rolls (other): extracts tabular roll records into a list of row objects |
 
-The extractor dynamically resolves the schema class from `schemas.py` by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, the schema is routed dynamically per record based on its `"category"` (mapping to `SafliiCaseExtraction` for cases, `SafliiJournalGazetteExtraction` for journals/gazettes, and `SafliiCourtRollExtraction` for court rolls).
+The extractor dynamically resolves the schema class from `schemas.py` by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, the schema is routed dynamically per record based on its `"category"` (mapping to `SafliiExtractedData` for cases, `SafliiJournalGazetteExtraction` for journals/gazettes, and `SafliiCourtRollExtraction` for court rolls).
+
+### Smart Truncation & SAFLII Guidelines
+
+To prevent local LLM context window overflow and hallucination on very long court judgments (e.g. 50k+ characters):
+1. **Smart Truncation**: When the `SafliiExtractedData` schema is used, `llm_extractor.py` truncates the document text, keeping the first 8,000 characters (containing metadata like court name, judges, parties, hearing dates, and background). If the court's order block is not found within this initial section (e.g. for SCA or High Court cases where it resides at the bottom), it scans the end of the document to append the final order/conclusion block (up to 3,000 characters) while discarding intermediate body text and noisy footnote lists.
+2. **Specialized System Prompt Guidelines**: The system prompt is dynamically extended with SAFLII-specific guidelines to ensure the LLM correctly extracts the majority ruling holding (obligatory vs. discretionary outcomes) and the correct dates/court/judges from SAFLII headers.
 
 ---
 
