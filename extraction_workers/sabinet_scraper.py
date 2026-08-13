@@ -217,6 +217,194 @@ class SabinetScraper(BaseScraper):
         except Exception as pag_err:
             logger.warning(f"Could not configure pagination parameters: {pag_err}. Defaulting scaling.")
 
+    # Maximum number of times a single (year, month) window is retried on crash/error
+    _MAX_WINDOW_RETRIES = 3
+    # Seconds to wait for the Date From input to appear before giving up
+    _DATE_INPUT_TIMEOUT_S = 15
+
+    _YEAR_SIDEBAR_JS = r"""
+        const listbox = document.querySelector('ul[aria-label="Year-items"]');
+        if (!listbox) return [];
+        const results = [];
+        listbox.querySelectorAll('li').forEach(li => {
+            const label = li.querySelector('label div');
+            if (!label) return;
+            const yearText = (label.childNodes[0]?.textContent || '').trim();
+            const countSpan = label.querySelector('span');
+            const countText = countSpan ? countSpan.textContent.replace(/[(),\s]/g, '') : '0';
+            const year = parseInt(yearText, 10);
+            const count = parseInt(countText, 10);
+            if (!isNaN(year) && !isNaN(count) && count > 0) results.push([year, count]);
+        });
+        return results;
+    """
+
+    def _wait_for_date_input(self, sb: "SB", start_url: str) -> None:
+        """Wait up to _DATE_INPUT_TIMEOUT_S seconds for the Date From input to be visible.
+
+        Tries to reveal the Advanced Search panel if the input is not immediately
+        visible, and reloads the page as a last resort.  Raises RuntimeError if
+        the input is still absent after the full timeout.
+        """
+        advanced_search_selectors = [
+            'button:contains("Advanced Search")',
+            'button:contains("Advanced search")',
+            '#search-col-4 button',
+        ]
+        date_input_selector = 'input[placeholder="Date From"]'
+        deadline = time.monotonic() + self._DATE_INPUT_TIMEOUT_S
+        page_reloaded = False
+
+        while time.monotonic() < deadline:
+            if sb.is_element_visible(date_input_selector):
+                return
+
+            # Try clicking the Advanced Search toggle
+            for selector in advanced_search_selectors:
+                try:
+                    if sb.is_element_visible(selector):
+                        logger.info(f"Clicking advanced search button ({selector}) to reveal date inputs...")
+                        sb.uc_click(selector)
+                        sb.sleep(1)
+                        if sb.is_element_visible(date_input_selector):
+                            return
+                except Exception as click_err:
+                    logger.debug(f"Advanced search click attempt failed ({selector}): {click_err}")
+
+            # One-time page reload recovery
+            if not page_reloaded and time.monotonic() + 5 < deadline:
+                logger.warning("⚠️ Date From not visible — reloading page to recover SPA state...")
+                self._setup_search_page(sb, start_url)
+                page_reloaded = True
+
+            sb.sleep(1)
+
+        raise RuntimeError(
+            f"Date From input not visible after {self._DATE_INPUT_TIMEOUT_S}s. "
+            "The page may be broken or the selector has changed."
+        )
+
+    def _create_indexing_sb_instance(self, sb_proxy, use_xvfb, profile_dir: str):
+        """Spin up a fresh SB UC instance for indexing, returning the context manager."""
+        shutil.rmtree(profile_dir, ignore_errors=True)
+        os.makedirs(profile_dir, exist_ok=True)
+        return SB(
+            uc=True,
+            headless=self.headless,
+            proxy=sb_proxy,
+            xvfb=use_xvfb,
+            test=True,
+            user_data_dir=profile_dir,
+            multi_proxy=self.use_proxy,
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage",
+        )
+
+    def _process_window(
+        self,
+        sb: "SB",
+        start_url: str,
+        year: int,
+        month: int,
+        db_record_type: str,
+        loop: asyncio.AbstractEventLoop,
+    ) -> int:
+        """Scrape a single (year, month) window using the supplied SB instance.
+
+        Returns the number of newly indexed records for this window.
+        Raises on any unrecoverable error so the caller can retry with a fresh browser.
+        """
+        last_day = calendar.monthrange(year, month)[1]
+        date_from = date(year, month, 1).strftime("%m/%d/%Y")
+        date_to = date(year, month, last_day).strftime("%m/%d/%Y")
+
+        logger.info(f"  🗓 Timeframe tracking window: {date_from} → {date_to}")
+
+        # Ensure date inputs are visible (waits with retry/reload logic)
+        self._wait_for_date_input(sb, start_url)
+
+        sb.type('input[placeholder="Date From"]', date_from)
+        sb.type('input[placeholder="Date To"]', date_to)
+
+        clicked = sb.execute_script("""
+            const btn = [...document.querySelectorAll('.btn-search')].find(el => {
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return (
+                    style.display !== 'none' &&
+                    style.visibility !== 'hidden' &&
+                    parseFloat(style.opacity) > 0 &&
+                    rect.width > 0 &&
+                    rect.height > 0
+                );
+            });
+            if (btn) { btn.click(); return true; } return false;
+        """)
+        if not clicked:
+            raise RuntimeError("Search button obscured or missing.")
+        sb.sleep(2)
+
+        if not sb.is_element_present('.ant-list-item'):
+            # No results — month processed successfully.
+            future = asyncio.run_coroutine_threadsafe(
+                self.save_progress(year, month, completed=False),
+                loop,
+            )
+            future.result()
+            return 0
+
+        current_page = 1
+        window_new = 0
+
+        while True:
+            if not sb.is_element_present('.ant-list-item'):
+                break
+
+            page_items = sb.execute_script(_EXTRACT_ITEMS_JS) or []
+            records_to_upsert = []
+
+            for item_data in page_items:
+                url = item_data.get("detail_url")
+                case_no = item_data.get("dataset_number")
+
+                if url in self.existing_urls or (case_no and case_no in self.existing_dataset_numbers):
+                    continue
+
+                item_data["index_scraped_at"] = datetime.now(timezone.utc).isoformat()
+                records_to_upsert.append(item_data)
+                if url:
+                    self.existing_urls.add(url)
+                if case_no:
+                    self.existing_dataset_numbers.add(case_no)
+                window_new += 1
+
+            if records_to_upsert:
+                future = asyncio.run_coroutine_threadsafe(
+                    db_storage.upsert_scraped_records_batch(
+                        conn=self.conn,
+                        target_id=self.target_id,
+                        record_type=db_record_type,
+                        records=records_to_upsert,
+                        url_key="detail_url",
+                        status="indexed",
+                    ),
+                    loop,
+                )
+                future.result()
+
+            # Pagination
+            next_selector = 'li.ant-pagination-next:not(.ant-pagination-disabled) a'
+            if sb.is_element_visible(next_selector):
+                if current_page % 100 == 0:
+                    logger.info(f"Scraped {current_page} pages. Rate-limiting pause...")
+                    sb.sleep(30)
+                sb.uc_click(next_selector)
+                sb.sleep(2)
+                current_page += 1
+            else:
+                break
+
+        return window_new
+
     def _indexing_sync(
         self,
         start_url: str,
@@ -226,7 +414,12 @@ class SabinetScraper(BaseScraper):
         db_record_type: str,
         loop: asyncio.AbstractEventLoop,
     ) -> tuple[int, bool]:
-        """Synchronous indexing loop running in a dedicated SeleniumBase UC thread."""
+        """Synchronous indexing loop running in a dedicated SeleniumBase UC thread.
+
+        Each (year, month) window is retried up to _MAX_WINDOW_RETRIES times on
+        any crash or error. A fresh SB instance is created for every retry so that
+        a dead tab/renderer never blocks progress on subsequent windows.
+        """
         sb_proxy = format_proxy_for_sb(self.proxy_url) if self.use_proxy else None
         total_new = 0
         skipped_any = False
@@ -234,57 +427,27 @@ class SabinetScraper(BaseScraper):
         use_xvfb = False
         if not self.headless and (os.path.exists("/.dockerenv") or not os.environ.get("DISPLAY")):
             use_xvfb = True
-        # Setup isolated profile path for indexing to avoid collision
+
         indexing_profile_dir = "/tmp/sabinet_indexing_profile"
-        shutil.rmtree(indexing_profile_dir, ignore_errors=True)
-        os.makedirs(indexing_profile_dir, exist_ok=True)
 
-        with SB(
-            uc=True,
-            headless=self.headless,
-            proxy=sb_proxy,
-            xvfb=use_xvfb,
-            test=True,
-            user_data_dir=indexing_profile_dir,
-            multi_proxy=self.use_proxy,
-            chromium_arg="--no-sandbox,--disable-dev-shm-usage"
-        ) as sb:
-            sb.set_window_size(1280, 800)
-            sb.driver.set_page_load_timeout(30)
-            sb.driver.set_script_timeout(30)
+        # ------------------------------------------------------------------ #
+        # Step 1: Collect year list using an initial SB instance              #
+        # ------------------------------------------------------------------ #
+        year_entries: list[tuple[int, int]] = []
+        if incremental:
+            year_entries = [(datetime.now().year, 1)]
+        else:
+            with self._create_indexing_sb_instance(sb_proxy, use_xvfb, indexing_profile_dir) as sb:
+                sb.set_window_size(1280, 800)
+                sb.driver.set_page_load_timeout(30)
+                sb.driver.set_script_timeout(30)
+                self.log_outbound_ip(sb, label="Sabinet Indexing Stage")
+                self._setup_search_page(sb, start_url)
 
-            # Verify and log outbound public IP
-            self.log_outbound_ip(sb, label="Sabinet Indexing Stage")
-
-            self._setup_search_page(sb, start_url)
-
-            # Parse year entries from sidebar — retry up to 3 times to allow
-            # the React sidebar to finish rendering before reading the DOM.
-            _YEAR_SIDEBAR_JS = r"""
-                const listbox = document.querySelector('ul[aria-label="Year-items"]');
-                if (!listbox) return [];
-                const results = [];
-                listbox.querySelectorAll('li').forEach(li => {
-                    const label = li.querySelector('label div');
-                    if (!label) return;
-                    const yearText = (label.childNodes[0]?.textContent || '').trim();
-                    const countSpan = label.querySelector('span');
-                    const countText = countSpan ? countSpan.textContent.replace(/[(),\s]/g, '') : '0';
-                    const year = parseInt(yearText, 10);
-                    const count = parseInt(countText, 10);
-                    if (!isNaN(year) && !isNaN(count) && count > 0) results.push([year, count]);
-                });
-                return results;
-            """
-            year_entries: list[tuple[int, int]] = []
-            if incremental:
-                current_year = datetime.now().year
-                year_entries = [(current_year, 1)]
-            else:
                 raw_years = []
                 for _attempt in range(3):
                     try:
-                        raw_years = sb.execute_script(_YEAR_SIDEBAR_JS) or []
+                        raw_years = sb.execute_script(self._YEAR_SIDEBAR_JS) or []
                     except Exception as ye:
                         logger.warning(f"Year sidebar JS error (attempt {_attempt + 1}/3): {ye}")
                     if raw_years:
@@ -292,166 +455,80 @@ class SabinetScraper(BaseScraper):
                     logger.info(f"Year sidebar returned empty (attempt {_attempt + 1}/3), waiting 3s...")
                     sb.sleep(3)
 
-                if not raw_years:
-                    raise RuntimeError(
-                        "Year sidebar returned no entries after 3 attempts. "
-                        "The page may not have loaded correctly or the selector has changed."
-                    )
+            if not raw_years:
+                raise RuntimeError(
+                    "Year sidebar returned no entries after 3 attempts. "
+                    "The page may not have loaded correctly or the selector has changed."
+                )
 
-                year_entries = [(int(y), int(c)) for y, c in raw_years]
-                year_entries.sort(key=lambda x: x[0])
-                logger.info(f"Found {len(year_entries)} years in sidebar: {[y for y, _ in year_entries]}")
+            year_entries = [(int(y), int(c)) for y, c in raw_years]
+            year_entries.sort(key=lambda x: x[0])
+            logger.info(f"Found {len(year_entries)} years in sidebar: {[y for y, _ in year_entries]}")
 
-            for year, year_count in year_entries:
-                if resume_year > 0 and year < resume_year:
+        # ------------------------------------------------------------------ #
+        # Step 2: Iterate over every (year, month) window                     #
+        # ------------------------------------------------------------------ #
+        for year, year_count in year_entries:
+            if resume_year > 0 and year < resume_year:
+                continue
+
+            logger.info(f"📅 Processing year {year} (~{year_count} entries)...")
+
+            for month in range(1, 13):
+                if year == resume_year and month < resume_month:
                     continue
 
-                logger.info(f"📅 Processing year {year} (~{year_count} entries)...")
-                months = list(range(1, 13))
+                window_label = f"{year}-{month:02d}"
+                window_succeeded = False
 
-                for month in months:
-                    if year == resume_year and month < resume_month:
-                        continue
-
-                    last_day = calendar.monthrange(year, month)[1]
-                    date_from = date(year, month, 1).strftime("%m/%d/%Y")
-                    date_to = date(year, month, last_day).strftime("%m/%d/%Y")
-
-                    logger.info(f"  🗓 Timeframe tracking window: {date_from} → {date_to}")
-
-                    # Apply date filtering
+                for attempt in range(1, self._MAX_WINDOW_RETRIES + 1):
                     try:
-                        if not sb.is_element_visible('input[placeholder="Date From"]'):
-                            # Try to click the Advanced Search button using multiple selector candidates
-                            advanced_search_selectors = [
-                                'button:contains("Advanced Search")',
-                                'button:contains("Advanced search")',
-                                '#search-col-4 button',
-                            ]
-                            clicked_adv = False
-                            for selector in advanced_search_selectors:
-                                if sb.is_element_visible(selector):
-                                    logger.info(f"Clicking advanced search button with selector: {selector}")
-                                    try:
-                                        sb.uc_click(selector)
-                                        sb.sleep(1)
-                                        if sb.is_element_visible('input[placeholder="Date From"]'):
-                                            clicked_adv = True
-                                            break
-                                    except Exception as click_err:
-                                        logger.warning(f"Failed to click advanced search via {selector}: {click_err}")
+                        profile_dir = f"{indexing_profile_dir}_w{attempt}"
+                        with self._create_indexing_sb_instance(sb_proxy, use_xvfb, profile_dir) as sb:
+                            sb.set_window_size(1280, 800)
+                            sb.driver.set_page_load_timeout(30)
+                            sb.driver.set_script_timeout(30)
 
-                            # If not clicked or not visible, perform a page setup reload to reset SPA/page state
-                            if not clicked_adv and not sb.is_element_visible('input[placeholder="Date From"]'):
-                                logger.warning("⚠️ Date From element not visible. Resetting page to recover layout state...")
-                                self._setup_search_page(sb, start_url)
-                                sb.sleep(2)
-                                for selector in advanced_search_selectors:
-                                    if sb.is_element_visible(selector):
-                                        logger.info(f"Clicking advanced search button after reload: {selector}")
-                                        try:
-                                            sb.uc_click(selector)
-                                            sb.sleep(1)
-                                            if sb.is_element_visible('input[placeholder="Date From"]'):
-                                                break
-                                        except Exception:
-                                            pass
+                            if attempt == 1:
+                                # Log IP only on first attempt to reduce noise
+                                self.log_outbound_ip(sb, label="Sabinet Indexing Stage")
 
-                        # Final verification before typing
-                        if not sb.is_element_visible('input[placeholder="Date From"]'):
-                            raise RuntimeError("Date From selector is still not visible after trying Advanced Search and page reload.")
+                            self._setup_search_page(sb, start_url)
 
-                        sb.type('input[placeholder="Date From"]', date_from)
-                        sb.type('input[placeholder="Date To"]', date_to)
+                            window_new = self._process_window(
+                                sb, start_url, year, month, db_record_type, loop
+                            )
 
-                        clicked = sb.execute_script("""
-                            const btn = [...document.querySelectorAll('.btn-search')].find(el => {
-                                const style = window.getComputedStyle(el);
-                                const rect = el.getBoundingClientRect();
-                                return (style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity) > 0 && rect.width > 0 && rect.height > 0);
-                            });
-                            if (btn) { btn.click(); return true; } return false;
-                        """)
-                        if not clicked:
-                            raise RuntimeError("Search button obscured or missing.")
-                        sb.sleep(2)
-                    except Exception as adv_err:
-                        logger.warning(f"Error applying date filters: {adv_err}. Skipping window.")
-                        skipped_any = True
-                        continue
+                        total_new += window_new
 
-                    if not sb.is_element_present('.ant-list-item'):
-                        # Even if no results are found, this month is processed successfully.
-                        # Save progress so we don't repeat this month on subsequent runs.
+                        # Persist progress for this successfully completed month
                         future = asyncio.run_coroutine_threadsafe(
                             self.save_progress(year, month, completed=False),
-                            loop
+                            loop,
                         )
                         future.result()
-                        continue
 
-                    # Process pages within window
-                    current_page = 1
-                    window_new = 0
+                        window_succeeded = True
+                        break  # No more retries needed
 
-                    while True:
-                        if not sb.is_element_present('.ant-list-item'):
-                            break
-
-                        page_items = sb.execute_script(_EXTRACT_ITEMS_JS) or []
-                        records_to_upsert = []
-
-                        for item_data in page_items:
-                            url = item_data.get("detail_url")
-                            case_no = item_data.get("dataset_number")
-
-                            if url in self.existing_urls or (case_no and case_no in self.existing_dataset_numbers):
-                                continue
-
-                            item_data["index_scraped_at"] = datetime.now(timezone.utc).isoformat()
-                            records_to_upsert.append(item_data)
-                            if url:
-                                self.existing_urls.add(url)
-                            if case_no:
-                                self.existing_dataset_numbers.add(case_no)
-                            window_new += 1
-
-                        if records_to_upsert:
-                            future = asyncio.run_coroutine_threadsafe(
-                                db_storage.upsert_scraped_records_batch(
-                                    conn=self.conn,
-                                    target_id=self.target_id,
-                                    record_type=db_record_type,
-                                    records=records_to_upsert,
-                                    url_key="detail_url",
-                                    status="indexed",
-                                ),
-                                loop,
+                    except Exception as window_err:
+                        logger.warning(
+                            f"[Window {window_label}] Attempt {attempt}/{self._MAX_WINDOW_RETRIES} failed: {window_err}"
+                        )
+                        if attempt < self._MAX_WINDOW_RETRIES:
+                            wait_s = 5 * attempt
+                            logger.info(
+                                f"[Window {window_label}] Waiting {wait_s}s before retry with fresh browser..."
                             )
-                            future.result()
-
-                        # Pagination
-                        next_selector = 'li.ant-pagination-next:not(.ant-pagination-disabled) a'
-                        if sb.is_element_visible(next_selector):
-                            if current_page % 100 == 0:
-                                logger.info(f"Scraped {current_page} pages. Rate-limiting pause...")
-                                sb.sleep(30)
-
-                            sb.uc_click(next_selector)
-                            sb.sleep(2)
-                            current_page += 1
+                            time.sleep(wait_s)
                         else:
-                            break
+                            logger.error(
+                                f"[Window {window_label}] All {self._MAX_WINDOW_RETRIES} attempts exhausted — "
+                                "marking window as skipped."
+                            )
 
-                    total_new += window_new
-                    sb.sleep(1)
-
-                    # Save progress for successfully completed month
-                    future = asyncio.run_coroutine_threadsafe(
-                        self.save_progress(year, month, completed=False),
-                        loop
-                    )
-                    future.result()
+                if not window_succeeded:
+                    skipped_any = True
 
         return total_new, skipped_any
 
