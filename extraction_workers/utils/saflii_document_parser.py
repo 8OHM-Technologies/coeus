@@ -35,9 +35,11 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
     """
     if not text or not isinstance(text, str):
         return {
+            "null_values": ["header", "judgment", "order"],
             "header": "",
             "judgment": "",
             "order": "",
+            "appearances": "",
             "citations": {"raw_text": "", "targets": []}
         }
 

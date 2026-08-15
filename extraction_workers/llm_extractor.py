@@ -337,10 +337,10 @@ def call_ollama(
             response_format=response_format,
             temperature=0.1,
             top_p=0.05,
-            max_completion_tokens=4096,
+            max_completion_tokens=8192,
             extra_body={
                 "options": {
-                    "num_ctx": 8192,
+                    "num_ctx": 16384,
                 },
                 "keep_alive": 0
             }
