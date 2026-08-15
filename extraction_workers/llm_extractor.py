@@ -65,7 +65,7 @@ def get_llm_client() -> OpenAI:
 
 def resolve_schema(schema_name: str) -> type[BaseModel] | None:
     """
-    Dynamically imports ``schemas.py`` and returns the class matching *schema_name*.
+    Dynamically imports ``schemas`` package and returns the class matching *schema_name*.
     Returns ``None`` when not found so the caller can fall back to the generic schema.
     """
     if not schema_name:
@@ -78,7 +78,7 @@ def resolve_schema(schema_name: str) -> type[BaseModel] | None:
         schema_cls = getattr(schemas_module, schema_name, None)
         if schema_cls is None:
             logger.warning(
-                "Schema class '%s' not found in schemas.py. "
+                "Schema class '%s' not found in schemas package. "
                 "Falling back to GenericDocumentExtraction.",
                 schema_name,
             )
@@ -114,7 +114,7 @@ def format_journal_text(raw_text: str) -> str:
     current_paragraph = []
     
     heading_regex = re.compile(r"^(\d+(\.\d+)*\s+[A-Za-z0-9]|[A-Z\s]{4,50}$)")
-    footnote_regex = re.compile(r"^\d+$") # standalone number
+    footnote_regex = re.compile(r"^\d+$")
     
     i = 0
     while i < len(cleaned_lines):
@@ -519,7 +519,12 @@ async def process_records(
         source_url = record["source_url"] or ""
         logger.info("[%d/%d] Extracting record ID: %s (URL: %s)", idx, len(records), record_id, source_url)
 
-        # 1. Parse JSON data from database
+        # 1. Parse JSON data and DB metadata from database
+        db_entity_name = record.get("db_entity_name")
+        db_target_name = record.get("db_target_name")
+        db_doc_date = record.get("document_date")
+        db_record_type = record.get("record_type") or pipeline_name
+
         raw_data = record["data"]
         if isinstance(raw_data, str):
             try:
@@ -531,6 +536,8 @@ async def process_records(
                 continue
         else:
             record_data = dict(raw_data) if raw_data else {}
+
+        case_number = record_data.get("case_number") or record_data.get("case_no") or None
 
         # 2. Determine schema class dynamically
         current_schema_cls = schema_cls
@@ -592,7 +599,12 @@ async def process_records(
             if category in ("gaz", "journals"):
                 is_programmatic = True
                 try:
-                    from schemas import SafliiJournalGazetteExtraction, BaseExtractedRecord, DataQualityFlags
+                    try:
+                        from .schemas.saflii import SafliiJournalGazetteExtraction
+                        from .schemas.generic import BaseExtractedRecord, DataQualityFlags
+                    except ImportError:
+                        from schemas.saflii import SafliiJournalGazetteExtraction
+                        from schemas.generic import BaseExtractedRecord, DataQualityFlags
                     
                     formatted = format_journal_text(doc_text)
                     
@@ -603,14 +615,17 @@ async def process_records(
                             doc_date = date(int(year), 1, 1)
                         except Exception:
                             pass
+                    if not doc_date and isinstance(db_doc_date, date):
+                        doc_date = db_doc_date
                     if not doc_date:
                         doc_date = date.today()
                         
                     metadata = BaseExtractedRecord(
-                        entity_name=str(record_data.get("dataset") or "SAFLII"),
-                        target_name=str(record_data.get("citation") or record_data.get("case_number") or "SAFLII Document"),
+                        entity_name=str(db_entity_name),
+                        target_name=str(db_target_name),
                         document_date=doc_date,
-                        record_type=str(record_data.get("document_type") or record_data.get("category") or "journals"),
+                        record_type=str(db_record_type),
+                        case_number=str(case_number) if case_number else None,
                     )
                             
                     schema_instance = SafliiJournalGazetteExtraction(
@@ -630,7 +645,12 @@ async def process_records(
             elif category == "other":
                 is_programmatic = True
                 try:
-                    from schemas import SafliiCourtRollExtraction, SafliiCourtRollRow, BaseExtractedRecord, DataQualityFlags
+                    try:
+                        from .schemas.saflii import SafliiCourtRollExtraction, SafliiCourtRollRow
+                        from .schemas.generic import BaseExtractedRecord, DataQualityFlags
+                    except ImportError:
+                        from schemas.saflii import SafliiCourtRollExtraction, SafliiCourtRollRow
+                        from schemas.generic import BaseExtractedRecord, DataQualityFlags
                     
                     parsed_rows_data = parse_court_roll(doc_text)
                     rows_objs = []
@@ -644,14 +664,17 @@ async def process_records(
                             doc_date = date(int(year), 1, 1)
                         except Exception:
                             pass
+                    if not doc_date and isinstance(db_doc_date, date):
+                        doc_date = db_doc_date
                     if not doc_date:
                         doc_date = date.today()
                         
                     metadata = BaseExtractedRecord(
-                        entity_name=str(record_data.get("dataset") or "SAFLII"),
-                        target_name=str(record_data.get("citation") or record_data.get("case_number") or "SAFLII Court Roll"),
+                        entity_name=str(db_entity_name),
+                        target_name=str(db_target_name),
                         document_date=doc_date,
-                        record_type=str(record_data.get("document_type") or record_data.get("category") or "other"),
+                        record_type=str(db_record_type),
+                        case_number=str(case_number) if case_number else None,
                     )
                             
                     schema_instance = SafliiCourtRollExtraction(
@@ -671,7 +694,10 @@ async def process_records(
             raw_result = None
             if current_schema_cls.__name__ == "SafliiExtractedData":
                 logger.info("  [Section-Targeted LLM Mode] Extracting SafliiExtractedData via section-specific context...")
-                from schemas import SafliiHeaderData, SafliiPrecedentsData, SafliiBodyData
+                try:
+                    from .schemas.saflii import SafliiHeaderData, SafliiPrecedentsData, SafliiBodyData
+                except ImportError:
+                    from schemas.saflii import SafliiHeaderData, SafliiPrecedentsData, SafliiBodyData
                 
                 header_text = (parsed_data.get("header") or "").strip()
                 judgment_text = (parsed_data.get("judgment") or "").strip()
@@ -844,14 +870,21 @@ async def process_records(
             # Wrap SafliiExtractedData in SafliiCaseExtraction outer schema
             if current_schema_cls.__name__ == "SafliiExtractedData":
                 try:
-                    from schemas import SafliiCaseExtraction, BaseExtractedRecord, DataQualityFlags
+                    try:
+                        from .schemas.saflii import SafliiCaseExtraction
+                        from .schemas.generic import BaseExtractedRecord, DataQualityFlags
+                    except ImportError:
+                        from schemas.saflii import SafliiCaseExtraction
+                        from schemas.generic import BaseExtractedRecord, DataQualityFlags
                     
-                    doc_date = schema_instance.hearing_date
+                    doc_date = schema_instance.hearing_date or db_doc_date
+                    case_num = case_number or (schema_instance.dict().get("case_number") if hasattr(schema_instance, "dict") else None)
                     metadata = BaseExtractedRecord(
-                        entity_name=str(record_data.get("dataset") or "SAFLII"),
-                        target_name=str(record_data.get("citation") or record_data.get("case_number") or "SAFLII Court Case"),
-                        document_date=doc_date,
-                        record_type=str(record_data.get("document_type") or record_data.get("category") or "cases"),
+                        entity_name=str(db_entity_name),
+                        target_name=str(db_target_name),
+                        document_date=doc_date if isinstance(doc_date, date) else date.today(),
+                        record_type=str(db_record_type),
+                        case_number=str(case_num) if case_num else None,
                     )
                     
                     outer_instance = SafliiCaseExtraction(
@@ -871,12 +904,16 @@ async def process_records(
 
         if hasattr(schema_instance, "metadata") and getattr(schema_instance, "metadata") is None:
             try:
-                from schemas import BaseExtractedRecord
+                try:
+                    from .schemas.generic import BaseExtractedRecord
+                except ImportError:
+                    from schemas.generic import BaseExtractedRecord
                 schema_instance.metadata = BaseExtractedRecord(
-                    entity_name=str(record_data.get("dataset") or "SAFLII"),
-                    target_name=str(record_data.get("citation") or record_data.get("case_number") or "SAFLII Document"),
-                    document_date=date.today(),
-                    record_type=str(record_data.get("document_type") or pipeline_name),
+                    entity_name=str(db_entity_name),
+                    target_name=str(db_target_name),
+                    document_date=db_doc_date if isinstance(db_doc_date, date) else date.today(),
+                    record_type=str(db_record_type),
+                    case_number=str(case_number) if case_number else None,
                 )
             except Exception:
                 pass
@@ -984,8 +1021,11 @@ async def run_extraction(
 
             records = await conn.fetch(
                 """
-                SELECT e.id, e.data, e.source_url, p.data AS parsed_data
+                SELECT e.id, e.data, e.source_url, p.data AS parsed_data,
+                       t.target_name AS db_target_name, ent.name AS db_entity_name
                 FROM extracted_records e
+                LEFT JOIN targets t ON e.target_id = t.id
+                LEFT JOIN entities ent ON t.entity_id = ent.id
                 JOIN parsed_records p ON e.id = p.extracted_record_id
                 WHERE e.id = $1
                 """,
@@ -1028,8 +1068,11 @@ async def run_extraction(
                 if failed_ids:
                     records = await conn.fetch(
                         """
-                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data
+                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data,
+                               t.target_name AS db_target_name, ent.name AS db_entity_name
                         FROM extracted_records e
+                        LEFT JOIN targets t ON e.target_id = t.id
+                        LEFT JOIN entities ent ON t.entity_id = ent.id
                         JOIN parsed_records p ON e.id = p.extracted_record_id
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
@@ -1046,8 +1089,11 @@ async def run_extraction(
                 else:
                     records = await conn.fetch(
                         """
-                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data
+                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data,
+                               t.target_name AS db_target_name, ent.name AS db_entity_name
                         FROM extracted_records e
+                        LEFT JOIN targets t ON e.target_id = t.id
+                        LEFT JOIN entities ent ON t.entity_id = ent.id
                         JOIN parsed_records p ON e.id = p.extracted_record_id
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
@@ -1100,7 +1146,7 @@ if __name__ == "__main__":
         "--schema",
         default="",
         help=(
-            "The Pydantic schema class name from schemas.py to validate against. "
+            "The Pydantic schema class name from schemas package to validate against. "
             "Defaults to GenericDocumentExtraction."
         ),
     )

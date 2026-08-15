@@ -273,17 +273,21 @@ When `parser` is configured in `extraction_params` (e.g. `"parser": "saflii_docu
    - **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text.
    - Outputs are combined, validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
 
-### Pydantic Schemas (`extraction_workers/schemas.py`)
+### Pydantic Schemas (`extraction_workers/schemas/`)
 
-| Class | Purpose |
-| :--- | :--- |
-| `DataQualityFlags` | `requires_human_review` bool + `review_reason` string for LLM self-verification |
-| `BaseExtractedRecord` | Common metadata: `entity_name`, `target_name`, `document_date`, `record_type` |
-| `GenericDocumentExtraction` | Default schema: wraps `BaseExtractedRecord`, a free-form `extracted_data` dict, and `DataQualityFlags` |
-| `SafliiJournalGazetteExtraction` | For SAFLII Journals and Gazettes: extracts readable plain text under the `formatted_text` field |
-| `SafliiCourtRollExtraction` | For SAFLII Court Rolls (other): extracts tabular roll records into a list of row objects |
+Pydantic schemas are organized into modular files within the `extraction_workers/schemas/` package:
+- [`generic.py`](file:///home/tiaanf/Dev/coeus/extraction_workers/schemas/generic.py): Base schemas for core record metadata, data quality verification flags, and generic extraction payloads.
+- [`saflii.py`](file:///home/tiaanf/Dev/coeus/extraction_workers/schemas/saflii.py): Specialized schemas for SAFLII court judgments, precedents, journals, gazettes, and court rolls.
 
-The extractor dynamically resolves the schema class from `schemas.py` by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, the schema is routed dynamically per record based on its `"category"` (mapping to `SafliiExtractedData` for cases, `SafliiJournalGazetteExtraction` for journals/gazettes, and `SafliiCourtRollExtraction` for court rolls).
+| Class | Module | Purpose |
+| :--- | :--- | :--- |
+| `DataQualityFlags` | `generic.py` | `requires_human_review` bool + `review_reason` string for LLM self-verification |
+| `BaseExtractedRecord` | `generic.py` | Common metadata: `entity_name`, `target_name`, `document_date`, `record_type` |
+| `GenericDocumentExtraction` | `generic.py` | Default schema: wraps `BaseExtractedRecord`, a free-form `extracted_data` dict, and `DataQualityFlags` |
+| `SafliiJournalGazetteExtraction` | `saflii.py` | For SAFLII Journals and Gazettes: extracts readable plain text under the `formatted_text` field |
+| `SafliiCourtRollExtraction` | `saflii.py` | For SAFLII Court Rolls (other): extracts tabular roll records into a list of row objects |
+
+The extractor dynamically resolves the schema class from the `schemas` package by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, the schema is routed dynamically per record based on its `"category"` (mapping to `SafliiExtractedData` for cases, `SafliiJournalGazetteExtraction` for journals/gazettes, and `SafliiCourtRollExtraction` for court rolls).
 
 ### Mandatory Section Parsing & Targeted Context
 

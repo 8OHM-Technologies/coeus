@@ -3,10 +3,33 @@ import os
 from datetime import date
 import pytest
 from pydantic import ValidationError
-from schemas import DataQualityFlags, BaseExtractedRecord, GenericDocumentExtraction
 
 # Ensure extraction_workers is importable
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../extraction_workers")))
+
+from schemas.generic import DataQualityFlags, BaseExtractedRecord, GenericDocumentExtraction
+from schemas.saflii import (
+    PrecedentCategory,
+    SafliiHeaderData,
+    SafliiPrecedentsData,
+    SafliiBodyData,
+    SafliiExtractedData,
+    SafliiCaseExtraction,
+    SafliiJournalGazetteExtraction,
+    SafliiCourtRollRow,
+    SafliiCourtRollExtraction,
+)
+import schemas
+
+
+def test_package_exports():
+    """Verify that extraction_workers.schemas re-exports all generic and SAFLII schemas."""
+    assert hasattr(schemas, "DataQualityFlags")
+    assert hasattr(schemas, "BaseExtractedRecord")
+    assert hasattr(schemas, "GenericDocumentExtraction")
+    assert hasattr(schemas, "SafliiCaseExtraction")
+    assert hasattr(schemas, "SafliiJournalGazetteExtraction")
+    assert hasattr(schemas, "SafliiCourtRollExtraction")
 
 
 def test_data_quality_flags_validation():
@@ -71,3 +94,64 @@ def test_generic_document_extraction_validation():
     assert extraction.metadata.entity_name == "Test Entity"
     assert extraction.extracted_data["tonnes_milled"] == 45000
     assert extraction.data_quality_flags.requires_human_review is False
+
+
+def test_saflii_case_extraction_validation():
+    extracted = SafliiExtractedData(
+        applicant_plaintiff="State",
+        respondent_defendant=["Respondent A"],
+        hearing_date=date(2026, 1, 15),
+        judgment_date=date(2026, 2, 1),
+        reportable=True,
+        court="Constitutional Court",
+        judges=["Judge X"],
+        court_location="Johannesburg",
+        ratio_decidendi="Core legal principle applied.",
+        precedents_cited=[
+            PrecedentCategory(
+                case_name_citation="State v Example [2020] ZACC 1",
+                treatment="Applied/Followed",
+                reasoning="Directly applicable precedent.",
+                url="https://saflii.org/case/1",
+            )
+        ],
+        obiter_dicta="No notable obiter dicta identified in this judgment.",
+        order="Appeal dismissed with costs.",
+        summary="Detailed case summary.",
+        keywords=["constitutional law", "appeal"],
+    )
+
+    case_extraction = SafliiCaseExtraction(
+        title="State v Respondent A",
+        extracted_data=extracted,
+        data_quality_flags=DataQualityFlags(requires_human_review=False),
+    )
+
+    assert case_extraction.title == "State v Respondent A"
+    assert case_extraction.extracted_data.applicant_plaintiff == "State"
+    assert len(case_extraction.extracted_data.precedents_cited) == 1
+    assert case_extraction.extracted_data.precedents_cited[0].treatment == "Applied/Followed"
+
+
+def test_saflii_journal_gazette_extraction_validation():
+    gazette = SafliiJournalGazetteExtraction(
+        title="Government Gazette 12345",
+        formatted_text="Cleaned formatted text content of gazette...",
+        data_quality_flags=DataQualityFlags(requires_human_review=False),
+    )
+    assert gazette.title == "Government Gazette 12345"
+    assert "Cleaned formatted text" in gazette.formatted_text
+
+
+def test_saflii_court_roll_extraction_validation():
+    roll_row = SafliiCourtRollRow(
+        column_1="2026-08-15",
+        column_2="Party A v Party B",
+        column_3="Courtroom 3",
+    )
+    roll = SafliiCourtRollExtraction(
+        rows=[roll_row],
+        data_quality_flags=DataQualityFlags(requires_human_review=False),
+    )
+    assert len(roll.rows) == 1
+    assert roll.rows[0].column_2 == "Party A v Party B"

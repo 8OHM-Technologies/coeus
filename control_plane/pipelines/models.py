@@ -175,7 +175,7 @@ class PipelineConfiguration(models.Model):
     pydantic_schema_name = models.CharField(
         max_length=100,
         blank=True,
-        help_text="The exact name of the Python class in schemas.py to enforce.",
+        help_text="The exact name of the Python class in extraction_workers/schemas to enforce.",
     )
     extraction_instructions = models.TextField(
         blank=True,

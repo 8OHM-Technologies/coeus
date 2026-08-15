@@ -37,7 +37,7 @@ Workers extract the full text and append category-specific metadata parsed via `
 ```
 
 ### Step C: LLM Extracted & Validated Output
-The LLM extracts structured fields based on the `SafliiCaseExtraction` schema in [schemas.py](file:///home/tiaanf/Dev/coeus/extraction_workers/schemas.py#L49-L103).
+The LLM extracts structured fields based on the `SafliiCaseExtraction` schema in [saflii.py](file:///home/tiaanf/Dev/coeus/extraction_workers/schemas/saflii.py).
 
 ```json
 {
@@ -166,7 +166,7 @@ The detailed extractor navigates to the document page and merges the detailed me
 ```
 
 ### Step C: LLM Extracted & Validated Output
-Because Sabinet does not have a custom case schema, it matches the generic schema structure `GenericDocumentExtraction` defined in [schemas.py](file:///home/tiaanf/Dev/coeus/extraction_workers/schemas.py#L39-L48).
+Because Sabinet does not have a custom case schema, it matches the generic schema structure `GenericDocumentExtraction` defined in [generic.py](file:///home/tiaanf/Dev/coeus/extraction_workers/schemas/generic.py).
 
 ```json
 {
