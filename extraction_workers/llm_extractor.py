@@ -630,7 +630,7 @@ async def process_records(
                             
                     schema_instance = SafliiJournalGazetteExtraction(
                         metadata=metadata,
-                        title=str(record_data.get("title") or record_data.get("case_name") or "SAFLII Document"),
+                        title=str(record_data.get("title") or record_data.get("case_name")),
                         formatted_text=formatted,
                         data_quality_flags=DataQualityFlags(
                             requires_human_review=bool(record_data.get("requires_human_review") or False)
