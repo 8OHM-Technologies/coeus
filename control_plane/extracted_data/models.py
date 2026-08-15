@@ -119,3 +119,27 @@ class ScrubbedRecord(models.Model):
 
     def __str__(self) -> str:
         return f"Scrubbed | {self.extracted_record.id}"
+
+
+class ParsedRecord(models.Model):
+    """
+    Stores parsed document sections (header, judgment, order, citations) associated with an ExtractedRecord.
+    Maps to the 'parsed_records' table.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    extracted_record = models.OneToOneField(
+        ExtractedRecord,
+        on_delete=models.CASCADE,
+        related_name="parsed_record",
+    )
+    data = models.JSONField(help_text="Parsed document sections data.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = "parsed_records"
+
+    def __str__(self) -> str:
+        return f"Parsed | {self.extracted_record.id}"
+

@@ -251,93 +251,48 @@ def parse_court_roll(text: str) -> list[dict[str, Any]]:
     return rows
 
 
-def smart_truncate_court_judgment(text: str) -> str:
+def create_llm_json_schema(schema_cls: type[BaseModel]) -> dict[str, Any]:
     """
-    Keeps the first 8,000 characters of the judgment (metadata + intro).
-    If the final order is at the bottom (i.e. not found at the top),
-    scans and appends the final order/conclusion block from the end of the document
-    (up to 3,000 characters) if it's a long document.
-    This prevents hallucination and context window overflow in local LLMs.
+    Returns the JSON schema for LLM structured output, filtering out system-only
+    BaseExtractedRecord / metadata fields so the AI model never sees or attempts
+    to extract system metadata.
     """
-    if not text or len(text) <= 10000:
-        return text
-
-    head = text[:8000]
+    import copy
+    schema = copy.deepcopy(schema_cls.model_json_schema())
     
-    # Check if the order is already in the head (typically for Constitutional Court cases)
-    # Look for 'ORDER' or 'COURT ORDER' as standalone lines/headers
-    has_order_at_top = bool(re.search(r"\b(?:court\s+)?order\b", head, re.IGNORECASE))
-    
-    if has_order_at_top:
-        # If the order is at the top, we don't need to search the tail for an order block
-        return head
-
-    # Otherwise, the order is likely at the bottom. Scan the last 12,000 characters.
-    tail_text = text[-12000:]
-    order_patterns = [
-        r"\b(?:court\s+)?order\b",
-        r"\bconclusion\b",
-        r"\bthe\s+following\s+order\s+is\s+made\b"
-    ]
-    
-    best_idx = -1
-    for pattern in order_patterns:
-        matches = list(re.finditer(pattern, tail_text, re.IGNORECASE))
-        if matches:
-            idx = matches[-1].start()
-            if idx > best_idx:
-                best_idx = idx
-                
-    if best_idx != -1:
-        order_section = tail_text[best_idx:best_idx + 3000]
-        # Clean up by removing standard footnotes at the very end
-        footnote_start = order_section.find("\n[1]")
-        if footnote_start == -1:
-            footnote_start = order_section.find("\n[50]")
-        if footnote_start != -1:
-            order_section = order_section[:footnote_start]
-            
-        return f"{head}\n\n... [TRUNCATED FOR BREVITY] ...\n\n=== ORDER / CONCLUSION SECTION ===\n{order_section}"
-    else:
-        return f"{head}\n\n... [TRUNCATED FOR BREVITY] ...\n\n=== END OF DOCUMENT ===\n{text[-2000:]}"
+    if "properties" in schema and "metadata" in schema["properties"]:
+        del schema["properties"]["metadata"]
+    if "required" in schema and "metadata" in schema["required"]:
+        schema["required"].remove("metadata")
+        
+    if "$defs" in schema:
+        schema["$defs"].pop("BaseExtractedRecord", None)
+        
+    return schema
 
 
 def build_system_prompt(
     schema_cls: type[BaseModel],
     extraction_instructions: str,
 ) -> str:
-    schema_json = json.dumps(schema_cls.model_json_schema(), indent=2)
-    field_names = list(schema_cls.model_fields.keys())
+    schema_dict = create_llm_json_schema(schema_cls)
+    schema_json = json.dumps(schema_dict, indent=2)
     
     base = (
         f"Nonce: {time.time()}\n"
-        "You are a precise data extraction engine. \n"
-        "Extract legal information into valid JSON.\n\n"
+        "You are a precise legal data extraction engine. \n"
+        "Extract legal information from the provided document into valid JSON.\n\n"
         "STRICT CRITICAL RULES:\n"
         "- Do NOT introduce generic section titles like 'Introduction', 'Background', or 'Body' as root keys.\n"
         "- Do not include markdown code blocks or explanatory text.\n"
         "- If a field value is missing or unknown, set it to null or an empty array.\n"
-        f"- Your JSON object MUST contain the following root keys: {', '.join(field_names)}.\n"
-        "- Respond ONLY with a valid JSON object strictly adhering to the schema keys above and the JSON schema below.\n\n"
+        "- Respond ONLY with a valid JSON object strictly adhering to the JSON schema below.\n\n"
         f"JSON SCHEMA:\n{schema_json}"
     )
-    
-    # Add specialized extraction instructions for court case extractions to avoid hallucinations
-    if schema_cls.__name__ == "SafliiExtractedData":
-        base += (
-            "\n\nSAFLII EXTRACTION GUIDELINES:\n"
-            "- 'applicant_plaintiff': Extract the exact names of the applicants/plaintiffs (e.g. Cishahayo Saidi or Saidi and Others).\n"
-            "- 'respondent_defendant': Extract the exact names of the respondents/defendants (e.g. Minister of Home Affairs).\n"
-            "- 'hearing_date': This is the date the judgment was DECIDED or DELIVERED (look for 'Decided on', 'Date of Judgment', or 'Judgment Delivered'). Always use YYYY-MM-DD format.\n"
-            "- 'court': Identify the exact court from the document header (e.g., 'Constitutional Court of South Africa', 'Supreme Court of Appeal', or 'Western Cape Division, Cape Town'). Note the citation prefix (ZACC = Constitutional Court, ZASCA = Supreme Court of Appeal).\n"
-            "- 'judges': Look under 'Coram:' or 'Judges:' or check the authors of the judgments listed at the top. Extract the actual names of the judges presiding over the case. Do NOT hallucinate names not present in the text.\n"
-            "- 'court_location': The location/city of the court (e.g. Johannesburg, Cape Town, Bloemfontein).\n"
-            "- 'result': A concise summary of the court's final order.\n"
-            "- 'summary': Summarize the legal issue, arguments, and majority reasoning. Do not focus on dissenting opinions unless specifically relevant, and represent the majority decision as the holding of the court. Note that if the court ruled that an action is obligatory/mandatory, make sure the summary reflects that it is an obligation, not a discretion.\n"
-        )
 
     if extraction_instructions:
         base += f"\n\nADDITIONAL INSTRUCTIONS:\n{extraction_instructions}"
+
     return base
 
 
@@ -356,12 +311,13 @@ def call_ollama(
 
     response_format: dict[str, Any] = {"type": "json_object"}
     if schema_cls:
+        schema_dict = create_llm_json_schema(schema_cls)
         response_format = {
             "type": "json_schema",
             "json_schema": {
                 "name": schema_cls.__name__,
                 "strict": True,
-                "schema": schema_cls.model_json_schema(),
+                "schema": schema_dict,
             },
         }
 
@@ -415,6 +371,133 @@ def scrub_pii_data(data: Any) -> Any:
     elif isinstance(data, list):
         return [scrub_pii_data(item) for item in data]
     return data
+
+
+def resolve_parser(parser_name: str):
+    """
+    Dynamically imports and resolves a document section parser function based on parser_name.
+    Supported aliases:
+      - 'saflii', 'saflii_document_parser', 'saflii_document_parser.py'
+      - module paths like 'extraction_workers.utils.saflii_document_parser'
+    """
+    if not parser_name:
+        return None
+
+    clean_name = parser_name.strip().lower()
+    if clean_name.endswith(".py"):
+        clean_name = clean_name[:-3]
+
+    if clean_name in ("saflii", "saflii_document_parser", "utils.saflii_document_parser"):
+        try:
+            from .utils.saflii_document_parser import split_saflii_document
+            return split_saflii_document
+        except ImportError:
+            try:
+                from utils.saflii_document_parser import split_saflii_document
+                return split_saflii_document
+            except ImportError as exc:
+                logger.error("Could not import split_saflii_document parser: %s", exc)
+                return None
+
+    try:
+        mod = importlib.import_module(parser_name)
+        for fn_name in ("split_saflii_document", "parse_document", "split_document", "parse"):
+            if hasattr(mod, fn_name):
+                return getattr(mod, fn_name)
+    except Exception as exc:
+        logger.warning("Could not dynamically load parser module '%s': %s", parser_name, exc)
+    return None
+
+
+async def run_parser_phase(
+    conn,
+    pipeline_name: str,
+    parser_func,
+    record_id_filter: str | None = None,
+) -> int:
+    """
+    Fetches records from extracted_records that do not have a corresponding parsed_records entry yet,
+    runs parser_func on each record, populates parsed_records, and flags failed records for human review.
+    """
+    if record_id_filter:
+        records = await conn.fetch(
+            """
+            SELECT e.id, e.data
+            FROM extracted_records e
+            WHERE e.id = $1
+            """,
+            uuid.UUID(record_id_filter),
+        )
+    else:
+        records = await conn.fetch(
+            """
+            SELECT e.id, e.data
+            FROM extracted_records e
+            LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+            WHERE e.record_type = $1
+              AND e.status = 'detailed'
+              AND p.extracted_record_id IS NULL
+            ORDER BY e.scraped_at ASC
+            """,
+            pipeline_name,
+        )
+
+    if not records:
+        return 0
+
+    logger.info("📄 SECTION PARSER PHASE — Processing %d record(s) with section parser...", len(records))
+    parsed_count = 0
+
+    for idx, record in enumerate(records, start=1):
+        rec_id = record["id"]
+        raw_data = record["data"]
+        if isinstance(raw_data, str):
+            try:
+                rec_dict = json.loads(raw_data)
+            except Exception:
+                rec_dict = {}
+        else:
+            rec_dict = dict(raw_data) if raw_data else {}
+
+        full_text = rec_dict.get("full_text") or ""
+        center_content = rec_dict.get("center_content") or ""
+
+        if not full_text.strip() and not center_content.strip():
+            logger.warning("  [!] Record %s has empty text for parsing.", rec_id)
+            continue
+
+        try:
+            parsed_payload = parser_func(full_text, center_content)
+        except Exception as exc:
+            logger.error("  [!] Parser function failed on record %s: %s", rec_id, exc)
+            parsed_payload = {"null_values": ["header", "judgment", "order"], "error": str(exc)}
+
+        await conn.execute(
+            """
+            INSERT INTO parsed_records (id, extracted_record_id, data, created_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (extracted_record_id)
+            DO UPDATE SET data = EXCLUDED.data
+            """,
+            uuid.uuid4(),
+            rec_id,
+            json.dumps(parsed_payload, ensure_ascii=False),
+        )
+
+        if parsed_payload.get("null_values"):
+            await conn.execute(
+                """
+                UPDATE extracted_records
+                SET requires_human_review = TRUE, review_reason = 'Document parsing failed'
+                WHERE id = $1
+                """,
+                rec_id,
+            )
+
+        parsed_count += 1
+
+    logger.info("  [+] Completed section parser phase for %d record(s).", parsed_count)
+    return parsed_count
 
 
 async def process_records(
@@ -472,21 +555,34 @@ async def process_records(
 
         logger.info("  Using schema for extraction: %s (Category: %s)", current_schema_cls.__name__, category if "saflii" in pipeline_name.lower() else "N/A")
 
-        # 3. Extract content for LLM
-        if content_field and content_field in record_data:
-            doc_text = str(record_data[content_field])
+        # 3. Extract content for LLM from parsed_records
+        parsed_data = {}
+        if "parsed_data" in record:
+            raw_pdata = record["parsed_data"]
+            if isinstance(raw_pdata, str):
+                try:
+                    parsed_data = json.loads(raw_pdata)
+                except Exception:
+                    parsed_data = {}
+            elif isinstance(raw_pdata, dict):
+                parsed_data = raw_pdata
+
+        if content_field and content_field in parsed_data:
+            doc_text = str(parsed_data[content_field])
         else:
-            doc_text = record_data.get("full_text") or record_data.get("center_content") or ""
+            header = parsed_data.get("header") or ""
+            judgment = parsed_data.get("judgment") or ""
+            order = parsed_data.get("order") or ""
+            if judgment or order or header:
+                doc_text = f"{header}\n\n=== JUDGMENT ===\n{judgment}\n\n=== ORDER ===\n{order}".strip()
+            else:
+                doc_text = record_data.get("full_text") or record_data.get("center_content") or ""
 
         if not doc_text.strip():
             logger.warning("  [!] Empty content for record %s, skipping.", record_id)
             failure_count += 1
             failed_ids.append(record_id)
             continue
-
-        # Apply smart truncation for SAFLII case extraction to avoid context window overflow & hallucinations
-        if current_schema_cls.__name__ == "SafliiExtractedData":
-            doc_text = smart_truncate_court_judgment(doc_text)
 
         # Check if this record should be processed programmatically (bypassing AI model)
         is_programmatic = False
@@ -572,11 +668,164 @@ async def process_records(
                     continue
 
         if not is_programmatic:
-            # 4. Build system prompt dynamically for the selected schema
-            current_system_prompt = build_system_prompt(current_schema_cls, extraction_instructions)
+            raw_result = None
+            if current_schema_cls.__name__ == "SafliiExtractedData":
+                logger.info("  [Section-Targeted LLM Mode] Extracting SafliiExtractedData via section-specific context...")
+                from schemas import SafliiHeaderData, SafliiPrecedentsData, SafliiBodyData
+                
+                header_text = (parsed_data.get("header") or "").strip()
+                judgment_text = (parsed_data.get("judgment") or "").strip()
+                order_text = (parsed_data.get("order") or "").strip()
+                raw_citations = parsed_data.get("citations")
+                targets_list = []
+                if isinstance(raw_citations, dict):
+                    targets = raw_citations.get("targets") or []
+                    targets_list = [t for t in targets if isinstance(t, dict)]
+                    targets_formatted = []
+                    for t in targets_list:
+                        url = t.get("url") or ""
+                        text = t.get("text") or ""
+                        targets_formatted.append(f"- Text: {text} | URL: {url}")
+                    
+                    raw_text = raw_citations.get("raw_text") or ""
+                    citations_text = "CITATION TARGETS:\n" + ("\n".join(targets_formatted) if targets_formatted else "None") + "\n\nRAW CITATION TEXT:\n" + str(raw_text)
+                elif isinstance(raw_citations, list):
+                    citations_text = "\n".join(str(c) for c in raw_citations if c).strip()
+                elif isinstance(raw_citations, str):
+                    citations_text = raw_citations.strip()
+                else:
+                    citations_text = ""
 
-            # 5. Call LLM
-            raw_result = call_ollama(client, ai_model, current_system_prompt, doc_text, current_schema_cls)
+                entire_doc_context = f"{header_text}\n\n=== JUDGMENT ===\n{judgment_text}\n\n=== ORDER ===\n{order_text}\n\n=== CITATIONS ===\n{citations_text}".strip()
+                if not entire_doc_context:
+                    entire_doc_context = doc_text
+
+                # Pass 1: First 8 fields (applicant_plaintiff to court_location) using Header section context
+                header_context = header_text if header_text else entire_doc_context
+                header_prompt = build_system_prompt(SafliiHeaderData, extraction_instructions)
+                header_res = call_ollama(client, ai_model, header_prompt, header_context, SafliiHeaderData) or {}
+
+                # Check if any of the 8 header fields are null/None or empty
+                header_keys = [
+                    "applicant_plaintiff", "respondent_defendant", "hearing_date",
+                    "judgment_date", "reportable", "court", "judges", "court_location"
+                ]
+                has_null_header = any(
+                    header_res.get(k) is None or header_res.get(k) == "" or header_res.get(k) == []
+                    for k in header_keys
+                )
+
+                if has_null_header:
+                    logger.info("  [!] Null/empty value(s) in Header section extraction. Retrying header fields with entire document context...")
+                    fallback_header_res = call_ollama(client, ai_model, header_prompt, entire_doc_context, SafliiHeaderData) or {}
+                    for k in header_keys:
+                        if (header_res.get(k) is None or header_res.get(k) == "" or header_res.get(k) == []) and fallback_header_res.get(k) is not None:
+                            header_res[k] = fallback_header_res[k]
+
+                # Pass 2: precedents_cited using ONLY Citations section context
+                citations_context = citations_text if citations_text else entire_doc_context
+                precedents_instructions = extraction_instructions + "\nExtract EVERY citation target provided in the CITATION TARGETS list into precedents_cited, matching each target's exact URL and text."
+                precedents_prompt = build_system_prompt(SafliiPrecedentsData, precedents_instructions)
+                precedents_res = call_ollama(client, ai_model, precedents_prompt, citations_context, SafliiPrecedentsData) or {}
+
+                extracted_precedents = precedents_res.get("precedents_cited") or []
+                if not isinstance(extracted_precedents, list):
+                    extracted_precedents = []
+
+                cleaned_precedents = []
+                for p in extracted_precedents:
+                    if isinstance(p, dict):
+                        name = p.get("case_name_citation") or p.get("precedent_name") or ""
+                        treatment = p.get("treatment") or "Referred"
+                        reasoning = p.get("reasoning") or p.get("relevance_summary") or f"Cited in judgment ({name})."
+                        url = (p.get("url") or "").strip()
+
+                        if not url and targets_list:
+                            for t in targets_list:
+                                t_text = (t.get("text") or "").lower()
+                                t_url = (t.get("url") or "").strip()
+                                if t_text and (t_text in name.lower() or name.lower() in t_text):
+                                    url = t_url
+                                    break
+
+                        cleaned_precedents.append({
+                            "case_name_citation": name if name else "Unspecified Citation",
+                            "treatment": treatment,
+                            "reasoning": reasoning,
+                            "url": url,
+                        })
+
+                existing_urls = { (p["url"] or "").strip().lower() for p in cleaned_precedents if p.get("url") }
+                existing_names = { (p["case_name_citation"] or "").strip().lower() for p in cleaned_precedents if p.get("case_name_citation") }
+
+                for t in targets_list:
+                    t_url = (t.get("url") or "").strip()
+                    t_text = (t.get("text") or "").strip()
+                    if not t_text and not t_url:
+                        continue
+
+                    is_covered = (t_url and t_url.lower() in existing_urls) or (t_text and any(t_text.lower() in name for name in existing_names))
+                    if not is_covered:
+                        cleaned_precedents.append({
+                            "case_name_citation": t_text if t_text else t_url,
+                            "treatment": "Referred",
+                            "reasoning": f"Cited in judgment ({t_text or t_url}).",
+                            "url": t_url,
+                        })
+                        if t_url:
+                            existing_urls.add(t_url.lower())
+                        if t_text:
+                            existing_names.add(t_text.lower())
+
+                precedents_res["precedents_cited"] = cleaned_precedents
+
+                # Pass 3: Body fields (ratio_decidendi, obiter_dicta, order, summary, keywords) using Judgment & Order text context
+                body_parts = []
+                if judgment_text:
+                    body_parts.append(f"=== JUDGMENT ===\n{judgment_text}")
+                if order_text:
+                    body_parts.append(f"=== ORDER ===\n{order_text}")
+                body_context = "\n\n".join(body_parts).strip()
+                if not body_context:
+                    body_context = entire_doc_context
+
+                body_prompt = build_system_prompt(SafliiBodyData, extraction_instructions)
+                body_res = call_ollama(client, ai_model, body_prompt, body_context, SafliiBodyData) or {}
+
+                raw_result = {**header_res, **precedents_res, **body_res}
+                if not raw_result.get("applicant_plaintiff"):
+                    raw_result["applicant_plaintiff"] = str(record_data.get("title") or "State")
+                if not raw_result.get("respondent_defendant"):
+                    raw_result["respondent_defendant"] = []
+                if not raw_result.get("hearing_date"):
+                    raw_result["hearing_date"] = raw_result.get("judgment_date") or date.today().isoformat()
+                if not raw_result.get("judgment_date"):
+                    raw_result["judgment_date"] = raw_result.get("hearing_date") or date.today().isoformat()
+                if raw_result.get("reportable") is None:
+                    raw_result["reportable"] = False
+                if not raw_result.get("court"):
+                    raw_result["court"] = "High Court"
+                if not raw_result.get("judges"):
+                    raw_result["judges"] = []
+                if not raw_result.get("court_location"):
+                    raw_result["court_location"] = "South Africa"
+                if raw_result.get("precedents_cited") is None:
+                    raw_result["precedents_cited"] = []
+                if raw_result.get("keywords") is None:
+                    raw_result["keywords"] = []
+                if not raw_result.get("obiter_dicta"):
+                    raw_result["obiter_dicta"] = "No notable obiter dicta identified in this judgment."
+                if not raw_result.get("ratio_decidendi"):
+                    raw_result["ratio_decidendi"] = "No explicit ratio decidendi identified."
+                if not raw_result.get("order"):
+                    raw_result["order"] = "Order not explicitly specified."
+                if not raw_result.get("summary"):
+                    raw_result["summary"] = "Summary not generated."
+            else:
+                # 4. Standard single-pass extraction
+                current_system_prompt = build_system_prompt(current_schema_cls, extraction_instructions)
+                raw_result = call_ollama(client, ai_model, current_system_prompt, doc_text, current_schema_cls)
+
             if raw_result is None:
                 logger.error("  [!] LLM returned no result for record: %s", record_id)
                 failure_count += 1
@@ -607,7 +856,7 @@ async def process_records(
                     
                     outer_instance = SafliiCaseExtraction(
                         metadata=metadata,
-                        title=str(record_data.get("title") or record_data.get("case_name") or "SAFLII Court Case"),
+                        title=str(record_data.get("title")),
                         extracted_data=schema_instance,
                         data_quality_flags=DataQualityFlags(
                             requires_human_review=bool(record_data.get("requires_human_review") or False)
@@ -619,6 +868,18 @@ async def process_records(
                     failure_count += 1
                     failed_ids.append(record_id)
                     continue
+
+        if hasattr(schema_instance, "metadata") and getattr(schema_instance, "metadata") is None:
+            try:
+                from schemas import BaseExtractedRecord
+                schema_instance.metadata = BaseExtractedRecord(
+                    entity_name=str(record_data.get("dataset") or "SAFLII"),
+                    target_name=str(record_data.get("citation") or record_data.get("case_number") or "SAFLII Document"),
+                    document_date=date.today(),
+                    record_type=str(record_data.get("document_type") or pipeline_name),
+                )
+            except Exception:
+                pass
 
         # 5. Apply regex post-processing PII scrubbing on the output dictionary
         validated_dict = schema_instance.model_dump(mode="json")
@@ -667,12 +928,23 @@ async def run_extraction(
         "extraction_instructions", ""
     )
     ai_model: str = os.getenv("AI_MODEL") or config.get("engine", "ollama/phi4-mini")
-    content_field: str = (config.get("extraction_params") or {}).get("content_field", "")
+    extraction_params = config.get("extraction_params") or {}
+    content_field: str = extraction_params.get("content_field", "")
+    parser_name: str = extraction_params.get("parser", "")
+    parser_func = resolve_parser(parser_name) if parser_name else None
+
+    if not parser_func:
+        logger.error(
+            "❌ [ERROR] A valid document section parser is required in extraction_params for pipeline '%s' (e.g. 'parser': 'saflii_document_parser'). Aborting extraction.",
+            pipeline_name,
+        )
+        sys.exit(1)
 
     logger.info("==================================================")
     logger.info("🚀 COEUS LLM EXTRACTOR INITIALIZED (PIPELINE: %s)", pipeline_name)
     logger.info("   Schema       : %s", schema_name or "GenericDocumentExtraction")
     logger.info("   AI model     : %s", ai_model)
+    logger.info("   Parser       : %s", parser_name)
     logger.info("==================================================")
 
     # -- Resolve Pydantic schema -----------------------------------------------
@@ -698,6 +970,9 @@ async def run_extraction(
         sys.exit(1)
 
     try:
+        # Execute the document section parsing phase first
+        await run_parser_phase(conn, pipeline_name, parser_func, record_id_filter)
+
         if record_id_filter:
             # MANUAL TEST MODE: fetch a single record by UUID, ignoring status/scrubbed state.
             logger.info("🔬 MANUAL TEST MODE — targeting single record: %s", record_id_filter)
@@ -709,8 +984,9 @@ async def run_extraction(
 
             records = await conn.fetch(
                 """
-                SELECT e.id, e.data, e.source_url
+                SELECT e.id, e.data, e.source_url, p.data AS parsed_data
                 FROM extracted_records e
+                JOIN parsed_records p ON e.id = p.extracted_record_id
                 WHERE e.id = $1
                 """,
                 target_uuid,
@@ -752,8 +1028,9 @@ async def run_extraction(
                 if failed_ids:
                     records = await conn.fetch(
                         """
-                        SELECT e.id, e.data, e.source_url
+                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data
                         FROM extracted_records e
+                        JOIN parsed_records p ON e.id = p.extracted_record_id
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
@@ -769,8 +1046,9 @@ async def run_extraction(
                 else:
                     records = await conn.fetch(
                         """
-                        SELECT e.id, e.data, e.source_url
+                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data
                         FROM extracted_records e
+                        JOIN parsed_records p ON e.id = p.extracted_record_id
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'

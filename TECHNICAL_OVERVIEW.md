@@ -246,9 +246,9 @@ The `TurnstileSolver` is the primary solver used by `saflii_scraper.py`:
 
 ---
 
-## 6. 🗄️ LLM Extractor — Data Schema & DB Upsert
+## 6. 🗄️ LLM Extractor — Data Schema, Parsed Records & DB Upsert
 
-`llm_extractor.py` enforces a three-level PostgreSQL upsert pattern:
+`llm_extractor.py` enforces a multi-level PostgreSQL pipeline structure:
 
 ```
 entities          (id UUID PK, name TEXT UNIQUE)
@@ -256,9 +256,22 @@ entities          (id UUID PK, name TEXT UNIQUE)
             └── extracted_records  (id UUID PK, target_id FK, document_date DATE,
                                     record_type TEXT, data JSONB,
                                     requires_human_review BOOL, review_reason TEXT,
-                                    source_url TEXT,
-                                    UNIQUE(target_id, document_date, record_type))
+                                    source_url TEXT, UNIQUE(source_url))
+                    ├── parsed_records   (id UUID PK, extracted_record_id FK UNIQUE, data JSONB, created_at TIMESTAMP)
+                    └── scrubbed_records (id UUID PK, extracted_record_id FK UNIQUE, data JSONB, created_at TIMESTAMP)
 ```
+
+### Document Section Parsing (`ParsedRecord`)
+
+When `parser` is configured in `extraction_params` (e.g. `"parser": "saflii_document_parser"`):
+1. **Parsing Phase**: `llm_extractor.py` runs `run_parser_phase()` prior to LLM extraction. It executes the resolved section parser (e.g. `split_saflii_document()`) on the raw document text.
+2. **Section Storage**: Parsed document sections (`header`, `judgment`, `order`, `appearances`, `citations`) are saved in the `parsed_records` table (1:1 relation with `extracted_records`).
+3. **Automated Review Flagging**: If section parsing fails to extract core required sections (returning `null_values`), the parent `extracted_record` is automatically updated with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`.
+4. **Section-Targeted Extraction Dataflow**: The downstream LLM extraction step routes context dynamically per field range:
+   - **Pass 1 (Header Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive ONLY the `Header` section text. If any header field returns null/empty, it retries those header fields using the full document as fallback context.
+   - **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text context (via `SafliiPrecedentsData`).
+   - **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text.
+   - Outputs are combined, validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
 
 ### Pydantic Schemas (`extraction_workers/schemas.py`)
 
@@ -272,11 +285,12 @@ entities          (id UUID PK, name TEXT UNIQUE)
 
 The extractor dynamically resolves the schema class from `schemas.py` by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, the schema is routed dynamically per record based on its `"category"` (mapping to `SafliiExtractedData` for cases, `SafliiJournalGazetteExtraction` for journals/gazettes, and `SafliiCourtRollExtraction` for court rolls).
 
-### Smart Truncation & SAFLII Guidelines
+### Mandatory Section Parsing & Targeted Context
 
-To prevent local LLM context window overflow and hallucination on very long court judgments (e.g. 50k+ characters):
-1. **Smart Truncation**: When the `SafliiExtractedData` schema is used, `llm_extractor.py` truncates the document text, keeping the first 8,000 characters (containing metadata like court name, judges, parties, hearing dates, and background). If the court's order block is not found within this initial section (e.g. for SCA or High Court cases where it resides at the bottom), it scans the end of the document to append the final order/conclusion block (up to 3,000 characters) while discarding intermediate body text and noisy footnote lists.
-2. **Specialized System Prompt Guidelines**: The system prompt is dynamically extended with SAFLII-specific guidelines to ensure the LLM correctly extracts the majority ruling holding (obligatory vs. discretionary outcomes) and the correct dates/court/judges from SAFLII headers.
+To prevent local LLM context window overflow and hallucination on very long court judgments:
+1. **Mandatory Section Parsing**: All extraction pipelines require a section parser (e.g., `"parser": "saflii_document_parser"`) configured in `extraction_params`. `llm_extractor.py` enforces this requirement and executes `run_parser_phase()` to split documents into structured sections before LLM extraction.
+2. **Section-Targeted Context Routing**: Instead of sending static character chunks (e.g. 8,000 characters), each field group is evaluated against its exact corresponding parsed section context (Header, Citations, or Judgment/Order), with automatic full-document fallback if header fields are missing.
+3. **Specialized System Prompt Guidelines**: The system prompt is dynamically extended with SAFLII-specific guidelines to ensure the LLM correctly extracts the majority ruling holding, correct dates/court/judges from SAFLII headers, and full citation target lists.
 
 ---
 

@@ -81,9 +81,17 @@ Dagster executes scrapers and extractors inside ephemeral containers via `PipesD
 * **Scraper-Type Aggregation**: Aggregates scraping analytics metrics (`control_plane/pipelines/analytics.py`) grouped by `scraper_type` rather than individual pipeline configurations.
 * **Background Scheduler**: A dedicated background scheduler service periodically calculates scrape rates, success metrics, and status breakdowns, caching results in `ScrapingPipelineMetrics`.
 
-### **7. LLM Extraction & PII Scrubbing (`ScrubbedRecord`)**
-* **LLM Extraction**: The `extracted_structured_data` Dagster asset processes raw documents via pdfplumber, queries local **Ollama** instances (`ollama/phi4-mini`) or external LLM APIs, and validates JSON against Pydantic schemas (`schemas.py`).
-* **PII Redaction (`pii_scrub.py`)**: The `scrubbed_extracted_records` asset executes downstream, running `/app/scrub_entrypoint.py` and `pii_scrub.py` inside the extractor container to redact PII (names, ID numbers, addresses). Cleaned data is saved into the `ScrubbedRecord` model (1:1 relation with `ExtractedRecord`).
+### **7. Section Parsing (`ParsedRecord`) & LLM Extraction (`ScrubbedRecord`)**
+* **Mandatory Section Parsing Phase (`ParsedRecord`)**: A document section parser is required in Django `extraction_params` (e.g. `"parser": "saflii_document_parser"`). `llm_extractor.py` executes the section parser first, saving structured sections (`header`, `judgment`, `order`, `citations`) into `ParsedRecord` (1:1 relation with `ExtractedRecord`). Documents with failed section parsing are automatically flagged with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`.
+* **Section-Targeted LLM Extraction**: When section parser data is available, extraction uses a 3-pass targeted context strategy:
+  * **Pass 1 (Header Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive ONLY the `Header` section text. If any header field returns null/empty, it retries those header fields using the full document as context.
+  * **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text as context.
+  * **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text as context.
+* **PII Redaction (`pii_scrub.py`)**: Redacts PII (names, ID numbers, addresses) from the combined structured output and saves cleaned data into `ScrubbedRecord` (1:1 relation with `ExtractedRecord`).
+
+### **8. DuckDB Data Analysis Tool (`scripts/analyze_duckdb.py`)**
+* **In-Memory Analytics Engine**: Uses DuckDB's native PostgreSQL scanner extension to perform high-performance analytical queries, JSON payload extraction, and full-text searches directly on the `coeus` database.
+* **CLI & Interactive Features**: Includes `--summary` reports, `--search-heading` text searches, custom `--query` execution, interactive REPL (`--interactive`), and export options to CSV, Parquet, or JSON formats.
 
 ---
 
@@ -96,6 +104,7 @@ Specialized worker scripts reside in `extraction_workers/`:
 | [sedarplus_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/sedarplus_scraper.py) | **SEDAR+ Corporate Filings** | Playwright + `misstcha.HCaptchaSolver` (Grounding DINO + Qwen) |
 | [sabinet_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/sabinet_scraper.py) | **Sabinet CCMA Labor Awards** | SeleniumBase UC Mode, dynamic date range selection, rate-limit throttling, direct DB storage |
 | [new_saflii_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/new_saflii_scraper.py) | **SAFLII Case Law** | SeleniumBase UC Mode + BeautifulSoup, Turnstile bypass, automatic case re-queuing, proxy rotation, dynamic year progress tracking |
+| [saflii_document_parser.py](file:///home/tiaanf/Dev/coeus/extraction_workers/utils/saflii_document_parser.py) | **SAFLII Document Segmentation** | Multi-pattern regex engine for splitting SAFLII court judgments into Header/Intro, Judgment Body, Order/Ruling, and Appearances |
 | [mantech_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/mantech_scraper.py) | **Mantech Electronics Store** | Playwright, ASP.NET WebForms paginated table extraction |
 | [livestainable_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/livestainable_scraper.py) | **Livestainable Products** | Playwright e-commerce scraping |
 | [lotto_scraper.py](file:///home/tiaanf/Dev/coeus/extraction_workers/lotto_scraper.py) | **National Lottery Results** | Playwright historical data parser with CSV exporter |
