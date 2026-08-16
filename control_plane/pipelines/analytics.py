@@ -360,8 +360,8 @@ def update_pipeline_analytics():
             "total_records": len(recent_all),
             "total_indexed": len(recent_indexed),
             "total_detailed": len(recent_detailed),
-            "scrape_rate": len(recent_all) / SEVEN_DAYS_SECONDS,
-            "scrape_rate_per_hour": len(recent_all) / SEVEN_DAYS_SECONDS * 3600,
+            "scrape_rate": len(recent_detailed) / SEVEN_DAYS_SECONDS,
+            "scrape_rate_per_hour": len(recent_detailed) / SEVEN_DAYS_SECONDS * 3600,
         }
 
         # Last hour 5-minute intervals
