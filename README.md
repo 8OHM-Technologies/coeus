@@ -115,9 +115,9 @@ The data extraction and record cleaning pipeline transforms raw scraped document
     * **Passport Numbers**: `\b[A-Za-z]\d{8}\b` ──► `"[PASSPORT]"`
     * **Bank & Tax Accounts**: 10–16 digit sequences ──► `"[BANK/TAX NUMBER]"`
 
-* **Step 6: PostgreSQL Upsert & Clean Status Marking (`scrubbed_records`)**
-  * Upserts the cleaned, scrubbed, and validated JSON payload into `scrubbed_records` (JSONB `data` column, 1:1 relation with `extracted_records`).
-  * Updates `extracted_records.cleaned_at = NOW()`, marking the record processing lifecycle as complete.
+* **Step 6: PostgreSQL Upsert & Scrubbed Status Marking (`scrubbed_records`)**
+  * Upserts the cleaned, scrubbed, and validated JSON payload into `scrubbed_records` (JSONB `data` column, with `created_at` and `updated_at`).
+  * Updates `extracted_records.scrubbed_at = NOW()` and `extracted_records.updated_at = NOW()`, marking the record processing lifecycle as complete.
 
 ### **8. DuckDB Data Analysis Tool (`scripts/analyze_duckdb.py`)**
 * **In-Memory Analytics Engine**: Uses DuckDB's native PostgreSQL scanner extension to perform high-performance analytical queries, JSON payload extraction, and full-text searches directly on the `coeus` database.

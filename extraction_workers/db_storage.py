@@ -196,18 +196,20 @@ async def upsert_scraped_record(
         """
         INSERT INTO extracted_records (
             id, target_id, document_date, record_type,
-            data, source_url, status, scraped_at, detailed_at
+            data, source_url, status, scraped_at, detailed_at, updated_at
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, NOW(),
-            CASE WHEN $7 = 'detailed' THEN NOW() ELSE NULL END
+            CASE WHEN $7 = 'detailed' THEN NOW() ELSE NULL END,
+            NOW()
         )
         ON CONFLICT (source_url)
         DO UPDATE SET
             data        = EXCLUDED.data,
             record_type = EXCLUDED.record_type,
             status      = EXCLUDED.status,
-            detailed_at = CASE WHEN EXCLUDED.status = 'detailed' THEN NOW() ELSE extracted_records.detailed_at END
+            detailed_at = CASE WHEN EXCLUDED.status = 'detailed' THEN NOW() ELSE extracted_records.detailed_at END,
+            updated_at  = NOW()
         """,
         uuid.uuid4(),
         target_id,
@@ -257,18 +259,20 @@ async def upsert_scraped_records_batch(
             """
             INSERT INTO extracted_records (
                 id, target_id, document_date, record_type,
-                data, source_url, status, scraped_at, detailed_at
+                data, source_url, status, scraped_at, detailed_at, updated_at
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, NOW(),
-                CASE WHEN $7 = 'detailed' THEN NOW() ELSE NULL END
+                CASE WHEN $7 = 'detailed' THEN NOW() ELSE NULL END,
+                NOW()
             )
             ON CONFLICT (source_url)
             DO UPDATE SET
                 data        = EXCLUDED.data,
                 record_type = EXCLUDED.record_type,
                 status      = EXCLUDED.status,
-                detailed_at = CASE WHEN EXCLUDED.status = 'detailed' THEN NOW() ELSE extracted_records.detailed_at END
+                detailed_at = CASE WHEN EXCLUDED.status = 'detailed' THEN NOW() ELSE extracted_records.detailed_at END,
+                updated_at  = NOW()
             """,
             batch_args,
         )
@@ -340,14 +344,15 @@ async def update_record_data(
     merged_data: dict[str, Any],
     status: str | None = None,
 ) -> None:
-    """Replace the ``data`` JSONB column and update ``status`` and ``detailed_at`` for a specific record."""
+    """Replace the ``data`` JSONB column and update ``status``, ``detailed_at``, and ``updated_at`` for a specific record."""
     if status is not None:
         await conn.execute(
             """
             UPDATE extracted_records
             SET data = $1,
                 status = $2,
-                detailed_at = CASE WHEN $2 = 'detailed' THEN NOW() ELSE detailed_at END
+                detailed_at = CASE WHEN $2 = 'detailed' THEN NOW() ELSE detailed_at END,
+                updated_at = NOW()
             WHERE id = $3
             """,
             json.dumps(merged_data, ensure_ascii=False),
@@ -358,7 +363,8 @@ async def update_record_data(
         await conn.execute(
             """
             UPDATE extracted_records
-            SET data = $1
+            SET data = $1,
+                updated_at = NOW()
             WHERE id = $2
             """,
             json.dumps(merged_data, ensure_ascii=False),

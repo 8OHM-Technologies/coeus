@@ -132,88 +132,89 @@ def update_pipeline_analytics():
     per scraper type and per worker, differentiating between indexing and detailing stages.
     Saves the results to the db.
     """
-    # 1. Fetch all scraper types and pipeline configurations to map any name/record_type -> scraper type name
-    known_scraper_types = set(ScraperType.objects.values_list('name', flat=True))
-    
-    mapping = {}
-    for st in ScraperType.objects.all():
-        mapping[st.name] = st.name
-        mapping[st.label] = st.name
-    
-    # Common aliases
-    mapping["saflii"] = "new_saflii"
+    now = datetime.now(dt_timezone.utc)
+    seven_days_ago = now - timedelta(days=7)
+    twenty_four_hours_ago = now - timedelta(hours=24)
+    fifteen_mins_ago = now - timedelta(minutes=15)
+    SEVEN_DAYS_SECONDS = 7 * 24 * 3600  # 604800
+    TWENTY_FOUR_HOURS_SECONDS = 24 * 3600  # 86400
 
-    pipelines = PipelineConfiguration.objects.select_related('scraper_type').all()
-    
+    # 1. Build a dynamic lookup mapping from all relational entities to their authoritative ScraperType
+    scraper_types = list(ScraperType.objects.all())
+    pipelines = list(PipelineConfiguration.objects.select_related('scraper_type').all())
+
+    type_lookup = {}
+    scraper_metadata = {}
+
+    for st in scraper_types:
+        st_name = st.name
+        type_lookup[st_name.lower()] = st_name
+        type_lookup[st.label.lower()] = st_name
+        scraper_metadata[st_name] = {
+            "name": st_name,
+            "label": st.label,
+            "concurrency": None,
+        }
+
     for p in pipelines:
         if not p.scraper_type:
             continue
         st_name = p.scraper_type.name
         if p.name:
-            mapping[p.name] = st_name
+            type_lookup[p.name.lower()] = st_name
+            norm_id = p.name.lower().replace(" ", "_").replace("-", "_")
+            type_lookup[norm_id] = st_name
         if p.subset:
-            mapping[p.subset] = st_name
+            type_lookup[p.subset.lower()] = st_name
+            norm_sub = p.subset.lower().replace(" ", "_").replace("-", "_")
+            type_lookup[norm_sub] = st_name
         shared_rt = (p.extraction_params or {}).get('shared_record_type')
         if shared_rt:
-            mapping[shared_rt] = st_name
+            type_lookup[shared_rt.lower()] = st_name
+            type_lookup[shared_rt.lower().replace(" ", "_").replace("-", "_")] = st_name
+        if p.target_table:
+            type_lookup[p.target_table.lower()] = st_name
 
-    def resolve_scraper_type(entity_name, record_type):
-        if record_type and record_type in mapping:
-            return mapping[record_type]
-        if entity_name and entity_name in mapping:
-            return mapping[entity_name]
-        
-        if record_type:
-            rt_lower = record_type.lower()
-            for key, st_name in mapping.items():
-                if key and key.lower() == rt_lower:
-                    return st_name
-        if entity_name:
-            ent_lower = entity_name.lower()
-            for key, st_name in mapping.items():
-                if key and key.lower() == ent_lower:
-                    return st_name
-        
-        search_target = f"{entity_name or ''} {record_type or ''}".lower()
-        for st_name in known_scraper_types:
-            if st_name.lower() in search_target:
-                return st_name
-        if "saflii" in search_target:
-            return "new_saflii"
+        concurrency = (p.extraction_params or {}).get('concurrency')
+        if concurrency is not None:
+            try:
+                c_int = int(concurrency)
+                curr_c = scraper_metadata[st_name]["concurrency"] or 0
+                scraper_metadata[st_name]["concurrency"] = curr_c + c_int
+            except (ValueError, TypeError):
+                pass
+
+    def resolve_scraper_type(entity_name, record_type, target_name=None):
+        candidates = [record_type, target_name, entity_name]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            cand_lower = candidate.strip().lower()
+            if cand_lower in type_lookup:
+                return type_lookup[cand_lower]
+            cand_norm = cand_lower.replace(" ", "_").replace("-", "_")
+            if cand_norm in type_lookup:
+                return type_lookup[cand_norm]
+            for key, mapped_st in type_lookup.items():
+                if key and (key in cand_lower or cand_lower in key):
+                    return mapped_st
 
         return entity_name or record_type or 'Unknown'
 
-    # Sum/combine configured concurrency per scraper type
-    scraper_type_concurrencies = {}
-    for p in pipelines:
-        if p.scraper_type:
-            st_name = p.scraper_type.name
-            concurrency = (p.extraction_params or {}).get('concurrency')
-            if concurrency is not None:
-                try:
-                    c_int = int(concurrency)
-                    scraper_type_concurrencies[st_name] = scraper_type_concurrencies.get(st_name, 0) + c_int
-                except (ValueError, TypeError):
-                    pass
-
-    # 7-day wall-clock window
-    now = datetime.now(dt_timezone.utc)
-    seven_days_ago = now - timedelta(days=7)
-    SEVEN_DAYS_SECONDS = 7 * 24 * 3600  # 604800
-
-    # 2. Query all-time counts grouped by target entity, record type, and status.
+    # 2. Query all-time counts grouped by target entity, record type, target name, and status.
     all_time_counts = ExtractedRecord.objects.values(
-        'target__entity__name', 'record_type', 'status'
+        'target__entity__name', 'target__target_name', 'record_type', 'status'
     ).annotate(count=Count('id'))
 
-    overall_totals = {}
+    overall_totals = {st.name: {"total_indexed": 0, "total_detailed": 0, "total_records": 0} for st in scraper_types}
     for item in all_time_counts:
         entity_name = item['target__entity__name']
+        target_name = item['target__target_name']
         record_type = item['record_type']
         status = item['status'] or 'indexed'
         count = item['count']
 
-        scraper_type_name = resolve_scraper_type(entity_name, record_type)
+        scraper_type_name = resolve_scraper_type(entity_name, record_type, target_name)
 
         if scraper_type_name not in overall_totals:
             overall_totals[scraper_type_name] = {
@@ -229,7 +230,7 @@ def update_pipeline_analytics():
         
         overall_totals[scraper_type_name]['total_records'] += count
 
-    # 3. Query only recent records (last 7 days) to calculate detailed uptime and rate.
+    # 3. Query records from the last 7 days to calculate uptime, rates, and 5-min intervals.
     recent_records = ExtractedRecord.objects.filter(
         Q(scraped_at__gte=seven_days_ago) | Q(detailed_at__gte=seven_days_ago)
     ).values(
@@ -239,13 +240,15 @@ def update_pipeline_analytics():
         'scraped_at',
         'detailed_at',
         'target__entity__name',
+        'target__target_name',
     )
 
     data_by_scraper = {}
     for r in recent_records:
         entity_name = r['target__entity__name']
+        target_name = r['target__target_name']
         record_type = r['record_type']
-        scraper_type_name = resolve_scraper_type(entity_name, record_type)
+        scraper_type_name = resolve_scraper_type(entity_name, record_type, target_name)
         
         ts_scraped = r.get('scraped_at')
         ts_detailed = r.get('detailed_at') or ts_scraped
@@ -279,31 +282,26 @@ def update_pipeline_analytics():
             append_to_stage(scraper_data['all'], ts_scraped)
 
     # Determine all unique scraper names to populate (strictly ScraperType names)
-    all_scraper_names = set(known_scraper_types) | set(overall_totals.keys()) | set(data_by_scraper.keys())
+    all_scraper_names = set(st.name for st in scraper_types) | set(overall_totals.keys()) | set(data_by_scraper.keys())
 
-    # 4. Compute metrics and update databases
+    # 4. Compute metrics and update database
     results = {}
     for name in all_scraper_names:
         pipe_data = data_by_scraper.get(name)
 
-        # If no recent records found for this scraper type, perform a fallback query to load its latest 200 records.
-        # This allows us to display worker lists and historical uptime/rates for inactive pipelines without loading all history.
+        # If no recent records found for this scraper type, load a recent historical sample
         if not pipe_data:
-            query_names = [cfg_name for cfg_name, st_name in mapping.items() if st_name == name]
-            query_names = list(set(query_names + [name]))
-            
             fallback_qs = ExtractedRecord.objects.filter(
-                Q(target__entity__name__in=query_names) |
-                Q(record_type__in=query_names) |
                 Q(target__entity__name__icontains=name) |
                 Q(record_type__icontains=name)
-            ).order_by('-scraped_at')[:200].values(
+            ).order_by('-scraped_at')[:1000].values(
                 'id',
                 'record_type',
                 'status',
                 'scraped_at',
                 'detailed_at',
                 'target__entity__name',
+                'target__target_name',
             )
 
             pipe_data = {
@@ -318,7 +316,7 @@ def update_pipeline_analytics():
                 status = r.get('status') or 'indexed'
                 worker_key = 'unknown'
 
-                def append_to_stage(stage, ts_val):
+                def append_to_stage_fb(stage, ts_val):
                     if not ts_val:
                         return
                     stage['overall'].append(ts_val)
@@ -327,13 +325,13 @@ def update_pipeline_analytics():
                     stage['workers'][worker_key].append(ts_val)
 
                 if ts_scraped:
-                    append_to_stage(pipe_data['indexed'], ts_scraped)
+                    append_to_stage_fb(pipe_data['indexed'], ts_scraped)
 
                 if status == 'detailed' and ts_detailed:
-                    append_to_stage(pipe_data['detailed'], ts_detailed)
-                    append_to_stage(pipe_data['all'], ts_detailed)
+                    append_to_stage_fb(pipe_data['detailed'], ts_detailed)
+                    append_to_stage_fb(pipe_data['all'], ts_detailed)
                 elif ts_scraped:
-                    append_to_stage(pipe_data['all'], ts_scraped)
+                    append_to_stage_fb(pipe_data['all'], ts_scraped)
 
         indexed_metrics = calculate_uptime_and_rate(pipe_data['indexed']['overall'])
         indexed_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['indexed']['workers'].items()}
@@ -344,13 +342,13 @@ def update_pipeline_analytics():
         overall_metrics = calculate_uptime_and_rate(pipe_data['all']['overall'])
         overall_workers = {w: calculate_uptime_and_rate(ts_list) for w, ts_list in pipe_data['all']['workers'].items()}
 
-        # Override total_scraped inside metric calculations with the true all-time counts from database aggregation
+        # Override total_scraped inside metric calculations with true all-time counts from database
         totals = overall_totals.get(name, {"total_indexed": 0, "total_detailed": 0, "total_records": 0})
         overall_metrics["total_scraped"] = totals["total_records"]
         indexed_metrics["total_scraped"] = totals["total_indexed"]
         detailed_metrics["total_scraped"] = totals["total_detailed"]
 
-        # 7-day wall-clock rate (includes downtime)
+        # 7-day rate
         recent_all = [ts for ts in pipe_data['all']['overall'] if make_aware(ts) >= seven_days_ago]
         recent_indexed = [ts for ts in pipe_data['indexed']['overall'] if make_aware(ts) >= seven_days_ago]
         recent_detailed = [ts for ts in pipe_data['detailed']['overall'] if make_aware(ts) >= seven_days_ago]
@@ -364,6 +362,17 @@ def update_pipeline_analytics():
             "scrape_rate_per_hour": len(recent_detailed) / SEVEN_DAYS_SECONDS * 3600,
         }
 
+        # 24-hour rate
+        recent_24h_all = [ts for ts in pipe_data['all']['overall'] if make_aware(ts) >= twenty_four_hours_ago]
+        recent_24h_detailed = [ts for ts in pipe_data['detailed']['overall'] if make_aware(ts) >= twenty_four_hours_ago]
+
+        twenty_four_hour_rate = {
+            "period_seconds": TWENTY_FOUR_HOURS_SECONDS,
+            "total_records": len(recent_24h_all),
+            "total_detailed": len(recent_24h_detailed),
+            "scrape_rate_per_hour": len(recent_24h_detailed) / TWENTY_FOUR_HOURS_SECONDS * 3600,
+        }
+
         # Last hour 5-minute intervals
         last_hour_intervals = calculate_last_hour_intervals(
             timestamps=pipe_data['all']['overall'],
@@ -372,6 +381,9 @@ def update_pipeline_analytics():
             indexed_timestamps=pipe_data['indexed']['overall'],
             detailed_timestamps=pipe_data['detailed']['overall']
         )
+
+        # Determine online / active status
+        is_online = any(make_aware(ts) >= fifteen_mins_ago for ts in pipe_data['all']['overall'])
 
         # Build worker breakdown
         all_workers_keys = set(pipe_data['all']['workers'].keys())
@@ -388,19 +400,20 @@ def update_pipeline_analytics():
                 "detailing": detailed_workers.get(w, {})
             }
 
-        configured_concurrency = scraper_type_concurrencies.get(name)
+        meta = scraper_metadata.get(name, {})
+        label = meta.get("label") or name.replace("_", " ").title()
+        configured_concurrency = meta.get("concurrency")
 
         metrics_payload = {
             "pipeline_name": name,
+            "label": label,
+            "is_online": is_online,
             "configured_concurrency": configured_concurrency,
-            "overall_totals": overall_totals.get(name, {
-                "total_indexed": 0,
-                "total_detailed": 0,
-                "total_records": 0
-            }),
+            "overall_totals": totals,
             "overall": overall_metrics,
             "indexing": indexed_metrics,
             "detailing": detailed_metrics,
+            "last_24_hours": twenty_four_hour_rate,
             "last_7_days": seven_day_rate,
             "last_hour_5min_intervals": last_hour_intervals,
             "workers": workers_breakdown

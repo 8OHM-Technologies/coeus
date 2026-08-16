@@ -176,8 +176,9 @@ class Command(BaseCommand):
                             review_reason=oc_rec.review_reason,
                             source_url=oc_rec.source_url,
                             scraped_at=oc_rec.scraped_at,
-                            cleaned_at=oc_rec.cleaned_at,
                             detailed_at=oc_rec.detailed_at,
+                            parsed_at=oc_rec.parsed_at,
+                            scrubbed_at=oc_rec.scrubbed_at,
                             status=oc_rec.status,
                         )
                     )
@@ -192,7 +193,8 @@ class Command(BaseCommand):
                         master_rec.data = oc_rec.data
                         master_rec.status = oc_rec.status
                         master_rec.detailed_at = oc_rec.detailed_at or master_rec.detailed_at
-                        master_rec.cleaned_at = oc_rec.cleaned_at or master_rec.cleaned_at
+                        master_rec.parsed_at = oc_rec.parsed_at or master_rec.parsed_at
+                        master_rec.scrubbed_at = oc_rec.scrubbed_at or master_rec.scrubbed_at
                         if oc_rec.requires_human_review is not None:
                             master_rec.requires_human_review = oc_rec.requires_human_review
                         if oc_rec.review_reason:
@@ -212,7 +214,8 @@ class Command(BaseCommand):
                             "data",
                             "status",
                             "detailed_at",
-                            "cleaned_at",
+                            "parsed_at",
+                            "scrubbed_at",
                             "requires_human_review",
                             "review_reason",
                         ],
@@ -267,13 +270,16 @@ class Command(BaseCommand):
                         needs_update = True
                     elif master_rec.detailed_at and not oc_rec.detailed_at:
                         needs_update = True
-                    elif master_rec.cleaned_at and not oc_rec.cleaned_at:
+                    elif master_rec.parsed_at and not oc_rec.parsed_at:
+                        needs_update = True
+                    elif master_rec.scrubbed_at and not oc_rec.scrubbed_at:
                         needs_update = True
 
                     if needs_update:
                         oc_rec.status = master_rec.status
                         oc_rec.detailed_at = master_rec.detailed_at or oc_rec.detailed_at
-                        oc_rec.cleaned_at = master_rec.cleaned_at or oc_rec.cleaned_at
+                        oc_rec.parsed_at = master_rec.parsed_at or oc_rec.parsed_at
+                        oc_rec.scrubbed_at = master_rec.scrubbed_at or oc_rec.scrubbed_at
                         if master_rec.requires_human_review is not None:
                             oc_rec.requires_human_review = master_rec.requires_human_review
                         if master_rec.review_reason:
@@ -291,8 +297,9 @@ class Command(BaseCommand):
                             review_reason=master_rec.review_reason,
                             source_url=master_rec.source_url,
                             scraped_at=master_rec.scraped_at,
-                            cleaned_at=master_rec.cleaned_at,
                             detailed_at=master_rec.detailed_at,
+                            parsed_at=master_rec.parsed_at,
+                            scrubbed_at=master_rec.scrubbed_at,
                             status=master_rec.status,
                         )
                     )
@@ -309,7 +316,8 @@ class Command(BaseCommand):
                         fields=[
                             "status",
                             "detailed_at",
-                            "cleaned_at",
+                            "parsed_at",
+                            "scrubbed_at",
                             "requires_human_review",
                             "review_reason",
                         ],

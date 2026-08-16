@@ -355,7 +355,7 @@ if __name__ == "__main__":
             if args.mark_review and null_record_ids:
                 print(f"\n[DB UPDATE] Marking {len(null_record_ids)} records as requiring human review...")
                 id_list_str = ", ".join(f"'{rid}'" for rid in null_record_ids)
-                update_sql = f"UPDATE extracted_records SET requires_human_review = true, review_reason = 'Document parsing failed' WHERE id IN ({id_list_str});"
+                update_sql = f"UPDATE extracted_records SET requires_human_review = true, review_reason = 'Document parsing failed', parsed_at = NOW(), updated_at = NOW() WHERE id IN ({id_list_str});"
                 update_cmd = ["psql", "-h", host, "-p", port, "-U", user, "-d", db, "-c", update_sql]
                 subprocess.run(update_cmd, capture_output=True, text=True, env=env, check=True)
                 print("[DB UPDATE] Successfully updated database flags.")

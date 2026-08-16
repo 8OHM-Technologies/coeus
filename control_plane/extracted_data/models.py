@@ -80,8 +80,10 @@ class ExtractedRecord(models.Model):
     review_reason = models.TextField(blank=True, null=True)
     source_url = models.TextField(blank=True, null=True, unique=True)
     scraped_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    cleaned_at = models.DateTimeField(auto_now_add=False, null=True)
     detailed_at = models.DateTimeField(auto_now_add=False, null=True, db_index=True)
+    parsed_at = models.DateTimeField(auto_now_add=False, null=True, db_index=True)
+    scrubbed_at = models.DateTimeField(auto_now_add=False, null=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     status = models.CharField(
         max_length=20,
         choices=Statusses.choices,
@@ -112,6 +114,7 @@ class ScrubbedRecord(models.Model):
     )
     data = models.JSONField(help_text="Cleaned JSON data (PII removed).")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         managed = True
@@ -135,6 +138,7 @@ class ParsedRecord(models.Model):
     )
     data = models.JSONField(help_text="Parsed document sections data.")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         managed = True

@@ -474,10 +474,10 @@ async def run_parser_phase(
 
         await conn.execute(
             """
-            INSERT INTO parsed_records (id, extracted_record_id, data, created_at)
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO parsed_records (id, extracted_record_id, data, created_at, updated_at)
+            VALUES ($1, $2, $3, NOW(), NOW())
             ON CONFLICT (extracted_record_id)
-            DO UPDATE SET data = EXCLUDED.data
+            DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
             """,
             uuid.uuid4(),
             rec_id,
@@ -488,7 +488,20 @@ async def run_parser_phase(
             await conn.execute(
                 """
                 UPDATE extracted_records
-                SET requires_human_review = TRUE, review_reason = 'Document parsing failed'
+                SET requires_human_review = TRUE,
+                    review_reason = 'Document parsing failed',
+                    parsed_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                rec_id,
+            )
+        else:
+            await conn.execute(
+                """
+                UPDATE extracted_records
+                SET parsed_at = NOW(),
+                    updated_at = NOW()
                 WHERE id = $1
                 """,
                 rec_id,
@@ -922,24 +935,24 @@ async def process_records(
         validated_dict = schema_instance.model_dump(mode="json")
         scrubbed_dict = scrub_pii_data(validated_dict)
 
-        # 6. Populate scrubbed_records table and mark extracted_record as cleaned
+        # 6. Populate scrubbed_records table and mark extracted_record as scrubbed
         try:
             # Insert scrubbed fields directly into scrubbed_records.data
             await conn.execute(
                 """
-                INSERT INTO scrubbed_records (id, extracted_record_id, data, created_at)
-                VALUES ($1, $2, $3, NOW())
+                INSERT INTO scrubbed_records (id, extracted_record_id, data, created_at, updated_at)
+                VALUES ($1, $2, $3, NOW(), NOW())
                 ON CONFLICT (extracted_record_id)
-                DO UPDATE SET data = EXCLUDED.data
+                DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
                 """,
                 uuid.uuid4(),
                 record_id,
                 json.dumps(scrubbed_dict, ensure_ascii=False),
             )
 
-            # Mark extracted_record as cleaned
+            # Mark extracted_record as scrubbed
             await conn.execute(
-                "UPDATE extracted_records SET cleaned_at = NOW() WHERE id = $1",
+                "UPDATE extracted_records SET scrubbed_at = NOW(), updated_at = NOW() WHERE id = $1",
                 record_id,
             )
 

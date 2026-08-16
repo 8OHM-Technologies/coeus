@@ -276,18 +276,33 @@ The `TurnstileSolver` is the primary solver used by `saflii_scraper.py`:
 
 ## 6. 🗄️ LLM Extractor — Data Schema, Parsed Records & DB Upsert
 
-`llm_extractor.py` enforces a multi-level PostgreSQL pipeline structure:
+`llm_extractor.py` enforces a multi-level PostgreSQL pipeline structure with comprehensive lifecycle timestamps:
 
 ```
-entities          (id UUID PK, name TEXT UNIQUE)
-    └── targets   (id UUID PK, entity_id FK, target_name TEXT, location TEXT, target_type TEXT, UNIQUE(entity_id, target_name))
+entities          (id UUID PK, name TEXT UNIQUE, created_at TIMESTAMPTZ)
+    └── targets   (id UUID PK, entity_id FK, target_name TEXT, location TEXT, target_type TEXT, created_at TIMESTAMPTZ, UNIQUE(entity_id, target_name))
             └── extracted_records  (id UUID PK, target_id FK, document_date DATE,
                                     record_type TEXT, data JSONB,
                                     requires_human_review BOOL, review_reason TEXT,
-                                    source_url TEXT, UNIQUE(source_url))
-                    ├── parsed_records   (id UUID PK, extracted_record_id FK UNIQUE, data JSONB, created_at TIMESTAMP)
-                    └── scrubbed_records (id UUID PK, extracted_record_id FK UNIQUE, data JSONB, created_at TIMESTAMP)
+                                    source_url TEXT UNIQUE, status TEXT,
+                                    scraped_at TIMESTAMPTZ, detailed_at TIMESTAMPTZ,
+                                    parsed_at TIMESTAMPTZ, scrubbed_at TIMESTAMPTZ,
+                                    updated_at TIMESTAMPTZ)
+                    ├── parsed_records   (id UUID PK, extracted_record_id FK UNIQUE, data JSONB,
+                    │                     created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)
+                    └── scrubbed_records (id UUID PK, extracted_record_id FK UNIQUE, data JSONB,
+                                          created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)
 ```
+
+### Lifecycle Timestamps & Pipeline Progression
+
+| Stage | Table | Timestamp Field | Purpose / Trigger |
+| :--- | :--- | :--- | :--- |
+| **Discovery** | `extracted_records` | `scraped_at` | Initial scrape / index pass when URL is discovered (`status = 'indexed'`) |
+| **Enrichment** | `extracted_records` | `detailed_at` | Full document text and detail scraping pass (`status = 'detailed'`) |
+| **Segmentation** | `extracted_records`<br>`parsed_records` | `parsed_at`<br>`created_at`, `updated_at` | Section parser splits text into header, judgment, order, citations |
+| **PII Scrubbing** | `extracted_records`<br>`scrubbed_records` | `scrubbed_at`<br>`created_at`, `updated_at` | LLM schema validation & regex PII scrubbing into structured output |
+| **Modification** | All tables | `updated_at` | Auto-updated on any row change via PostgreSQL `BEFORE UPDATE` triggers |
 
 ### Document Section Parsing (`ParsedRecord`)
 
