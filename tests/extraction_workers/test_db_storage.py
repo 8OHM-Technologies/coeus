@@ -108,7 +108,8 @@ async def test_upsert_scraped_record(mocker):
     assert "INSERT INTO extracted_records" in query
     assert "status" in query
     # Check that status 'indexed' is passed
-    assert params[-1] == "indexed"
+    assert params[-2] == "indexed"
+    assert params[-1] is None
 
 
 @pytest.mark.asyncio
@@ -132,7 +133,8 @@ async def test_upsert_scraped_records_batch():
     batch_args = mock_conn.executemany.call_args[0][1]
     assert "INSERT INTO extracted_records" in query
     assert len(batch_args) == 2
-    assert batch_args[0][-1] == "indexed"
+    assert batch_args[0][-2] == "indexed"
+    assert batch_args[0][-1] is None
 
 
 @pytest.mark.asyncio
@@ -162,7 +164,8 @@ async def test_update_record_data():
     await update_record_data(mock_conn, record_uuid, {"title": "updated"}, status="detailed")
     mock_conn.execute.assert_called_once()
     query = mock_conn.execute.call_args[0][0]
-    assert "SET data = $1, status = $2" in query
+    assert "SET data = $1" in query
+    assert "status = $2" in query
     
     # Test update without status
     mock_conn.execute.reset_mock()

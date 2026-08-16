@@ -12,7 +12,7 @@ import json
 import asyncio
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 import asyncpg
