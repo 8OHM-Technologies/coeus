@@ -414,10 +414,11 @@ async def run_parser_phase(
     pipeline_name: str,
     parser_func,
     record_id_filter: str | None = None,
+    batch_size: int = 250,
 ) -> int:
     """
     Fetches records from extracted_records that do not have a corresponding parsed_records entry yet,
-    runs parser_func on each record, populates parsed_records, and flags failed records for human review.
+    runs parser_func on each record in batches, populates parsed_records, and flags failed records for human review.
     """
     if record_id_filter:
         records = await conn.fetch(
@@ -428,86 +429,151 @@ async def run_parser_phase(
             """,
             uuid.UUID(record_id_filter),
         )
+        if not records:
+            return 0
+        logger.info("📄 SECTION PARSER PHASE — Processing 1 record (%s) with section parser...", record_id_filter)
+        total_unparsed = len(records)
     else:
-        records = await conn.fetch(
+        total_unparsed = await conn.fetchval(
             """
-            SELECT e.id, e.data
+            SELECT count(*)
             FROM extracted_records e
             LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
             WHERE e.record_type = $1
               AND e.status = 'detailed'
               AND p.extracted_record_id IS NULL
-            ORDER BY e.scraped_at ASC
             """,
             pipeline_name,
+        ) or 0
+
+        if total_unparsed == 0:
+            logger.info("📄 SECTION PARSER PHASE — All detailed records are already parsed for pipeline '%s'.", pipeline_name)
+            return 0
+
+        logger.info(
+            "📄 SECTION PARSER PHASE — Found %d unparsed record(s) for pipeline '%s'. Processing in batches of %d...",
+            total_unparsed,
+            pipeline_name,
+            batch_size,
         )
 
-    if not records:
-        return 0
-
-    logger.info("📄 SECTION PARSER PHASE — Processing %d record(s) with section parser...", len(records))
     parsed_count = 0
+    failed_parse_ids = []
 
-    for idx, record in enumerate(records, start=1):
-        rec_id = record["id"]
-        raw_data = record["data"]
-        if isinstance(raw_data, str):
+    while True:
+        if record_id_filter:
+            fetch_records = records
+        else:
+            if failed_parse_ids:
+                fetch_records = await conn.fetch(
+                    """
+                    SELECT e.id, e.data
+                    FROM extracted_records e
+                    LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                    WHERE e.record_type = $1
+                      AND e.status = 'detailed'
+                      AND p.extracted_record_id IS NULL
+                      AND NOT (e.id = ANY($2))
+                    ORDER BY e.scraped_at ASC
+                    LIMIT $3
+                    """,
+                    pipeline_name,
+                    failed_parse_ids,
+                    batch_size,
+                )
+            else:
+                fetch_records = await conn.fetch(
+                    """
+                    SELECT e.id, e.data
+                    FROM extracted_records e
+                    LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                    WHERE e.record_type = $1
+                      AND e.status = 'detailed'
+                      AND p.extracted_record_id IS NULL
+                    ORDER BY e.scraped_at ASC
+                    LIMIT $2
+                    """,
+                    pipeline_name,
+                    batch_size,
+                )
+
+        if not fetch_records:
+            break
+
+        for record in fetch_records:
+            rec_id = record["id"]
+            raw_data = record["data"]
+            if isinstance(raw_data, str):
+                try:
+                    rec_dict = json.loads(raw_data)
+                except Exception:
+                    rec_dict = {}
+            else:
+                rec_dict = dict(raw_data) if raw_data else {}
+
+            full_text = rec_dict.get("full_text") or ""
+            center_content = rec_dict.get("center_content") or ""
+
+            if not full_text.strip() and not center_content.strip():
+                logger.warning("  [!] Record %s has empty text for parsing.", rec_id)
+                parsed_payload = {"null_values": ["header", "judgment", "order"], "error": "Empty text for parsing"}
+            else:
+                try:
+                    parsed_payload = parser_func(full_text, center_content)
+                except Exception as exc:
+                    logger.error("  [!] Parser function failed on record %s: %s", rec_id, exc)
+                    parsed_payload = {"null_values": ["header", "judgment", "order"], "error": str(exc)}
+
             try:
-                rec_dict = json.loads(raw_data)
-            except Exception:
-                rec_dict = {}
-        else:
-            rec_dict = dict(raw_data) if raw_data else {}
+                await conn.execute(
+                    """
+                    INSERT INTO parsed_records (id, extracted_record_id, data, created_at, updated_at)
+                    VALUES ($1, $2, $3, NOW(), NOW())
+                    ON CONFLICT (extracted_record_id)
+                    DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+                    """,
+                    uuid.uuid4(),
+                    rec_id,
+                    json.dumps(parsed_payload, ensure_ascii=False),
+                )
 
-        full_text = rec_dict.get("full_text") or ""
-        center_content = rec_dict.get("center_content") or ""
+                if parsed_payload.get("null_values"):
+                    await conn.execute(
+                        """
+                        UPDATE extracted_records
+                        SET requires_human_review = TRUE,
+                            review_reason = 'Document parsing failed',
+                            parsed_at = NOW(),
+                            updated_at = NOW()
+                        WHERE id = $1
+                        """,
+                        rec_id,
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        UPDATE extracted_records
+                        SET parsed_at = NOW(),
+                            updated_at = NOW()
+                        WHERE id = $1
+                        """,
+                        rec_id,
+                    )
 
-        if not full_text.strip() and not center_content.strip():
-            logger.warning("  [!] Record %s has empty text for parsing.", rec_id)
-            continue
+                parsed_count += 1
+            except Exception as exc:
+                logger.error("  [!] Failed to save parsed_record for record %s: %s", rec_id, exc)
+                failed_parse_ids.append(rec_id)
 
-        try:
-            parsed_payload = parser_func(full_text, center_content)
-        except Exception as exc:
-            logger.error("  [!] Parser function failed on record %s: %s", rec_id, exc)
-            parsed_payload = {"null_values": ["header", "judgment", "order"], "error": str(exc)}
+        if record_id_filter:
+            break
 
-        await conn.execute(
-            """
-            INSERT INTO parsed_records (id, extracted_record_id, data, created_at, updated_at)
-            VALUES ($1, $2, $3, NOW(), NOW())
-            ON CONFLICT (extracted_record_id)
-            DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
-            """,
-            uuid.uuid4(),
-            rec_id,
-            json.dumps(parsed_payload, ensure_ascii=False),
+        logger.info(
+            "  [+] Parsed %d / %d record(s) (%.1f%%) in section parser phase...",
+            parsed_count,
+            total_unparsed,
+            (parsed_count / total_unparsed * 100) if total_unparsed > 0 else 100.0,
         )
-
-        if parsed_payload.get("null_values"):
-            await conn.execute(
-                """
-                UPDATE extracted_records
-                SET requires_human_review = TRUE,
-                    review_reason = 'Document parsing failed',
-                    parsed_at = NOW(),
-                    updated_at = NOW()
-                WHERE id = $1
-                """,
-                rec_id,
-            )
-        else:
-            await conn.execute(
-                """
-                UPDATE extracted_records
-                SET parsed_at = NOW(),
-                    updated_at = NOW()
-                WHERE id = $1
-                """,
-                rec_id,
-            )
-
-        parsed_count += 1
 
     logger.info("  [+] Completed section parser phase for %d record(s).", parsed_count)
     return parsed_count

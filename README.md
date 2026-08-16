@@ -92,7 +92,7 @@ The data extraction and record cleaning pipeline transforms raw scraped document
 
 * **Step 2: Mandatory Document Section Parsing (`saflii_document_parser.py` ➔ `parsed_records`)**
   * A document section parser is required in Django `extraction_params` (e.g. `"parser": "saflii_document_parser"`).
-  * `llm_extractor.py` executes the section parser first, splitting raw documents into structured sections (`header`, `judgment`, `order`, `citations`).
+  * `llm_extractor.py` executes the section parser first in batches (default 250 records/batch), splitting raw documents into structured sections (`header`, `judgment`, `order`, `citations`) while avoiding memory spikes and query timeouts.
   * **Regex & HTML Parsing**:
     * **Header**: Isolates court jurisdiction, judges, parties, and dates, stripping website UI noise lines (e.g. `"LawCite"`, `"Download original files"`).
     * **Citations & Link Targets**: Uses BeautifulSoup to extract HTML `<a>` link targets into structured URL objects (`[{"text": "...", "url": "..."}]`) and footnote text into `raw_text`.

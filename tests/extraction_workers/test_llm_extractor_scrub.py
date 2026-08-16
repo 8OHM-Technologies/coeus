@@ -50,3 +50,35 @@ def test_scrub_pii_data_recursive():
         }
     }
     assert scrub_pii_data(data) == expected
+
+
+@pytest.mark.asyncio
+async def test_run_parser_phase(mocker):
+    import uuid
+    from llm_extractor import run_parser_phase
+
+    fake_id = uuid.uuid4()
+    mock_conn = mocker.AsyncMock()
+
+    # Simulate 1 unparsed record
+    mock_conn.fetchval.return_value = 1
+    mock_conn.fetch.side_effect = [
+        [
+            {"id": fake_id, "data": {"full_text": "Sample text", "center_content": "Sample center"}}
+        ],
+        [], # second call returns empty list to exit loop
+    ]
+
+    mock_parser = mocker.MagicMock(return_value={"header": "Sample text", "judgment": None, "null_values": []})
+
+    count = await run_parser_phase(
+        conn=mock_conn,
+        pipeline_name="test_pipeline",
+        parser_func=mock_parser,
+        batch_size=10,
+    )
+
+    assert count == 1
+    mock_parser.assert_called_once_with("Sample text", "Sample center")
+    assert mock_conn.execute.call_count == 2 # 1 insert into parsed_records, 1 update to extracted_records
+
