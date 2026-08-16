@@ -458,6 +458,7 @@ async def run_parser_phase(
                 LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                 WHERE e.record_type = $1
                   AND e.status = 'detailed'
+                  AND (e.requires_human_review IS NOT TRUE)
                   AND (e.source_url LIKE '%/cases/%' OR (e.source_url IS NULL AND e.data->>'category' = 'cases'))
                   AND p.extracted_record_id IS NULL
                 """,
@@ -471,6 +472,7 @@ async def run_parser_phase(
                 LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                 WHERE e.record_type = $1
                   AND e.status = 'detailed'
+                  AND (e.requires_human_review IS NOT TRUE)
                   AND p.extracted_record_id IS NULL
                 """,
                 pipeline_name,
@@ -503,6 +505,7 @@ async def run_parser_phase(
                         LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
+                          AND (e.requires_human_review IS NOT TRUE)
                           AND (e.source_url LIKE '%/cases/%' OR (e.source_url IS NULL AND e.data->>'category' = 'cases'))
                           AND p.extracted_record_id IS NULL
                           AND NOT (e.id = ANY($2))
@@ -521,6 +524,7 @@ async def run_parser_phase(
                         LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
+                          AND (e.requires_human_review IS NOT TRUE)
                           AND (e.source_url LIKE '%/cases/%' OR (e.source_url IS NULL AND e.data->>'category' = 'cases'))
                           AND p.extracted_record_id IS NULL
                         ORDER BY e.scraped_at ASC
@@ -538,6 +542,7 @@ async def run_parser_phase(
                         LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
+                          AND (e.requires_human_review IS NOT TRUE)
                           AND p.extracted_record_id IS NULL
                           AND NOT (e.id = ANY($2))
                         ORDER BY e.scraped_at ASC
@@ -555,6 +560,7 @@ async def run_parser_phase(
                         LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
+                          AND (e.requires_human_review IS NOT TRUE)
                           AND p.extracted_record_id IS NULL
                         ORDER BY e.scraped_at ASC
                         LIMIT $2
@@ -669,6 +675,13 @@ async def process_records(
         source_url = record["source_url"] or ""
         logger.info("[%d/%d] Extracting record ID: %s (URL: %s)", idx, len(records), record_id, source_url)
 
+        # 0. Skip if already marked for human review
+        if record.get("requires_human_review") or (isinstance(record.get("data"), dict) and record["data"].get("requires_human_review")):
+            logger.info("  [i] Record %s is already marked for human review, skipping extraction.", record_id)
+            failure_count += 1
+            failed_ids.append(record_id)
+            continue
+
         # 1. Parse JSON data and DB metadata from database
         db_entity_name = record.get("db_entity_name")
         db_target_name = record.get("db_target_name")
@@ -686,6 +699,12 @@ async def process_records(
                 continue
         else:
             record_data = dict(raw_data) if raw_data else {}
+
+        if record_data.get("requires_human_review"):
+            logger.info("  [i] Record %s is marked for human review in data payload, skipping extraction.", record_id)
+            failure_count += 1
+            failed_ids.append(record_id)
+            continue
 
         case_number = record_data.get("case_number") or record_data.get("case_no") or None
 
@@ -821,6 +840,8 @@ async def process_records(
                             
                     schema_instance = SafliiCourtRollExtraction(
                         metadata=metadata,
+                        title=str(record_data.get("title") or record_data.get("case_name")),
+                        roll_type=str(record_data.get("roll_type") or "Court Roll"),
                         rows=rows_objs,
                         data_quality_flags=DataQualityFlags(
                             requires_human_review=bool(record_data.get("requires_human_review") or False)
@@ -833,7 +854,7 @@ async def process_records(
                     continue
 
         if not is_programmatic:
-            raw_result = None
+            # Multi-Pass Section-Targeted LLM Extraction for SAFLII Cases
             if current_schema_cls.__name__ == "SafliiExtractedData":
                 logger.info("  [Section-Targeted LLM Mode] Extracting SafliiExtractedData via section-specific context...")
                 try:
@@ -878,17 +899,31 @@ async def process_records(
                     "applicant_plaintiff", "respondent_defendant", "hearing_date",
                     "judgment_date", "reportable", "court", "judges", "court_location"
                 ]
-                has_null_header = any(
-                    header_res.get(k) is None or header_res.get(k) == "" or header_res.get(k) == []
-                    for k in header_keys
-                )
+                missing_keys = [
+                    k for k in header_keys
+                    if header_res.get(k) is None or header_res.get(k) == "" or header_res.get(k) == []
+                ]
 
-                if has_null_header:
-                    logger.info("  [!] Null/empty value(s) in Header section extraction. Retrying header fields with entire document context...")
-                    fallback_header_res = call_ollama(client, ai_model, header_prompt, entire_doc_context, SafliiHeaderData) or {}
-                    for k in header_keys:
-                        if (header_res.get(k) is None or header_res.get(k) == "" or header_res.get(k) == []) and fallback_header_res.get(k) is not None:
-                            header_res[k] = fallback_header_res[k]
+                if missing_keys:
+                    logger.warning(
+                        "  [!] Null/empty value(s) in Header section extraction (%s) for record %s. Flagging for human review and skipping.",
+                        ", ".join(missing_keys),
+                        record_id,
+                    )
+                    await conn.execute(
+                        """
+                        UPDATE extracted_records
+                        SET requires_human_review = TRUE,
+                            review_reason = $1,
+                            updated_at = NOW()
+                        WHERE id = $2
+                        """,
+                        f"Incomplete header section extraction: missing {', '.join(missing_keys)}",
+                        record_id,
+                    )
+                    failure_count += 1
+                    failed_ids.append(record_id)
+                    continue
 
                 # Pass 2: precedents_cited using ONLY Citations section context
                 citations_context = citations_text if citations_text else entire_doc_context
@@ -1163,7 +1198,7 @@ async def run_extraction(
 
             records = await conn.fetch(
                 """
-                SELECT e.id, e.data, e.source_url, p.data AS parsed_data,
+                SELECT e.id, e.data, e.source_url, e.requires_human_review, p.data AS parsed_data,
                        t.target_name AS db_target_name, ent.name AS db_entity_name
                 FROM extracted_records e
                 LEFT JOIN targets t ON e.target_id = t.id
@@ -1210,7 +1245,7 @@ async def run_extraction(
                 if failed_ids:
                     records = await conn.fetch(
                         """
-                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data,
+                        SELECT e.id, e.data, e.source_url, e.requires_human_review, p.data AS parsed_data,
                                t.target_name AS db_target_name, ent.name AS db_entity_name
                         FROM extracted_records e
                         LEFT JOIN targets t ON e.target_id = t.id
@@ -1219,6 +1254,7 @@ async def run_extraction(
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
+                          AND (e.requires_human_review IS NOT TRUE)
                           AND s.extracted_record_id IS NULL
                           AND NOT (e.id = ANY($2))
                         ORDER BY e.scraped_at ASC
@@ -1231,7 +1267,7 @@ async def run_extraction(
                 else:
                     records = await conn.fetch(
                         """
-                        SELECT e.id, e.data, e.source_url, p.data AS parsed_data,
+                        SELECT e.id, e.data, e.source_url, e.requires_human_review, p.data AS parsed_data,
                                t.target_name AS db_target_name, ent.name AS db_entity_name
                         FROM extracted_records e
                         LEFT JOIN targets t ON e.target_id = t.id
@@ -1240,6 +1276,7 @@ async def run_extraction(
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
+                          AND (e.requires_human_review IS NOT TRUE)
                           AND s.extracted_record_id IS NULL
                         ORDER BY e.scraped_at ASC
                         LIMIT $2

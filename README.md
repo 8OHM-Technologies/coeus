@@ -101,7 +101,7 @@ The data extraction and record cleaning pipeline transforms raw scraped document
 
 * **Step 3: 3-Pass Section-Targeted LLM Context Routing (`llm_extractor.py`)**
   To prevent local LLM context overflow on long court judgments (50k+ chars), extraction is routed in **3 targeted passes** using isolated schema subsets:
-  * **Pass 1 (Header Fields 1–8)**: Evaluates `SafliiHeaderData` (`applicant_plaintiff` to `court_location`) using **Header section context only**. Automatically retries with full document context if any header field returns null.
+  * **Pass 1 (Header Fields 1–8)**: Evaluates `SafliiHeaderData` (`applicant_plaintiff` to `court_location`) using **Header section context only**. If any header field returns null/empty, the record is flagged for human review (`requires_human_review = TRUE`) with missing fields recorded in `review_reason` and skipped, avoiding full-document context overflows.
   * **Pass 2 (Precedents & Citations)**: Evaluates `SafliiPrecedentsData` (`precedents_cited` list of `PrecedentCategory` objects: `case_name_citation`, `treatment`, `reasoning`, `url`) using **Citations section context only**.
     * **Target Matcher Post-Processing**: Compares LLM output against HTML `targets` list, injects exact URLs, and appends missing link targets to guarantee **100% citation target coverage**.
   * **Pass 3 (Judgment Body Fields 9–14)**: Evaluates `SafliiBodyData` (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) using **Judgment + Order section context**.

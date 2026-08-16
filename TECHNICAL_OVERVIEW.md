@@ -309,9 +309,9 @@ entities          (id UUID PK, name TEXT UNIQUE, created_at TIMESTAMPTZ)
 When `parser` is configured in `extraction_params` (e.g. `"parser": "saflii_document_parser"`):
 1. **Parsing Phase**: `llm_extractor.py` runs `run_parser_phase()` prior to LLM extraction. On SAFLII pipelines, it strictly filters and processes records in the `"cases"` category (skipping journals, gazettes, and court rolls which are handled programmatically). It executes the resolved section parser (e.g. `split_saflii_document()`) in configurable batches (default 250 records/batch) to maintain low memory usage and prevent database timeouts.
 2. **Section Storage**: Parsed document sections (`header`, `judgment`, `order`, `appearances`, `citations`) are saved in the `parsed_records` table (1:1 relation with `extracted_records`).
-3. **Automated Review Flagging**: If section parsing fails to extract core required sections (returning `null_values`), the parent `extracted_record` is automatically updated with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`.
+3. **Automated Review Flagging**: If section parsing fails to extract core required sections (returning `null_values`), the parent `extracted_record` is automatically updated with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`. Records marked for human review are automatically skipped by both the section parser and downstream LLM extraction.
 4. **Section-Targeted Extraction Dataflow**: The downstream LLM extraction step routes context dynamically per field range:
-   - **Pass 1 (Header Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive ONLY the `Header` section text. If any header field returns null/empty, it retries those header fields using the full document as fallback context.
+   - **Pass 1 (Header Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive ONLY the `Header` section text. If any required header field returns null/empty, the record is flagged with `requires_human_review = TRUE` with the missing fields documented in `review_reason` and skipped, avoiding full-document context overflows.
    - **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text context (via `SafliiPrecedentsData`).
    - **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text.
    - Outputs are combined, validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
@@ -336,7 +336,7 @@ The extractor dynamically resolves the schema class from the `schemas` package b
 
 To prevent local LLM context window overflow and hallucination on very long court judgments:
 1. **Mandatory Section Parsing**: All extraction pipelines require a section parser (e.g., `"parser": "saflii_document_parser"`) configured in `extraction_params`. `llm_extractor.py` enforces this requirement and executes `run_parser_phase()` to split documents into structured sections before LLM extraction.
-2. **Section-Targeted Context Routing**: Instead of sending static character chunks (e.g. 8,000 characters), each field group is evaluated against its exact corresponding parsed section context (Header, Citations, or Judgment/Order), with automatic full-document fallback if header fields are missing.
+2. **Section-Targeted Context Routing**: Instead of sending static character chunks (e.g. 8,000 characters), each field group is evaluated against its exact corresponding parsed section context (Header, Citations, or Judgment/Order). If header fields are missing, the record is flagged for human review and skipped to preserve inference stability.
 3. **Specialized System Prompt Guidelines**: The system prompt is dynamically extended with SAFLII-specific guidelines to ensure the LLM correctly extracts the majority ruling holding, correct dates/court/judges from SAFLII headers, and full citation target lists.
 
 ---
