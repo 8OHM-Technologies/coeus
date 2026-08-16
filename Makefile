@@ -2,7 +2,7 @@
 export GITHUB_ACCESS_TOKEN
 
 # Define phony targets so Make doesn't look for actual files with these names
-.PHONY: up down status logs dagster stop-dagster publish pull-prod up-prod down-prod pull-portable up-portable down-portable restart-portable coeus stop-coeus scheduler stop-scheduler migrate seed setup sync-extracted sync-shop
+.PHONY: up down status logs dagster stop-dagster publish pull-prod up-prod down-prod pull-portable up-portable down-portable restart-portable coeus stop-coeus scheduler stop-scheduler migrate seed setup sync-extracted
 
 # Default tag for Docker images built and published locally
 TAG ?= latest
@@ -120,17 +120,9 @@ seed:
 # First-time setup: Run migrations and seed pipelines
 setup: migrate seed
 
-# Sync extracted JSON records from disk into DB
+# Sync extracted_records data between PROD and PORTABLE DBs
 sync-extracted:
 	docker compose exec control-plane python control_plane/manage.py sync_extracted_records
-
-# Import scrubbed court records into BookStack
-import-bookstack:
-	docker compose exec control-plane python control_plane/manage.py import_to_bookstack $(ARGS)
-
-# Sync shop products
-sync-shop:
-	docker compose exec control-plane python control_plane/manage.py sync_shop_products
 
 # -----------------------------------------------------------------------------
 # DYNAMIC INDIVIDUAL SERVICE COMMANDS

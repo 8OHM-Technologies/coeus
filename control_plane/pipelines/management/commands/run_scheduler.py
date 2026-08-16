@@ -15,15 +15,6 @@ from pipelines.models import PipelineConfiguration, ScraperType
 logger = logging.getLogger(__name__)
 
 
-def run_medusa_sync():
-    """Trigger the sync_medusa management command."""
-    try:
-        logger.info("Triggering Medusa synchronization...")
-        call_command("sync_medusa")
-    except Exception as e:
-        logger.error(f"Medusa synchronization failed: {e}")
-
-
 def run_extracted_records_sync():
     """Trigger the sync_extracted_records management command."""
     try:
@@ -199,8 +190,6 @@ def combine_scraper_data():
         logger.info(
             f"Successfully combined {len(final_results)} records into {output_file}"
         )
-        # Trigger Medusa Sync after successful combination
-        run_medusa_sync()
     except Exception as e:
         logger.error(f"Failed to save combined data: {e}")
 
@@ -237,10 +226,6 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        if options["sync_medusa"]:
-            run_medusa_sync()
-            return
-
         if options["sync_extracted_records"]:
             run_extracted_records_sync()
             return
@@ -254,14 +239,14 @@ class Command(BaseCommand):
         scheduler = BlockingScheduler(timezone=settings.TIME_ZONE)
         scheduler.add_jobstore(DjangoJobStore(), "default")
 
-        scheduler.add_job(
-            combine_scraper_data,
-            trigger=CronTrigger(hour="0", minute="0"),  # Run daily at midnight
-            id="combine_scraper_data",
-            max_instances=1,
-            replace_existing=True,
-        )
-        logger.info("Added job 'combine_scraper_data'.")
+        # scheduler.add_job(
+        #     combine_scraper_data,
+        #     trigger=CronTrigger(hour="0", minute="0"),  # Run daily at midnight
+        #     id="combine_scraper_data",
+        #     max_instances=1,
+        #     replace_existing=True,
+        # )
+        # logger.info("Added job 'combine_scraper_data'.")
 
         scheduler.add_job(
             delete_old_job_executions,
@@ -277,21 +262,21 @@ class Command(BaseCommand):
         from pipelines.analytics import update_pipeline_analytics
         scheduler.add_job(
             update_pipeline_analytics,
-            trigger=CronTrigger(minute="*/5"),  # Run every 5 minutes
+            trigger=CronTrigger(minute="*/30"),  # Run every 30 minutes
             id="update_pipeline_analytics",
             max_instances=1,
             replace_existing=True,
         )
-        logger.info("Added 5-minute job 'update_pipeline_analytics'.")
+        logger.info("Added 30-minute job 'update_pipeline_analytics'.")
 
-        scheduler.add_job(
-            run_extracted_records_sync,
-            trigger=CronTrigger(minute="*/15"),  # Run every 15 minutes
-            id="run_extracted_records_sync",
-            max_instances=1,
-            replace_existing=True,
-        )
-        logger.info("Added 15-minute job 'run_extracted_records_sync'.")
+        # scheduler.add_job(
+        #     run_extracted_records_sync,
+        #     trigger=CronTrigger(minute="*/15"),  # Run every 15 minutes
+        #     id="run_extracted_records_sync",
+        #     max_instances=1,
+        #     replace_existing=True,
+        # )
+        # logger.info("Added 15-minute job 'run_extracted_records_sync'.")
 
         try:
             logger.info("Starting scheduler...")
