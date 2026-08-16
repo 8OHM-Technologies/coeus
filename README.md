@@ -81,13 +81,43 @@ Dagster executes scrapers and extractors inside ephemeral containers via `PipesD
 * **Scraper-Type Aggregation**: Aggregates scraping analytics metrics (`control_plane/pipelines/analytics.py`) grouped by `scraper_type` rather than individual pipeline configurations.
 * **Background Scheduler**: A dedicated background scheduler service periodically calculates scrape rates, success metrics, and status breakdowns, caching results in `ScrapingPipelineMetrics`.
 
-### **7. Section Parsing (`ParsedRecord`) & LLM Extraction (`ScrubbedRecord`)**
-* **Mandatory Section Parsing Phase (`ParsedRecord`)**: A document section parser is required in Django `extraction_params` (e.g. `"parser": "saflii_document_parser"`). `llm_extractor.py` executes the section parser first, saving structured sections (`header`, `judgment`, `order`, `citations`) into `ParsedRecord` (1:1 relation with `ExtractedRecord`). Documents with failed section parsing are automatically flagged with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`.
-* **Section-Targeted LLM Extraction**: When section parser data is available, extraction uses a 3-pass targeted context strategy:
-  * **Pass 1 (Header Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive ONLY the `Header` section text. If any header field returns null/empty, it retries those header fields using the full document as context.
-  * **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text as context.
-  * **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text as context.
-* **PII Redaction (`pii_scrub.py`)**: Redacts PII (names, ID numbers, addresses) from the combined structured output and saves cleaned data into `ScrubbedRecord` (1:1 relation with `ExtractedRecord`).
+### **7. Section Parsing (`ParsedRecord`), 3-Pass Section-Targeted LLM Extraction & PII Redaction (`ScrubbedRecord`)**
+
+The data extraction and record cleaning pipeline transforms raw scraped document records (`extracted_records`) into structured, scrubbed, and compliant database entries (`scrubbed_records`) via a multi-stage dataflow:
+
+* **Step 1: Authoritative System Metadata Resolution (Database SELECT JOIN)**
+  * Executes a database SQL `SELECT` joining `extracted_records e`, `targets t` (`e.target_id = t.id`), and `entities ent` (`t.entity_id = ent.id`).
+  * Resolves authoritative system metadata directly from database columns: `entity_name` (`ent.name`, e.g. `"Saflii"`), `target_name` (`t.target_name`, e.g. `"ZAGPJHC"`), `document_date` (`e.document_date`), `record_type` (`e.record_type`), and `case_number` (`e.data->'case_number'`).
+  * **Strict Constraint**: System metadata fields (`BaseExtractedRecord`) are **never provided in the LLM prompt or JSON schema**, preventing LLM hallucination on administrative data.
+
+* **Step 2: Mandatory Document Section Parsing (`saflii_document_parser.py` ➔ `parsed_records`)**
+  * A document section parser is required in Django `extraction_params` (e.g. `"parser": "saflii_document_parser"`).
+  * `llm_extractor.py` executes the section parser first, splitting raw documents into structured sections (`header`, `judgment`, `order`, `citations`).
+  * **Regex & HTML Parsing**:
+    * **Header**: Isolates court jurisdiction, judges, parties, and dates, stripping website UI noise lines (e.g. `"LawCite"`, `"Download original files"`).
+    * **Citations & Link Targets**: Uses BeautifulSoup to extract HTML `<a>` link targets into structured URL objects (`[{"text": "...", "url": "..."}]`) and footnote text into `raw_text`.
+    * **Judgment vs. Order Split**: Splits text into Judgment Body and Final Order using order header regexes, inline ruling patterns, or judge signature boundaries.
+  * **Automated Data Quality & Human Review Flagging**: If any core section (`header`, `judgment`, `order`) is missing (`null_values`), the parent `extracted_record` is automatically updated in PostgreSQL with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`. Clean sections are saved into `parsed_records` (1:1 with `extracted_records`).
+
+* **Step 3: 3-Pass Section-Targeted LLM Context Routing (`llm_extractor.py`)**
+  To prevent local LLM context overflow on long court judgments (50k+ chars), extraction is routed in **3 targeted passes** using isolated schema subsets:
+  * **Pass 1 (Header Fields 1–8)**: Evaluates `SafliiHeaderData` (`applicant_plaintiff` to `court_location`) using **Header section context only**. Automatically retries with full document context if any header field returns null.
+  * **Pass 2 (Precedents & Citations)**: Evaluates `SafliiPrecedentsData` (`precedents_cited` list of `PrecedentCategory` objects: `case_name_citation`, `treatment`, `reasoning`, `url`) using **Citations section context only**.
+    * **Target Matcher Post-Processing**: Compares LLM output against HTML `targets` list, injects exact URLs, and appends missing link targets to guarantee **100% citation target coverage**.
+  * **Pass 3 (Judgment Body Fields 9–14)**: Evaluates `SafliiBodyData` (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) using **Judgment + Order section context**.
+
+* **Step 4: Payload Merging & System Metadata Wrapping**
+  * Combines sub-results, applies fallback defaults for missing optional text fields, validates against `SafliiExtractedData`, and programmatically attaches system `BaseExtractedRecord` metadata (`entity_name`, `target_name`, `document_date`, `record_type`, `case_number`).
+
+* **Step 5: Compliance PII Scrubbing (`pii_scrub.py`)**
+  * Recursively scrubs sensitive South African personal identifiers using regex patterns:
+    * **RSA ID Numbers**: `\b\d{13}\b` ──► `"[RSA ID]"`
+    * **Passport Numbers**: `\b[A-Za-z]\d{8}\b` ──► `"[PASSPORT]"`
+    * **Bank & Tax Accounts**: 10–16 digit sequences ──► `"[BANK/TAX NUMBER]"`
+
+* **Step 6: PostgreSQL Upsert & Clean Status Marking (`scrubbed_records`)**
+  * Upserts the cleaned, scrubbed, and validated JSON payload into `scrubbed_records` (JSONB `data` column, 1:1 relation with `extracted_records`).
+  * Updates `extracted_records.cleaned_at = NOW()`, marking the record processing lifecycle as complete.
 
 ### **8. DuckDB Data Analysis Tool (`scripts/analyze_duckdb.py`)**
 * **In-Memory Analytics Engine**: Uses DuckDB's native PostgreSQL scanner extension to perform high-performance analytical queries, JSON payload extraction, and full-text searches directly on the `coeus` database.

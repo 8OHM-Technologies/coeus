@@ -101,7 +101,35 @@ The Django API endpoint `/api/pipelines/active/` returns a JSON object containin
 ```json
 {
   "pipelines": [
-     // List of serialized blueprint objects
+    {
+      "pipeline_id": "saflii_courts",
+      "name": "SAFLII Court Judgments",
+      "scraper_type": "saflii",
+      "is_active": true,
+      "schedule": "0 2 * * *",
+      "metadata": {
+        "industry": "Legal",
+        "document_type": "Court Case"
+      },
+      "phase_1_ingestion": {
+        "start_url": "https://www.saflii.org",
+        "allow_insecure_https": false,
+        "allow_insecure_requests": false
+      },
+      "phase_2_extraction": {
+        "requires_extraction": true,
+        "engine": "ollama/phi4-mini",
+        "expected_schema": "SafliiExtractedData",
+        "extraction_instructions": "Extract applicant, respondent, dates, reportable status, court, judges, precedents, ratio decidendi, obiter dicta, order, summary, and keywords.",
+        "extraction_params": {
+          "parser": "saflii_document_parser",
+          "content_field": "full_text"
+        }
+      },
+      "phase_3_loading": {
+        "table_name": "scrubbed_records"
+      }
+    }
   ]
 }
 ```
