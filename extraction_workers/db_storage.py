@@ -191,6 +191,7 @@ async def upsert_scraped_record(
     payload is updated (merged) and ``record_type`` is refreshed.
     """
     resolved_date = document_date or _extract_document_date(data_dict)
+    detailed_at = datetime.now(timezone.utc) if status == "detailed" else None
 
     await conn.execute(
         """
@@ -199,9 +200,7 @@ async def upsert_scraped_record(
             data, source_url, status, scraped_at, detailed_at, updated_at
         )
         VALUES (
-            $1, $2, $3, $4, $5, $6, $7, NOW(),
-            CASE WHEN $7 = 'detailed' THEN NOW() ELSE NULL END,
-            NOW()
+            $1, $2, $3, $4, $5, $6, $7, NOW(), $8, NOW()
         )
         ON CONFLICT (source_url)
         DO UPDATE SET
@@ -218,6 +217,7 @@ async def upsert_scraped_record(
         json.dumps(data_dict, ensure_ascii=False),
         source_url,
         status,
+        detailed_at,
     )
 
 
@@ -244,6 +244,7 @@ async def upsert_scraped_records_batch(
             continue
         
         resolved_date = _extract_document_date(record)
+        detailed_at = datetime.now(timezone.utc) if status == "detailed" else None
         batch_args.append((
             uuid.uuid4(),
             target_id,
@@ -252,6 +253,7 @@ async def upsert_scraped_records_batch(
             json.dumps(record, ensure_ascii=False),
             source_url,
             status,
+            detailed_at,
         ))
 
     if batch_args:
@@ -262,9 +264,7 @@ async def upsert_scraped_records_batch(
                 data, source_url, status, scraped_at, detailed_at, updated_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7, NOW(),
-                CASE WHEN $7 = 'detailed' THEN NOW() ELSE NULL END,
-                NOW()
+                $1, $2, $3, $4, $5, $6, $7, NOW(), $8, NOW()
             )
             ON CONFLICT (source_url)
             DO UPDATE SET
@@ -346,19 +346,33 @@ async def update_record_data(
 ) -> None:
     """Replace the ``data`` JSONB column and update ``status``, ``detailed_at``, and ``updated_at`` for a specific record."""
     if status is not None:
-        await conn.execute(
-            """
-            UPDATE extracted_records
-            SET data = $1,
-                status = $2,
-                detailed_at = CASE WHEN $2 = 'detailed' THEN NOW() ELSE detailed_at END,
-                updated_at = NOW()
-            WHERE id = $3
-            """,
-            json.dumps(merged_data, ensure_ascii=False),
-            status,
-            record_id,
-        )
+        if status == "detailed":
+            await conn.execute(
+                """
+                UPDATE extracted_records
+                SET data = $1,
+                    status = $2,
+                    detailed_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = $3
+                """,
+                json.dumps(merged_data, ensure_ascii=False),
+                status,
+                record_id,
+            )
+        else:
+            await conn.execute(
+                """
+                UPDATE extracted_records
+                SET data = $1,
+                    status = $2,
+                    updated_at = NOW()
+                WHERE id = $3
+                """,
+                json.dumps(merged_data, ensure_ascii=False),
+                status,
+                record_id,
+            )
     else:
         await conn.execute(
             """
