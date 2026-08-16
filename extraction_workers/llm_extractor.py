@@ -409,6 +409,20 @@ def resolve_parser(parser_name: str):
     return None
 
 
+def get_record_category(record_data: dict, source_url: str | None = None) -> str | None:
+    """Resolves document category (e.g. cases, gaz, journals, other) from record data or source_url."""
+    category = record_data.get("category")
+    if not category and source_url:
+        import urllib.parse
+        parsed_path = [p for p in urllib.parse.urlparse(source_url).path.split("/") if p]
+        for i, part in enumerate(parsed_path):
+            if part == "za" and i + 1 < len(parsed_path):
+                if parsed_path[i + 1] in ("cases", "gaz", "journals", "other"):
+                    category = parsed_path[i + 1]
+                    break
+    return category
+
+
 async def run_parser_phase(
     conn,
     pipeline_name: str,
@@ -418,12 +432,15 @@ async def run_parser_phase(
 ) -> int:
     """
     Fetches records from extracted_records that do not have a corresponding parsed_records entry yet,
-    runs parser_func on each record in batches, populates parsed_records, and flags failed records for human review.
+    runs parser_func on each record in batches (filtering strictly for 'cases' category on SAFLII pipelines),
+    populates parsed_records, and flags failed records for human review.
     """
+    is_saflii = "saflii" in pipeline_name.lower()
+
     if record_id_filter:
         records = await conn.fetch(
             """
-            SELECT e.id, e.data
+            SELECT e.id, e.data, e.source_url
             FROM extracted_records e
             WHERE e.id = $1
             """,
@@ -431,27 +448,40 @@ async def run_parser_phase(
         )
         if not records:
             return 0
-        logger.info("📄 SECTION PARSER PHASE — Processing 1 record (%s) with section parser...", record_id_filter)
         total_unparsed = len(records)
     else:
-        total_unparsed = await conn.fetchval(
-            """
-            SELECT count(*)
-            FROM extracted_records e
-            LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
-            WHERE e.record_type = $1
-              AND e.status = 'detailed'
-              AND p.extracted_record_id IS NULL
-            """,
-            pipeline_name,
-        ) or 0
+        if is_saflii:
+            total_unparsed = await conn.fetchval(
+                """
+                SELECT count(*)
+                FROM extracted_records e
+                LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                WHERE e.record_type = $1
+                  AND e.status = 'detailed'
+                  AND (e.source_url LIKE '%/cases/%' OR (e.source_url IS NULL AND e.data->>'category' = 'cases'))
+                  AND p.extracted_record_id IS NULL
+                """,
+                pipeline_name,
+            ) or 0
+        else:
+            total_unparsed = await conn.fetchval(
+                """
+                SELECT count(*)
+                FROM extracted_records e
+                LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                WHERE e.record_type = $1
+                  AND e.status = 'detailed'
+                  AND p.extracted_record_id IS NULL
+                """,
+                pipeline_name,
+            ) or 0
 
         if total_unparsed == 0:
-            logger.info("📄 SECTION PARSER PHASE — All detailed records are already parsed for pipeline '%s'.", pipeline_name)
+            logger.info("📄 SECTION PARSER PHASE — All detailed cases are already parsed for pipeline '%s'.", pipeline_name)
             return 0
 
         logger.info(
-            "📄 SECTION PARSER PHASE — Found %d unparsed record(s) for pipeline '%s'. Processing in batches of %d...",
+            "📄 SECTION PARSER PHASE — Found %d unparsed case record(s) for pipeline '%s'. Processing in batches of %d...",
             total_unparsed,
             pipeline_name,
             batch_size,
@@ -464,38 +494,74 @@ async def run_parser_phase(
         if record_id_filter:
             fetch_records = records
         else:
-            if failed_parse_ids:
-                fetch_records = await conn.fetch(
-                    """
-                    SELECT e.id, e.data
-                    FROM extracted_records e
-                    LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
-                    WHERE e.record_type = $1
-                      AND e.status = 'detailed'
-                      AND p.extracted_record_id IS NULL
-                      AND NOT (e.id = ANY($2))
-                    ORDER BY e.scraped_at ASC
-                    LIMIT $3
-                    """,
-                    pipeline_name,
-                    failed_parse_ids,
-                    batch_size,
-                )
+            if is_saflii:
+                if failed_parse_ids:
+                    fetch_records = await conn.fetch(
+                        """
+                        SELECT e.id, e.data, e.source_url
+                        FROM extracted_records e
+                        LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                        WHERE e.record_type = $1
+                          AND e.status = 'detailed'
+                          AND (e.source_url LIKE '%/cases/%' OR (e.source_url IS NULL AND e.data->>'category' = 'cases'))
+                          AND p.extracted_record_id IS NULL
+                          AND NOT (e.id = ANY($2))
+                        ORDER BY e.scraped_at ASC
+                        LIMIT $3
+                        """,
+                        pipeline_name,
+                        failed_parse_ids,
+                        batch_size,
+                    )
+                else:
+                    fetch_records = await conn.fetch(
+                        """
+                        SELECT e.id, e.data, e.source_url
+                        FROM extracted_records e
+                        LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                        WHERE e.record_type = $1
+                          AND e.status = 'detailed'
+                          AND (e.source_url LIKE '%/cases/%' OR (e.source_url IS NULL AND e.data->>'category' = 'cases'))
+                          AND p.extracted_record_id IS NULL
+                        ORDER BY e.scraped_at ASC
+                        LIMIT $2
+                        """,
+                        pipeline_name,
+                        batch_size,
+                    )
             else:
-                fetch_records = await conn.fetch(
-                    """
-                    SELECT e.id, e.data
-                    FROM extracted_records e
-                    LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
-                    WHERE e.record_type = $1
-                      AND e.status = 'detailed'
-                      AND p.extracted_record_id IS NULL
-                    ORDER BY e.scraped_at ASC
-                    LIMIT $2
-                    """,
-                    pipeline_name,
-                    batch_size,
-                )
+                if failed_parse_ids:
+                    fetch_records = await conn.fetch(
+                        """
+                        SELECT e.id, e.data, e.source_url
+                        FROM extracted_records e
+                        LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                        WHERE e.record_type = $1
+                          AND e.status = 'detailed'
+                          AND p.extracted_record_id IS NULL
+                          AND NOT (e.id = ANY($2))
+                        ORDER BY e.scraped_at ASC
+                        LIMIT $3
+                        """,
+                        pipeline_name,
+                        failed_parse_ids,
+                        batch_size,
+                    )
+                else:
+                    fetch_records = await conn.fetch(
+                        """
+                        SELECT e.id, e.data, e.source_url
+                        FROM extracted_records e
+                        LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
+                        WHERE e.record_type = $1
+                          AND e.status = 'detailed'
+                          AND p.extracted_record_id IS NULL
+                        ORDER BY e.scraped_at ASC
+                        LIMIT $2
+                        """,
+                        pipeline_name,
+                        batch_size,
+                    )
 
         if not fetch_records:
             break
@@ -503,6 +569,7 @@ async def run_parser_phase(
         for record in fetch_records:
             rec_id = record["id"]
             raw_data = record["data"]
+            source_url = record.get("source_url") or ""
             if isinstance(raw_data, str):
                 try:
                     rec_dict = json.loads(raw_data)
@@ -510,6 +577,10 @@ async def run_parser_phase(
                     rec_dict = {}
             else:
                 rec_dict = dict(raw_data) if raw_data else {}
+
+            category = get_record_category(rec_dict, source_url)
+            if is_saflii and category != "cases":
+                continue
 
             full_text = rec_dict.get("full_text") or ""
             center_content = rec_dict.get("center_content") or ""
@@ -569,13 +640,13 @@ async def run_parser_phase(
             break
 
         logger.info(
-            "  [+] Parsed %d / %d record(s) (%.1f%%) in section parser phase...",
+            "  [+] Parsed %d / %d case record(s) (%.1f%%) in section parser phase...",
             parsed_count,
             total_unparsed,
             (parsed_count / total_unparsed * 100) if total_unparsed > 0 else 100.0,
         )
 
-    logger.info("  [+] Completed section parser phase for %d record(s).", parsed_count)
+    logger.info("  [+] Completed section parser phase for %d case record(s).", parsed_count)
     return parsed_count
 
 
@@ -622,15 +693,7 @@ async def process_records(
         current_schema_cls = schema_cls
         category = None
         if "saflii" in pipeline_name.lower():
-            category = record_data.get("category")
-            if not category and source_url:
-                import urllib.parse
-                parsed_path = [p for p in urllib.parse.urlparse(source_url).path.split("/") if p]
-                for i, part in enumerate(parsed_path):
-                    if part == "za" and i + 1 < len(parsed_path):
-                        if parsed_path[i+1] in ("cases", "gaz", "journals", "other"):
-                            category = parsed_path[i+1]
-                            break
+            category = get_record_category(record_data, source_url)
             
             if category == "cases":
                 current_schema_cls = resolve_schema("SafliiExtractedData") or schema_cls
@@ -1105,7 +1168,7 @@ async def run_extraction(
                 FROM extracted_records e
                 LEFT JOIN targets t ON e.target_id = t.id
                 LEFT JOIN entities ent ON t.entity_id = ent.id
-                JOIN parsed_records p ON e.id = p.extracted_record_id
+                LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                 WHERE e.id = $1
                 """,
                 target_uuid,
@@ -1152,7 +1215,7 @@ async def run_extraction(
                         FROM extracted_records e
                         LEFT JOIN targets t ON e.target_id = t.id
                         LEFT JOIN entities ent ON t.entity_id = ent.id
-                        JOIN parsed_records p ON e.id = p.extracted_record_id
+                        LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'
@@ -1173,7 +1236,7 @@ async def run_extraction(
                         FROM extracted_records e
                         LEFT JOIN targets t ON e.target_id = t.id
                         LEFT JOIN entities ent ON t.entity_id = ent.id
-                        JOIN parsed_records p ON e.id = p.extracted_record_id
+                        LEFT JOIN parsed_records p ON e.id = p.extracted_record_id
                         LEFT JOIN scrubbed_records s ON e.id = s.extracted_record_id
                         WHERE e.record_type = $1
                           AND e.status = 'detailed'

@@ -307,7 +307,7 @@ entities          (id UUID PK, name TEXT UNIQUE, created_at TIMESTAMPTZ)
 ### Document Section Parsing (`ParsedRecord`)
 
 When `parser` is configured in `extraction_params` (e.g. `"parser": "saflii_document_parser"`):
-1. **Parsing Phase**: `llm_extractor.py` runs `run_parser_phase()` prior to LLM extraction. It fetches unparsed records from `extracted_records` and executes the resolved section parser (e.g. `split_saflii_document()`) in configurable batches (default 250 records/batch) to maintain low memory usage and prevent database timeouts.
+1. **Parsing Phase**: `llm_extractor.py` runs `run_parser_phase()` prior to LLM extraction. On SAFLII pipelines, it strictly filters and processes records in the `"cases"` category (skipping journals, gazettes, and court rolls which are handled programmatically). It executes the resolved section parser (e.g. `split_saflii_document()`) in configurable batches (default 250 records/batch) to maintain low memory usage and prevent database timeouts.
 2. **Section Storage**: Parsed document sections (`header`, `judgment`, `order`, `appearances`, `citations`) are saved in the `parsed_records` table (1:1 relation with `extracted_records`).
 3. **Automated Review Flagging**: If section parsing fails to extract core required sections (returning `null_values`), the parent `extracted_record` is automatically updated with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`.
 4. **Section-Targeted Extraction Dataflow**: The downstream LLM extraction step routes context dynamically per field range:

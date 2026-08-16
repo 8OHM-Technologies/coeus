@@ -82,3 +82,46 @@ async def test_run_parser_phase(mocker):
     mock_parser.assert_called_once_with("Sample text", "Sample center")
     assert mock_conn.execute.call_count == 2 # 1 insert into parsed_records, 1 update to extracted_records
 
+
+def test_get_record_category():
+    from llm_extractor import get_record_category
+
+    assert get_record_category({"category": "cases"}) == "cases"
+    assert get_record_category({}, "https://www.saflii.org/za/cases/ZACC/2023/1.html") == "cases"
+    assert get_record_category({}, "https://www.saflii.org/za/gaz/ZAGovGaz/2016/477.html") == "gaz"
+    assert get_record_category({}, "https://www.saflii.org/za/journals/PER/2020/1.html") == "journals"
+    assert get_record_category({}, "https://www.saflii.org/za/other/ZAGPPHCRolls/2012/55.pdf") == "other"
+
+
+@pytest.mark.asyncio
+async def test_run_parser_phase_saflii_skips_non_cases(mocker):
+    import uuid
+    from llm_extractor import run_parser_phase
+
+    fake_gaz_id = uuid.uuid4()
+    fake_case_id = uuid.uuid4()
+    mock_conn = mocker.AsyncMock()
+
+    mock_conn.fetchval.return_value = 2
+    mock_conn.fetch.side_effect = [
+        [
+            {"id": fake_gaz_id, "data": {"category": "gaz", "full_text": "Gazette text"}, "source_url": "https://www.saflii.org/za/gaz/1.html"},
+            {"id": fake_case_id, "data": {"category": "cases", "full_text": "Judgment text", "center_content": ""}, "source_url": "https://www.saflii.org/za/cases/1.html"},
+        ],
+        [],
+    ]
+
+    mock_parser = mocker.MagicMock(return_value={"header": "Judgment text", "judgment": None, "null_values": []})
+
+    count = await run_parser_phase(
+        conn=mock_conn,
+        pipeline_name="saflii_courts",
+        parser_func=mock_parser,
+        batch_size=10,
+    )
+
+    assert count == 1
+    mock_parser.assert_called_once_with("Judgment text", "")
+    assert mock_conn.execute.call_count == 2
+
+
