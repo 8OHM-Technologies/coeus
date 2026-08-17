@@ -33,13 +33,21 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
-try:
-    from .db import get_db_connection
-    from .utils.utils import fetch_pipeline_config
-except ImportError:
+if __package__ in (None, ""):
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    from db import get_db_connection
-    from utils.utils import fetch_pipeline_config
+
+from extraction_workers.db import get_db_connection
+from extraction_workers.utils.utils import fetch_pipeline_config
+from extraction_workers.schemas.generic import BaseExtractedRecord, DataQualityFlags
+from extraction_workers.schemas.saflii import (
+    SafliiCaseExtraction,
+    SafliiExtractedData,
+    SafliiHeaderData,
+    SafliiPrecedentsData,
+    SafliiBodyData,
+    SafliiJournalGazetteExtraction,
+    SafliiCourtRollExtraction,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,16 +73,17 @@ def get_llm_client() -> OpenAI:
 
 def resolve_schema(schema_name: str) -> type[BaseModel] | None:
     """
-    Dynamically imports ``schemas`` package and returns the class matching *schema_name*.
+    Dynamically imports ``extraction_workers.schemas`` package and returns the class matching *schema_name*.
     Returns ``None`` when not found so the caller can fall back to the generic schema.
     """
     if not schema_name:
         return None
     try:
-        if __package__:
-            schemas_module = importlib.import_module(".schemas", package=__package__)
-        else:
+        try:
+            schemas_module = importlib.import_module("extraction_workers.schemas")
+        except ImportError:
             schemas_module = importlib.import_module("schemas")
+
         schema_cls = getattr(schemas_module, schema_name, None)
         if schema_cls is None:
             logger.warning(
@@ -341,8 +350,7 @@ def call_ollama(
             extra_body={
                 "options": {
                     "num_ctx": 16384,
-                },
-                "keep_alive": 0
+                }
             }
         )
         raw = response.choices[0].message.content
@@ -708,163 +716,89 @@ async def process_records(
 
         case_number = record_data.get("case_number") or record_data.get("case_no") or None
 
-        # 2. Determine schema class dynamically
+        # 2. Determine schema class and process non-cases directly
         current_schema_cls = schema_cls
         category = None
+        is_programmatic = False
+        schema_instance = None
+
         if "saflii" in pipeline_name.lower():
             category = get_record_category(record_data, source_url)
             
-            if category == "cases":
-                current_schema_cls = resolve_schema("SafliiExtractedData") or schema_cls
-            elif category in ("gaz", "journals"):
-                current_schema_cls = resolve_schema("SafliiJournalGazetteExtraction") or schema_cls
-            elif category == "other":
-                current_schema_cls = resolve_schema("SafliiCourtRollExtraction") or schema_cls
-
-        logger.info("  Using schema for extraction: %s (Category: %s)", current_schema_cls.__name__, category if "saflii" in pipeline_name.lower() else "N/A")
-
-        # 3. Extract content for LLM from parsed_records
-        parsed_data = {}
-        if "parsed_data" in record:
-            raw_pdata = record["parsed_data"]
-            if isinstance(raw_pdata, str):
-                try:
-                    parsed_data = json.loads(raw_pdata)
-                except Exception:
-                    parsed_data = {}
-            elif isinstance(raw_pdata, dict):
-                parsed_data = raw_pdata
-
-        if content_field and content_field in parsed_data:
-            doc_text = str(parsed_data[content_field])
-        else:
-            header = parsed_data.get("header") or ""
-            judgment = parsed_data.get("judgment") or ""
-            order = parsed_data.get("order") or ""
-            if judgment or order or header:
-                doc_text = f"{header}\n\n=== JUDGMENT ===\n{judgment}\n\n=== ORDER ===\n{order}".strip()
-            else:
-                doc_text = record_data.get("full_text") or record_data.get("center_content") or ""
-
-        if not doc_text.strip():
-            logger.warning("  [!] Empty content for record %s, skipping.", record_id)
-            failure_count += 1
-            failed_ids.append(record_id)
-            continue
-
-        # Check if this record should be processed programmatically (bypassing AI model)
-        is_programmatic = False
-        schema_instance = None
-        
-        if "saflii" in pipeline_name.lower():
             if category in ("gaz", "journals"):
-                is_programmatic = True
-                try:
-                    try:
-                        from .schemas.saflii import SafliiJournalGazetteExtraction
-                        from .schemas.generic import BaseExtractedRecord, DataQualityFlags
-                    except ImportError:
-                        from schemas.saflii import SafliiJournalGazetteExtraction
-                        from schemas.generic import BaseExtractedRecord, DataQualityFlags
-                    
-                    formatted = format_journal_text(doc_text)
-                    
-                    doc_date = None
-                    year = record_data.get("year")
-                    if year:
-                        try:
-                            doc_date = date(int(year), 1, 1)
-                        except Exception:
-                            pass
-                    if not doc_date and isinstance(db_doc_date, date):
-                        doc_date = db_doc_date
-                    if not doc_date:
-                        doc_date = date.today()
-                        
-                    metadata = BaseExtractedRecord(
-                        entity_name=str(db_entity_name),
-                        target_name=str(db_target_name),
-                        document_date=doc_date,
-                        record_type=str(db_record_type),
-                        case_number=str(case_number) if case_number else None,
-                    )
-                            
-                    schema_instance = SafliiJournalGazetteExtraction(
-                        metadata=metadata,
-                        title=str(record_data.get("title") or record_data.get("case_name")),
-                        formatted_text=formatted,
-                        data_quality_flags=DataQualityFlags(
-                            requires_human_review=bool(record_data.get("requires_human_review") or False)
-                        )
-                    )
-                except Exception as exc:
-                    logger.error("  [!] Programmatic extraction failed for journal/gazette %s: %s", record_id, exc)
-                    failure_count += 1
-                    failed_ids.append(record_id)
-                    continue
-                    
-            elif category == "other":
-                is_programmatic = True
-                try:
-                    try:
-                        from .schemas.saflii import SafliiCourtRollExtraction, SafliiCourtRollRow
-                        from .schemas.generic import BaseExtractedRecord, DataQualityFlags
-                    except ImportError:
-                        from schemas.saflii import SafliiCourtRollExtraction, SafliiCourtRollRow
-                        from schemas.generic import BaseExtractedRecord, DataQualityFlags
-                    
-                    parsed_rows_data = parse_court_roll(doc_text)
-                    rows_objs = []
-                    for r in parsed_rows_data:
-                        rows_objs.append(SafliiCourtRollRow(**r))
-                        
-                    doc_date = None
-                    year = record_data.get("year")
-                    if year:
-                        try:
-                            doc_date = date(int(year), 1, 1)
-                        except Exception:
-                            pass
-                    if not doc_date and isinstance(db_doc_date, date):
-                        doc_date = db_doc_date
-                    if not doc_date:
-                        doc_date = date.today()
-                        
-                    metadata = BaseExtractedRecord(
-                        entity_name=str(db_entity_name),
-                        target_name=str(db_target_name),
-                        document_date=doc_date,
-                        record_type=str(db_record_type),
-                        case_number=str(case_number) if case_number else None,
-                    )
-                            
-                    schema_instance = SafliiCourtRollExtraction(
-                        metadata=metadata,
-                        title=str(record_data.get("title") or record_data.get("case_name")),
-                        roll_type=str(record_data.get("roll_type") or "Court Roll"),
-                        rows=rows_objs,
-                        data_quality_flags=DataQualityFlags(
-                            requires_human_review=bool(record_data.get("requires_human_review") or False)
-                        )
-                    )
-                except Exception as exc:
-                    logger.error("  [!] Programmatic extraction failed for court roll %s: %s", record_id, exc)
+                formatted_text = str(record_data.get("full_text") or record_data.get("center_content") or "").strip()
+                if not formatted_text:
+                    logger.warning("  [!] Empty content for journal/gazette %s, skipping.", record_id)
                     failure_count += 1
                     failed_ids.append(record_id)
                     continue
 
+                schema_instance = SafliiJournalGazetteExtraction(
+                    title=str(record_data.get("title") or record_data.get("case_name") or "Untitled Document"),
+                    formatted_text=formatted_text,
+                    data_quality_flags=DataQualityFlags(
+                        requires_human_review=bool(record_data.get("requires_human_review") or False)
+                    ),
+                )
+                is_programmatic = True
+                logger.info("  [Programmatic Mode] Extracted journal/gazette record: %s (direct full_text, no LLM)", record_id)
+
+            elif category == "other":
+                schema_instance = SafliiCourtRollExtraction(
+                    title=str(record_data.get("title") or record_data.get("case_name") or "Court Roll"),
+                    roll_type=str(record_data.get("roll_type") or "Court Roll"),
+                    rows=[],
+                    data_quality_flags=DataQualityFlags(
+                        requires_human_review=bool(record_data.get("requires_human_review") or False)
+                    ),
+                )
+                is_programmatic = True
+                logger.info("  [Programmatic Mode] Extracted court roll record: %s (no LLM)", record_id)
+
+            else:
+                current_schema_cls = resolve_schema("SafliiExtractedData") or schema_cls
+
+        if not is_programmatic:
+            logger.info("  Using schema for extraction: %s (Category: %s)", current_schema_cls.__name__, category if "saflii" in pipeline_name.lower() else "N/A")
+
+            # 3. Extract content for LLM from parsed_records
+            parsed_data = {}
+            if "parsed_data" in record:
+                raw_pdata = record["parsed_data"]
+                if isinstance(raw_pdata, str):
+                    try:
+                        parsed_data = json.loads(raw_pdata)
+                    except Exception:
+                        parsed_data = {}
+                elif isinstance(raw_pdata, dict):
+                    parsed_data = raw_pdata
+
+            if content_field and content_field in parsed_data:
+                doc_text = str(parsed_data[content_field])
+            else:
+                header = parsed_data.get("header") or ""
+                judgment = parsed_data.get("judgment") or ""
+                order = parsed_data.get("order") or ""
+                if judgment or order or header:
+                    doc_text = f"{header}\n\n=== JUDGMENT ===\n{judgment}\n\n=== ORDER ===\n{order}".strip()
+                else:
+                    doc_text = record_data.get("full_text") or record_data.get("center_content") or ""
+
+            if not doc_text.strip():
+                logger.warning("  [!] Empty content for record %s, skipping.", record_id)
+                failure_count += 1
+                failed_ids.append(record_id)
+                continue
+        
         if not is_programmatic:
             # Multi-Pass Section-Targeted LLM Extraction for SAFLII Cases
             if current_schema_cls.__name__ == "SafliiExtractedData":
                 logger.info("  [Section-Targeted LLM Mode] Extracting SafliiExtractedData via section-specific context...")
-                try:
-                    from .schemas.saflii import SafliiHeaderData, SafliiPrecedentsData, SafliiBodyData
-                except ImportError:
-                    from schemas.saflii import SafliiHeaderData, SafliiPrecedentsData, SafliiBodyData
                 
                 header_text = (parsed_data.get("header") or "").strip()
                 judgment_text = (parsed_data.get("judgment") or "").strip()
                 order_text = (parsed_data.get("order") or "").strip()
+                appearances_text = (parsed_data.get("appearances") or "").strip()
                 raw_citations = parsed_data.get("citations")
                 targets_list = []
                 if isinstance(raw_citations, dict):
@@ -889,36 +823,43 @@ async def process_records(
                 if not entire_doc_context:
                     entire_doc_context = doc_text
 
-                # Pass 1: First 8 fields (applicant_plaintiff to court_location) using Header section context
-                header_context = header_text if header_text else entire_doc_context
-                header_prompt = build_system_prompt(SafliiHeaderData, extraction_instructions)
+                # Pass 1: First 8 fields (applicant_plaintiff to court_location) using Header + Judgment Intro (coram/bench) + Appearances context
+                header_parts = []
+                if header_text:
+                    header_parts.append(f"=== HEADER & PARTIES ===\n{header_text}")
+                if judgment_text:
+                    # Provide first 3000 chars of judgment where authoring judge, coram, and panel concurrences reside
+                    header_parts.append(f"=== JUDGMENT INTRO & BENCH (CORAM) ===\n{judgment_text[:3000]}")
+                if appearances_text:
+                    header_parts.append(f"=== APPEARANCES & COUNSEL ===\n{appearances_text}")
+
+                header_context = "\n\n".join(header_parts).strip()
+                if not header_context:
+                    header_context = entire_doc_context
+
+                header_instructions = extraction_instructions + (
+                    "\nJUDICIAL BENCH EXTRACTION INSTRUCTIONS:\n"
+                    "- Extract ALL presiding judges and justices from the Header, Coram, or Judgment Intro (e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J', 'Jafta J', 'Khampepe J', 'Mogoeng CJ', 'Zondo J').\n"
+                    "- Include the authoring judge/justices as well as all concurring members of the court.\n"
+                    "- Do NOT extract names of litigants (applicants/respondents), attorneys, advocates, or registrars as judges."
+                )
+                header_prompt = build_system_prompt(SafliiHeaderData, header_instructions)
                 header_res = call_ollama(client, ai_model, header_prompt, header_context, SafliiHeaderData) or {}
 
-                # Check if any of the 8 header fields are null/None or empty
-                header_keys = [
-                    "applicant_plaintiff", "respondent_defendant", "hearing_date",
-                    "judgment_date", "reportable", "court", "judges", "court_location"
-                ]
-                missing_keys = [
-                    k for k in header_keys
-                    if header_res.get(k) is None or header_res.get(k) == "" or header_res.get(k) == []
-                ]
-
-                if missing_keys:
+                # If LLM completely failed on the header or returned empty result with no essential identifying data
+                if not header_res or (not header_res.get("court") and not header_res.get("applicant_plaintiff") and not header_res.get("judgment_date")):
                     logger.warning(
-                        "  [!] Null/empty value(s) in Header section extraction (%s) for record %s. Flagging for human review and skipping.",
-                        ", ".join(missing_keys),
+                        "  [!] Failed to extract valid Header fields for record %s. Flagging for human review and skipping.",
                         record_id,
                     )
                     await conn.execute(
                         """
                         UPDATE extracted_records
                         SET requires_human_review = TRUE,
-                            review_reason = $1,
+                            review_reason = 'Failed to extract essential Header fields (court/parties/dates missing)',
                             updated_at = NOW()
-                        WHERE id = $2
+                        WHERE id = $1
                         """,
-                        f"Incomplete header section extraction: missing {', '.join(missing_keys)}",
                         record_id,
                     )
                     failure_count += 1
@@ -992,7 +933,11 @@ async def process_records(
                 if not body_context:
                     body_context = entire_doc_context
 
-                body_prompt = build_system_prompt(SafliiBodyData, extraction_instructions)
+                body_instructions = extraction_instructions + (
+                    "\nKEYWORDS INSTRUCTIONS:\n"
+                    "- Extract 5 to 10 key South African legal concepts, doctrine names, and statutory provisions into 'keywords' (e.g. 'Constitutional Law', 'Section 27 Rights', 'Abuse of Dominance', 'Margin Squeeze', 'Administrative Action', 'Interdict'). Do NOT leave 'keywords' empty."
+                )
+                body_prompt = build_system_prompt(SafliiBodyData, body_instructions)
                 body_res = call_ollama(client, ai_model, body_prompt, body_context, SafliiBodyData) or {}
 
                 raw_result = {**header_res, **precedents_res, **body_res}
@@ -1008,8 +953,29 @@ async def process_records(
                     raw_result["reportable"] = False
                 if not raw_result.get("court"):
                     raw_result["court"] = "High Court"
-                if not raw_result.get("judges"):
-                    raw_result["judges"] = []
+                
+                # Sanitize and clean extracted judges list
+                raw_judges = raw_result.get("judges") or []
+                if not isinstance(raw_judges, list):
+                    raw_judges = [str(raw_judges)]
+                cleaned_judges = []
+                invalid_judge_indicators = [
+                    "[not", "not explicitly", "not stated", "not specified", "unspecified",
+                    "unknown", "n/a", "none", "cct", "case no", "applicant", "respondent"
+                ]
+                for j in raw_judges:
+                    if not j or not isinstance(j, str):
+                        continue
+                    j_str = j.strip().strip("\"'").strip()
+                    j_lower = j_str.lower()
+                    if any(ind in j_lower for ind in invalid_judge_indicators):
+                        continue
+                    # Strip leading professional/honorific prefixes
+                    j_str = re.sub(r'^(?:Advocate|Adv\.|Mr|Ms|Mrs|Dr|Justice)\s+', '', j_str, flags=re.IGNORECASE).strip()
+                    if len(j_str) >= 2 and j_str not in cleaned_judges:
+                        cleaned_judges.append(j_str)
+                raw_result["judges"] = cleaned_judges
+
                 if not raw_result.get("court_location"):
                     raw_result["court_location"] = "South Africa"
                 if raw_result.get("precedents_cited") is None:
@@ -1047,13 +1013,6 @@ async def process_records(
             # Wrap SafliiExtractedData in SafliiCaseExtraction outer schema
             if current_schema_cls.__name__ == "SafliiExtractedData":
                 try:
-                    try:
-                        from .schemas.saflii import SafliiCaseExtraction
-                        from .schemas.generic import BaseExtractedRecord, DataQualityFlags
-                    except ImportError:
-                        from schemas.saflii import SafliiCaseExtraction
-                        from schemas.generic import BaseExtractedRecord, DataQualityFlags
-                    
                     doc_date = schema_instance.hearing_date or db_doc_date
                     case_num = case_number or (schema_instance.dict().get("case_number") if hasattr(schema_instance, "dict") else None)
                     metadata = BaseExtractedRecord(
@@ -1064,10 +1023,16 @@ async def process_records(
                         case_number=str(case_num) if case_num else None,
                     )
                     
+                    extracted_data_obj = (
+                        schema_instance
+                        if isinstance(schema_instance, SafliiExtractedData)
+                        else SafliiExtractedData.model_validate(schema_instance.model_dump())
+                    )
+                    
                     outer_instance = SafliiCaseExtraction(
                         metadata=metadata,
                         title=str(record_data.get("title")),
-                        extracted_data=schema_instance,
+                        extracted_data=extracted_data_obj,
                         data_quality_flags=DataQualityFlags(
                             requires_human_review=bool(record_data.get("requires_human_review") or False)
                         )
@@ -1081,10 +1046,6 @@ async def process_records(
 
         if hasattr(schema_instance, "metadata") and getattr(schema_instance, "metadata") is None:
             try:
-                try:
-                    from .schemas.generic import BaseExtractedRecord
-                except ImportError:
-                    from schemas.generic import BaseExtractedRecord
                 schema_instance.metadata = BaseExtractedRecord(
                     entity_name=str(db_entity_name),
                     target_name=str(db_target_name),

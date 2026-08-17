@@ -52,11 +52,11 @@ class SafliiHeaderData(BaseModel):
     )
     court: Optional[str] = Field(
         None, 
-        description="The court where the case was heard (e.g., Constitutional Court, Supreme Court of Appeal, High Court)."
+        description="The court where the case was heard (e.g., Constitutional Court, Supreme Court of Appeal, High Court, Competition Appeal Court)."
     )
     judges: List[str] = Field(
         default_factory=list, 
-        description="Full list of all judges that presided over this case (including those that gave the judgments and coram members)."
+        description="Full list of all presiding judges and justices (including the authoring judge and all concurring coram members, e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J'). Do NOT include parties, applicants, respondents, advocates, or attorneys."
     )
     court_location: Optional[str] = Field(
         None, 
@@ -90,7 +90,7 @@ class SafliiBodyData(BaseModel):
     )
     keywords: List[str] = Field(
         default_factory=list, 
-        description="List of key legal concepts, terms, and themes discussed in the case. These should be concise and specific to the legal context."
+        description="List of 5 to 10 key legal concepts, doctrines, statutory provisions, and topics discussed in the case (e.g., 'Constitutional Law', 'Section 27 Access to Healthcare', 'Abuse of Dominance', 'Margin Squeeze', 'Administrative Justice', 'Interdict')."
     )
 
 
@@ -117,11 +117,11 @@ class SafliiExtractedData(BaseModel):
     )
     court: str = Field(
         ..., 
-        description="The court where the case was heard (e.g., Constitutional Court, Supreme Court of Appeal, High Court)."
+        description="The court where the case was heard (e.g., Constitutional Court, Supreme Court of Appeal, High Court, Competition Appeal Court)."
     )
     judges: List[str] = Field(
         ..., 
-        description="Full list of all judges that presided over this case (including those that gave the judgments and coram members)."
+        description="Full list of all presiding judges and justices (including the authoring judge and all concurring coram members, e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J'). Do NOT include parties, applicants, respondents, advocates, or attorneys."
     )
     court_location: str = Field(
         ..., 
@@ -149,7 +149,7 @@ class SafliiExtractedData(BaseModel):
     )
     keywords: List[str] = Field(
         ..., 
-        description="List of key legal concepts, terms, and themes discussed in the case. These should be concise and specific to the legal context."
+        description="List of 5 to 10 key legal concepts, doctrines, statutory provisions, and topics discussed in the case (e.g., 'Constitutional Law', 'Section 27 Access to Healthcare', 'Abuse of Dominance', 'Margin Squeeze', 'Administrative Justice', 'Interdict')."
     )
 
 
@@ -169,9 +169,6 @@ class SafliiCaseExtraction(BaseModel):
 
 
 class SafliiJournalGazetteExtraction(BaseModel):
-    metadata: Optional[BaseExtractedRecord] = Field(
-        None, description="System metadata record (populated by system)."
-    )
     title: str = Field(
         ...,
         description="The title of the article/journal or gazette (as per the source document)."
@@ -180,7 +177,7 @@ class SafliiJournalGazetteExtraction(BaseModel):
         ...,
         description="The clean, well-formatted, and highly readable plain text content of the journal or gazette document."
     )
-    data_quality_flags: DataQualityFlags
+    data_quality_flags: Optional[DataQualityFlags] = None
 
 
 class SafliiCourtRollRow(BaseModel):
@@ -199,11 +196,16 @@ class SafliiCourtRollRow(BaseModel):
 
 
 class SafliiCourtRollExtraction(BaseModel):
-    metadata: Optional[BaseExtractedRecord] = Field(
-        None, description="System metadata record (populated by system)."
+    title: Optional[str] = Field(
+        None,
+        description="The title of the court roll."
+    )
+    roll_type: Optional[str] = Field(
+        "Court Roll",
+        description="Type of roll."
     )
     rows: List[SafliiCourtRollRow] = Field(
         ...,
         description="Tabular data rows representing each entry in the court roll."
     )
-    data_quality_flags: DataQualityFlags
+    data_quality_flags: Optional[DataQualityFlags] = None

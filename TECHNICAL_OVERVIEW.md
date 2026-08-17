@@ -311,10 +311,10 @@ When `parser` is configured in `extraction_params` (e.g. `"parser": "saflii_docu
 2. **Section Storage**: Parsed document sections (`header`, `judgment`, `order`, `appearances`, `citations`) are saved in the `parsed_records` table (1:1 relation with `extracted_records`).
 3. **Automated Review Flagging**: If section parsing fails to extract core required sections (returning `null_values`), the parent `extracted_record` is automatically updated with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`. Records marked for human review are automatically skipped by both the section parser and downstream LLM extraction.
 4. **Section-Targeted Extraction Dataflow**: The downstream LLM extraction step routes context dynamically per field range:
-   - **Pass 1 (Header Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive ONLY the `Header` section text. If any required header field returns null/empty, the record is flagged with `requires_human_review = TRUE` with the missing fields documented in `review_reason` and skipped, avoiding full-document context overflows.
-   - **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text context (via `SafliiPrecedentsData`).
-   - **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text.
-   - Outputs are combined, validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
+    - **Pass 1 (Header, Coram & Bench Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive the structured `Header` text together with the initial `Judgment Intro` (containing authoring judge and concurring panel coram) and `Appearances`. This ensures 100% visibility for presiding judges while preventing litigant/counsel hallucinations. If any required identifying field returns null/empty, the record is flagged with `requires_human_review = TRUE` with the missing fields documented in `review_reason` and skipped, avoiding full-document context overflows.
+    - **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text context (via `SafliiPrecedentsData`).
+    - **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text, with enforced 5–10 legal topic keyword extraction.
+    - Outputs are combined, validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
 
 ### Pydantic Schemas (`extraction_workers/schemas/`)
 
@@ -327,17 +327,25 @@ Pydantic schemas are organized into modular files within the `extraction_workers
 | `DataQualityFlags` | `generic.py` | `requires_human_review` bool + `review_reason` string for LLM self-verification |
 | `BaseExtractedRecord` | `generic.py` | Common metadata: `entity_name`, `target_name`, `document_date`, `record_type` |
 | `GenericDocumentExtraction` | `generic.py` | Default schema: wraps `BaseExtractedRecord`, a free-form `extracted_data` dict, and `DataQualityFlags` |
-| `SafliiJournalGazetteExtraction` | `saflii.py` | For SAFLII Journals and Gazettes: extracts readable plain text under the `formatted_text` field |
-| `SafliiCourtRollExtraction` | `saflii.py` | For SAFLII Court Rolls (other): extracts tabular roll records into a list of row objects |
+| `SafliiJournalGazetteExtraction` | `saflii.py` | Standalone schema for SAFLII Journals and Gazettes: contains `title`, `formatted_text` (plain text), and optional data quality flags (no `metadata` field) |
+| `SafliiCourtRollExtraction` | `saflii.py` | Standalone schema for SAFLII Court Rolls: contains `title`, `roll_type`, tabular `rows`, and optional data quality flags (no `metadata` field) |
 
-The extractor dynamically resolves the schema class from the `schemas` package by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, the schema is routed dynamically per record based on its `"category"` (mapping to `SafliiExtractedData` for cases, `SafliiJournalGazetteExtraction` for journals/gazettes, and `SafliiCourtRollExtraction` for court rolls).
+The extractor dynamically resolves the schema class from the `schemas` package by name at runtime. If the named class is not found, it falls back to `GenericDocumentExtraction`. For SAFLII pipelines, `llm_extractor.py` strictly scopes both section parsing and LLM extraction/scrubbing to `"cases"` (mapping to `SafliiExtractedData` wrapped in `SafliiCaseExtraction`). Non-case categories (gazettes, journals, court rolls) bypass LLM parsing/extraction.
 
-### Mandatory Section Parsing & Targeted Context
+### Maintenance & Pipeline Utilities
 
-To prevent local LLM context window overflow and hallucination on very long court judgments:
-1. **Mandatory Section Parsing**: All extraction pipelines require a section parser (e.g., `"parser": "saflii_document_parser"`) configured in `extraction_params`. `llm_extractor.py` enforces this requirement and executes `run_parser_phase()` to split documents into structured sections before LLM extraction.
-2. **Section-Targeted Context Routing**: Instead of sending static character chunks (e.g. 8,000 characters), each field group is evaluated against its exact corresponding parsed section context (Header, Citations, or Judgment/Order). If header fields are missing, the record is flagged for human review and skipped to preserve inference stability.
-3. **Specialized System Prompt Guidelines**: The system prompt is dynamically extended with SAFLII-specific guidelines to ensure the LLM correctly extracts the majority ruling holding, correct dates/court/judges from SAFLII headers, and full citation target lists.
+- **Cases Reset Utility** ([`scripts/reset_saflii_cases.py`](file:///home/tiaanf/Dev/coeus/scripts/reset_saflii_cases.py)):
+  Allows safely resetting case extraction states across `scrubbed_records`, `parsed_records`, and `extracted_records` (sets `status='detailed'`, clears timestamps and flags) to re-run parsing and multi-pass extraction with updated schemas or context rules:
+  ```bash
+  # Preview cases to reset without modifying data:
+  python scripts/reset_saflii_cases.py --dry-run
+
+  # Reset all SAFLII case records (interactive or --force):
+  python scripts/reset_saflii_cases.py --force
+
+  # Target specific court (e.g. ZACC or ZACAC):
+  python scripts/reset_saflii_cases.py --target ZACC --force
+  ```
 
 ---
 
