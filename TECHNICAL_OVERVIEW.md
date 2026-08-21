@@ -311,10 +311,10 @@ When `parser` is configured in `extraction_params` (e.g. `"parser": "saflii_docu
 2. **Section Storage**: Parsed document sections (`header`, `judgment`, `order`, `appearances`, `citations`) are saved in the `parsed_records` table (1:1 relation with `extracted_records`).
 3. **Automated Review Flagging**: If section parsing fails to extract core required sections (returning `null_values`), the parent `extracted_record` is automatically updated with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`. Records marked for human review are automatically skipped by both the section parser and downstream LLM extraction.
 4. **Section-Targeted Extraction Dataflow**: The downstream LLM extraction step routes context dynamically per field range:
-    - **Pass 1 (Header, Coram & Bench Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive the structured `Header` text together with the initial `Judgment Intro` (containing authoring judge and concurring panel coram) and `Appearances`. This ensures 100% visibility for presiding judges while preventing litigant/counsel hallucinations. If any required identifying field returns null/empty, the record is flagged with `requires_human_review = TRUE` with the missing fields documented in `review_reason` and skipped, avoiding full-document context overflows.
+    - **Pass 1 (Header, Coram & Bench Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive the structured `Header` text together with the initial `Judgment Intro` (containing authoring judge and concurring panel coram) and `Appearances`. This ensures 100% visibility for presiding judges while preventing litigant/counsel hallucinations. The AI model is provided with the standardized catalog of South African courts (e.g., `ZACC` = Constitutional Court of South Africa, `ZASCA` = Supreme Court of Appeal of South Africa) and strict instructions to output judge names in Title Case with uppercase judicial title abbreviations. If any required identifying field returns null/empty, the record is flagged with `requires_human_review = TRUE` with the missing fields documented in `review_reason` and skipped, avoiding full-document context overflows.
     - **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text context (via `SafliiPrecedentsData`).
     - **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text, with enforced 5–10 legal topic keyword extraction.
-    - Outputs are combined, validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
+    - **Post-Processing Normalization**: Outputs are automatically normalized via `normalize_court_name()` (mapping target codes and regional descriptions to canonical court names) and `format_judge_name()` (converting all-caps judge names like `MAHLANGA AJ` to `Mahlanga AJ` while retaining acronyms and particles), validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
 
 ### Pydantic Schemas (`extraction_workers/schemas/`)
 
@@ -345,6 +345,16 @@ The extractor dynamically resolves the schema class from the `schemas` package b
 
   # Target specific court (e.g. ZACC or ZACAC):
   python scripts/reset_saflii_cases.py --target ZACC --force
+  ```
+
+- **Journal Records Cleaner Utility** ([`scripts/fix_saflii_journal_records.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_journal_records.py)):
+  Cleans LawCite website navigation breadcrumbs, SAFLII UI noise lines, and excess blank lines from existing journal entries in `scrubbed_records`:
+  ```bash
+  # Preview journal records to clean without modifying data:
+  python scripts/fix_saflii_journal_records.py --dry-run
+
+  # Clean and update journal entries:
+  python scripts/fix_saflii_journal_records.py --force
   ```
 
 ---

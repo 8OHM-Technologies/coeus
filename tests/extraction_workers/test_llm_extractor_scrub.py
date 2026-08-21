@@ -125,3 +125,160 @@ async def test_run_parser_phase_saflii_skips_non_cases(mocker):
     assert mock_conn.execute.call_count == 2
 
 
+def test_clean_saflii_text_lawcite_and_noise():
+    from utils.saflii_document_parser import clean_saflii_text
+
+    raw_input = (
+        "Home | Databases | WorldLII | DecSearch | LawCite\n"
+        "Download original files\n"
+        "PDF format\n"
+        "RTF format\n\n\n"
+        "POTCHEFSTROOM ELECTRONIC LAW JOURNAL\n"
+        "2020 VOLUME 23\n\n\n"
+        "Author: Prof John Doe\n\n"
+        "Links to summary\n"
+        "Heads of argument\n\n"
+        "1. Introduction\n"
+        "This article discusses constitutional law principles."
+    )
+
+    cleaned = clean_saflii_text(raw_input)
+
+    assert "LawCite" not in cleaned
+    assert "Home | Databases" not in cleaned
+    assert "Download original files" not in cleaned
+    assert "PDF format" not in cleaned
+    assert "RTF format" not in cleaned
+    assert "Links to summary" not in cleaned
+    assert "Heads of argument" not in cleaned
+    assert "POTCHEFSTROOM ELECTRONIC LAW JOURNAL" in cleaned
+    assert "Author: Prof John Doe" in cleaned
+    assert "1. Introduction" in cleaned
+    # Ensure blank lines are normalized (no 3+ runs)
+    assert "\n\n\n" not in cleaned
+
+
+def test_clean_saflii_text_header_collapse():
+    from utils.saflii_document_parser import clean_saflii_text
+
+    raw_header = (
+        "LawCite\n\n"
+        "HIGH COURT OF SOUTH AFRICA\n\n\n"
+        "CASE NO: 1234/2023\n"
+    )
+
+    cleaned = clean_saflii_text(raw_header, collapse_to_single_newline=True)
+    assert cleaned == "HIGH COURT OF SOUTH AFRICA\nCASE NO: 1234/2023"
+
+
+@pytest.mark.asyncio
+async def test_fix_saflii_journal_records(mocker):
+    import uuid
+    from scripts.fix_saflii_journal_records import fix_journal_records
+
+    fake_scrubbed_id = uuid.uuid4()
+    fake_rec_id = uuid.uuid4()
+    mock_conn = mocker.AsyncMock()
+
+    raw_text = "LawCite\nDownload original files\n\nArticle Title\n\nContent here."
+    mock_conn.fetch.return_value = [
+        {
+            "scrubbed_id": fake_scrubbed_id,
+            "extracted_record_id": fake_rec_id,
+            "scrubbed_data": {"formatted_text": raw_text, "title": "Article Title"},
+            "source_url": "https://www.saflii.org/za/journals/PER/2020/1.html",
+            "extracted_data": {},
+            "target_name": "PER",
+        }
+    ]
+
+    mock_conn.transaction = mocker.MagicMock()
+    mock_conn.transaction.return_value.__aenter__ = mocker.AsyncMock()
+    mock_conn.transaction.return_value.__aexit__ = mocker.AsyncMock()
+    mocker.patch("scripts.fix_saflii_journal_records.get_db_connection", return_value=mock_conn)
+
+    # Test dry run (no execute)
+    await fix_journal_records(dry_run=True)
+    assert mock_conn.execute.call_count == 0
+
+    # Test force execute (performs update)
+    await fix_journal_records(force=True)
+    assert mock_conn.execute.call_count == 1
+    call_args = mock_conn.execute.call_args[0]
+    assert "UPDATE scrubbed_records" in call_args[0]
+    updated_data_json = call_args[1]
+    assert "LawCite" not in updated_data_json
+    assert "Download original files" not in updated_data_json
+    assert "Article Title" in updated_data_json
+
+
+def test_format_judge_name():
+    from llm_extractor import format_judge_name
+
+    # Basic casing and acronym preservation
+    assert format_judge_name("MAHLANGA AJ") == "Mahlanga AJ"
+    assert format_judge_name("Mahlanga AJ") == "Mahlanga AJ"
+    assert format_judge_name("NUKU AJ") == "Nuku AJ"
+    assert format_judge_name("MLAMBO DCJ") == "Mlambo DCJ"
+    assert format_judge_name("DAMBUZA J") == "Dambuza J"
+    assert format_judge_name("KOLLAPEN J") == "Kollapen J"
+    assert format_judge_name("DAVIS JP") == "Davis JP"
+    assert format_judge_name("ROGERS AJA") == "Rogers AJA"
+    assert format_judge_name("MOGOENG CJ") == "Mogoeng CJ"
+    assert format_judge_name("CHASKALSON P") == "Chaskalson P"
+    assert format_judge_name("LANGA DP") == "Langa DP"
+    assert format_judge_name("NAVSA JA") == "Navsa JA"
+    assert format_judge_name("MAYA DCJ") == "Maya DCJ"
+
+    # Multi-part names and particles (e.g. Van der Westhuizen, De Villiers)
+    assert format_judge_name("VAN DER WESTHUIZEN J") == "Van der Westhuizen J"
+    assert format_judge_name("DE VILLIERS AJ") == "De Villiers AJ"
+    assert format_judge_name("DU PLESSIS J") == "Du Plessis J"
+
+    # Strip prefixes and parentheticals
+    assert format_judge_name("Justice Cameron J") == "Cameron J"
+    assert format_judge_name("Adv. Smith") == "Smith"
+    assert format_judge_name("Judge President Davis JP") == "Davis JP"
+    assert format_judge_name("NUKU AJ (unanimous)") == "Nuku AJ"
+    assert format_judge_name("MLAMBO DCJ (concurring)") == "Mlambo DCJ"
+
+    # Initials
+    assert format_judge_name("CK MATSHITSE") == "CK Matshitse"
+    assert format_judge_name("C.K. MATSHITSE AJ") == "C.K. Matshitse AJ"
+
+
+def test_normalize_court_name():
+    from llm_extractor import normalize_court_name
+
+    # Direct target code matches
+    assert normalize_court_name("ZACC") == "Constitutional Court of South Africa"
+    assert normalize_court_name("ZASCA") == "Supreme Court of Appeal of South Africa"
+    assert normalize_court_name("ZAGPJHC") == "Gauteng High Court, Johannesburg"
+    assert normalize_court_name("ZAGPPHC") == "Gauteng High Court, Pretoria"
+    assert normalize_court_name("ZAWCHC") == "Western Cape High Court, Cape Town"
+    assert normalize_court_name("ZACAC") == "Competition Appeal Court of South Africa"
+
+    # Full and partial name normalizations
+    assert normalize_court_name("Constitutional Court") == "Constitutional Court of South Africa"
+    assert normalize_court_name("Constitutional Court of South Africa") == "Constitutional Court of South Africa"
+    assert normalize_court_name("Supreme Court of Appeal") == "Supreme Court of Appeal of South Africa"
+    assert normalize_court_name("HIGH COURT OF SOUTH AFRICA, GAUTENG LOCAL DIVISION, JOHANNESBURG") == "Gauteng High Court, Johannesburg"
+    assert normalize_court_name("High Court of South Africa, Gauteng Division, Pretoria") == "Gauteng High Court, Pretoria"
+    assert normalize_court_name("Western Cape High Court") == "Western Cape High Court, Cape Town"
+    assert normalize_court_name("Free State High Court, Bloemfontein") == "Free State High Court, Bloemfontein"
+    assert normalize_court_name("KwaZulu-Natal High Court, Durban") == "KwaZulu-Natal High Court, Durban"
+    assert normalize_court_name("Eastern Cape High Court, Grahamstown") == "Eastern Cape High Court, Grahamstown"
+    assert normalize_court_name("Eastern Cape High Court, Makhanda") == "Eastern Cape High Court, Grahamstown"
+    assert normalize_court_name("Eastern Cape High Court, Port Elizabeth") == "Eastern Cape High Court, Port Elizabeth"
+    assert normalize_court_name("Eastern Cape High Court, Gqeberha") == "Eastern Cape High Court, Port Elizabeth"
+    assert normalize_court_name("Labour Court, Johannesburg") == "Labour Court, Johannesburg"
+    assert normalize_court_name("Labour Appeal Court") == "Labour Appeal Court of South Africa"
+
+    # Fallback to target_name
+    assert normalize_court_name("High Court", target_name="ZAGPJHC") == "Gauteng High Court, Johannesburg"
+    assert normalize_court_name(None, target_name="ZACC") == "Constitutional Court of South Africa"
+
+
+
+
+

@@ -93,14 +93,16 @@ The data extraction and record cleaning pipeline transforms raw scraped document
 * **Step 2: Mandatory Document Section Parsing (`saflii_document_parser.py` ➔ `parsed_records`)**
   * A document section parser is required in Django `extraction_params` (e.g. `"parser": "saflii_document_parser"`).
   * `llm_extractor.py` executes the section parser first in batches (default 250 records/batch) strictly on records in the `"cases"` category (skipping journals, gazettes, and court rolls), splitting raw court documents into structured sections (`header`, `judgment`, `order`, `citations`) while avoiding memory spikes and query timeouts.
+  * **Text Cleaning (`clean_saflii_text`)**: Automatically strips website navigation breadcrumbs (`"LawCite"` and preceding text), SAFLII website UI noise lines (e.g. `"Download original files"`, `"PDF format"`, `"RTF format"`, `"Links to summary"`, `"Heads of argument"`), and excessive blank line runs from headers, full text, and journal articles.
   * **Regex & HTML Parsing**:
-    * **Header**: Isolates court jurisdiction, judges, parties, and dates, stripping website UI noise lines (e.g. `"LawCite"`, `"Download original files"`).
+    * **Header**: Isolates court jurisdiction, judges, parties, and dates using cleaned header text.
     * **Citations & Link Targets**: Uses BeautifulSoup to extract HTML `<a>` link targets into structured URL objects (`[{"text": "...", "url": "..."}]`) and footnote text into `raw_text`.
     * **Judgment vs. Order Split**: Splits text into Judgment Body and Final Order using order header regexes, inline ruling patterns, or judge signature boundaries.
   * **Automated Data Quality & Human Review Flagging**: If any core section (`header`, `judgment`, `order`) is missing (`null_values`), the parent `extracted_record` is automatically updated in PostgreSQL with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`. Clean sections are saved into `parsed_records` (1:1 with `extracted_records`).
 
-* **Step 3: 3-Pass Section-Targeted LLM Context Routing (`llm_extractor.py`)**
-  To prevent local LLM context overflow on long court judgments (50k+ chars), extraction is routed in **3 targeted passes** using isolated schema subsets:
+* **Step 3: Programmatic & 3-Pass Section-Targeted LLM Context Routing (`llm_extractor.py`)**
+  * **Programmatic Non-Case Extraction**: Non-case categories (e.g. `journals`, `gaz`) bypass LLM extraction; their raw content is cleaned with `clean_saflii_text` (stripping LawCite navigation breadcrumbs and UI noise lines) and structured directly into `SafliiJournalGazetteExtraction`.
+  * **3-Pass Court Case Extraction**: To prevent local LLM context overflow on long court judgments (50k+ chars), case extraction is routed in **3 targeted passes** using isolated schema subsets:
   * **Pass 1 (Header Fields 1–8)**: Evaluates `SafliiHeaderData` (`applicant_plaintiff` to `court_location`) using **Header section context only**. If any header field returns null/empty, the record is flagged for human review (`requires_human_review = TRUE`) with missing fields recorded in `review_reason` and skipped, avoiding full-document context overflows.
   * **Pass 2 (Precedents & Citations)**: Evaluates `SafliiPrecedentsData` (`precedents_cited` list of `PrecedentCategory` objects: `case_name_citation`, `treatment`, `reasoning`, `url`) using **Citations section context only**.
     * **Target Matcher Post-Processing**: Compares LLM output against HTML `targets` list, injects exact URLs, and appends missing link targets to guarantee **100% citation target coverage**.

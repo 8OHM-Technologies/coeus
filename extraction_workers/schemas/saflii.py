@@ -52,11 +52,11 @@ class SafliiHeaderData(BaseModel):
     )
     court: Optional[str] = Field(
         None, 
-        description="The court where the case was heard (e.g., Constitutional Court, Supreme Court of Appeal, High Court, Competition Appeal Court)."
+        description="The standardized court where the case was heard (e.g., 'Constitutional Court of South Africa', 'Supreme Court of Appeal of South Africa', 'Gauteng High Court, Johannesburg', 'Western Cape High Court, Cape Town', 'Competition Appeal Court of South Africa', 'Labour Court of South Africa')."
     )
     judges: List[str] = Field(
         default_factory=list, 
-        description="Full list of all presiding judges and justices (including the authoring judge and all concurring coram members, e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J'). Do NOT include parties, applicants, respondents, advocates, or attorneys."
+        description="Full list of all presiding judges and justices in Title Case with uppercase judicial title abbreviations (e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J', 'Nuku AJ', 'Mlambo DCJ', 'Dambuza J', 'Van der Westhuizen J'). Do NOT use all caps (e.g. 'MADLANGA J' is invalid). Do NOT include parties, applicants, respondents, advocates, or attorneys."
     )
     court_location: Optional[str] = Field(
         None, 
@@ -117,11 +117,11 @@ class SafliiExtractedData(BaseModel):
     )
     court: str = Field(
         ..., 
-        description="The court where the case was heard (e.g., Constitutional Court, Supreme Court of Appeal, High Court, Competition Appeal Court)."
+        description="The standardized court where the case was heard (e.g., 'Constitutional Court of South Africa', 'Supreme Court of Appeal of South Africa', 'Gauteng High Court, Johannesburg', 'Western Cape High Court, Cape Town', 'Competition Appeal Court of South Africa', 'Labour Court of South Africa')."
     )
     judges: List[str] = Field(
         ..., 
-        description="Full list of all presiding judges and justices (including the authoring judge and all concurring coram members, e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J'). Do NOT include parties, applicants, respondents, advocates, or attorneys."
+        description="Full list of all presiding judges and justices in Title Case with uppercase judicial title abbreviations (e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J', 'Nuku AJ', 'Mlambo DCJ', 'Dambuza J', 'Van der Westhuizen J'). Do NOT use all caps (e.g. 'MADLANGA J' is invalid). Do NOT include parties, applicants, respondents, advocates, or attorneys."
     )
     court_location: str = Field(
         ..., 

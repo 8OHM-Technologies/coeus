@@ -17,6 +17,54 @@ except ImportError:
     BS4_AVAILABLE = False
 
 
+SAFLII_NOISE_PATTERNS = [
+    r'(?m)^[ \t]*Download\s+original\s+files[ \t]*$',
+    r'(?m)^[ \t]*PDF\s+format[ \t]*$',
+    r'(?m)^[ \t]*RTF\s+format[ \t]*$',
+    r'(?m)^[ \t]*Links\s+to\s+summary[ \t]*$',
+    r'(?m)^[ \t]*Heads\s+of\s+arguments?[ \t]*$',
+]
+
+
+def clean_saflii_text(text: str, collapse_to_single_newline: bool = False) -> str:
+    """
+    Cleans raw SAFLII text (e.g. headers, journal articles, raw documents):
+    1. Strips website navigation breadcrumbs ("LawCite" and everything preceding it).
+    2. Strips SAFLII website UI noise lines (e.g. Download original files, PDF format, RTF format).
+    3. Cleans up excessive blank lines (collapses to single newline for headers or double newline for body paragraphs).
+
+    Args:
+        text (str): Input text to clean.
+        collapse_to_single_newline (bool): If True, collapses runs of blank lines to '\\n'
+            (ideal for headers). If False, normalizes multiple blank lines to '\\n\\n'
+            (ideal for body documents/journals).
+
+    Returns:
+        str: Cleaned text.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+
+    cleaned = text.strip()
+
+    # Strip website navigation breadcrumbs ("LawCite" and everything preceding it)
+    match_lawcite = re.search(r'\bLawCite\b', cleaned, re.IGNORECASE)
+    if match_lawcite:
+        cleaned = cleaned[match_lawcite.end():].strip()
+
+    # Strip SAFLII website UI noise lines individually
+    for pattern in SAFLII_NOISE_PATTERNS:
+        cleaned = re.sub(pattern, '', cleaned)
+
+    # Clean up blank line runs
+    if collapse_to_single_newline:
+        cleaned = re.sub(r'\n\s*\n+', '\n', cleaned).strip()
+    else:
+        cleaned = re.sub(r'\n\s*\n+', '\n\n', cleaned).strip()
+
+    return cleaned
+
+
 def split_saflii_document(text: str, center_content: Optional[str] = None) -> Dict[str, Any]:
     """
     Splits a SAFLII court judgment string into header, judgment, order, and citations.
@@ -72,24 +120,8 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
             header = cleaned_text[:1500].strip()
             body_and_tail = cleaned_text[1500:].strip()
 
-    # Strip website navigation breadcrumbs ("LawCite" and everything preceding it)
-    match_lawcite = re.search(r'\bLawCite\b', header, re.IGNORECASE)
-    if match_lawcite:
-        header = header[match_lawcite.end():].strip()
-
-    # Strip SAFLII website UI noise lines individually
-    strip_noise_patterns = [
-        r'(?m)^[ \t]*Download\s+original\s+files[ \t]*$',
-        r'(?m)^[ \t]*PDF\s+format[ \t]*$',
-        r'(?m)^[ \t]*RTF\s+format[ \t]*$',
-        r'(?m)^[ \t]*Links\s+to\s+summary[ \t]*$',
-        r'(?m)^[ \t]*Heads\s+of\s+arguments?[ \t]*$',
-    ]
-    for pattern in strip_noise_patterns:
-        header = re.sub(pattern, '', header)
-
-    # Clean up blank line runs
-    header = re.sub(r'\n\s*\n+', '\n', header).strip()
+    # Strip website navigation breadcrumbs, UI noise lines, and excess blank lines
+    header = clean_saflii_text(header, collapse_to_single_newline=True)
 
     # =========================================================================
     # 2. APPEARANCES EXTRACTION

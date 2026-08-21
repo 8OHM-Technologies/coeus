@@ -16,7 +16,8 @@ async def test_get_db_connection(monkeypatch, mocker):
     monkeypatch.setenv("POSTGRES_PASSWORD", "test-password")
     monkeypatch.setenv("POSTGRES_DB", "test-database")
 
-    # Mock socket.gethostbyname to prevent DNS lookup failure of test-db-host
+    # Mock running inside Docker
+    mocker.patch("os.path.exists", return_value=True)
     mocker.patch("socket.gethostbyname", return_value="127.0.0.1")
 
     # Mock asyncpg.connect
@@ -53,7 +54,8 @@ async def test_get_db_pool(monkeypatch, mocker):
     monkeypatch.setenv("POSTGRES_PASSWORD", "test-password")
     monkeypatch.setenv("POSTGRES_DB", "test-database")
 
-    # Mock socket.gethostbyname to prevent DNS lookup failure of test-db-host
+    # Mock running inside Docker
+    mocker.patch("os.path.exists", return_value=True)
     mocker.patch("socket.gethostbyname", return_value="127.0.0.1")
 
     # Mock asyncpg.create_pool
@@ -70,3 +72,5 @@ async def test_get_db_pool(monkeypatch, mocker):
         command_timeout=60.0,
     )
     assert pool is not None
+
+

@@ -38,6 +38,7 @@ if __package__ in (None, ""):
 
 from extraction_workers.db import get_db_connection
 from extraction_workers.utils.utils import fetch_pipeline_config
+from extraction_workers.utils.saflii_document_parser import clean_saflii_text
 from extraction_workers.schemas.generic import BaseExtractedRecord, DataQualityFlags
 from extraction_workers.schemas.saflii import (
     SafliiCaseExtraction,
@@ -65,6 +66,268 @@ RSA_ID_REGEX = re.compile(r"\b\d{13}\b")
 PASSPORT_REGEX = re.compile(r"\b[A-Za-z]\d{8}\b")
 # Bank / Tax: sequence of 10 to 16 digits (excludes dates with hyphens, case numbers with slashes)
 BANK_TAX_REGEX = re.compile(r"\b\d{10,16}\b")
+
+# Standardized South African Courts catalog
+SOUTH_AFRICAN_COURT_LIST = [
+    "Constitutional Court of South Africa",
+    "Supreme Court of Appeal of South Africa",
+    "Competition Appeal Court of South Africa",
+    "Electoral Court of South Africa",
+    "Equality Court of South Africa",
+    "Land Claims Court of South Africa",
+    "Tax Court of South Africa",
+    "Labour Appeal Court of South Africa",
+    "Labour Court of South Africa",
+    "Labour Court, Johannesburg",
+    "Labour Court, Cape Town",
+    "Labour Court, Durban",
+    "Labour Court, Port Elizabeth",
+    "Gauteng High Court, Pretoria",
+    "Gauteng High Court, Johannesburg",
+    "Gauteng High Court",
+    "Western Cape High Court, Cape Town",
+    "Eastern Cape High Court, Grahamstown",
+    "Eastern Cape High Court, Port Elizabeth",
+    "Eastern Cape High Court, East London",
+    "Eastern Cape High Court, Bhisho",
+    "Eastern Cape High Court",
+    "Free State High Court, Bloemfontein",
+    "KwaZulu-Natal High Court, Pietermaritzburg",
+    "KwaZulu-Natal High Court, Durban",
+    "KwaZulu-Natal High Court",
+    "Limpopo High Court, Polokwane",
+    "Limpopo High Court, Thohoyandou",
+    "Mpumalanga High Court, Mbombela",
+    "Mpumalanga High Court, Middelburg",
+    "North West High Court, Mahikeng",
+    "Northern Cape High Court, Kimberley",
+    "CCMA Awards",
+]
+
+TARGET_TO_COURT = {
+    "ZACC": "Constitutional Court of South Africa",
+    "ZASCA": "Supreme Court of Appeal of South Africa",
+    "ZACAC": "Competition Appeal Court of South Africa",
+    "ZAECC": "Electoral Court of South Africa",
+    "ZAEQC": "Equality Court of South Africa",
+    "ZALCC": "Land Claims Court of South Africa",
+    "ZATC": "Tax Court of South Africa",
+    "ZALAC": "Labour Appeal Court of South Africa",
+    "ZALC": "Labour Court of South Africa",
+    "ZALCJHB": "Labour Court, Johannesburg",
+    "ZALCCT": "Labour Court, Cape Town",
+    "ZALCD": "Labour Court, Durban",
+    "ZALCPE": "Labour Court, Port Elizabeth",
+    "ZAGPPHC": "Gauteng High Court, Pretoria",
+    "ZAGPJHC": "Gauteng High Court, Johannesburg",
+    "ZAGPHC": "Gauteng High Court",
+    "ZAWCHC": "Western Cape High Court, Cape Town",
+    "ZAECGHC": "Eastern Cape High Court, Grahamstown",
+    "ZAECPEHC": "Eastern Cape High Court, Port Elizabeth",
+    "ZAECELHC": "Eastern Cape High Court, East London",
+    "ZAECBHC": "Eastern Cape High Court, Bhisho",
+    "ZAECHC": "Eastern Cape High Court",
+    "ZAFSHC": "Free State High Court, Bloemfontein",
+    "ZAKZNHC": "KwaZulu-Natal High Court, Pietermaritzburg",
+    "ZAKZPHC": "KwaZulu-Natal High Court, Pietermaritzburg",
+    "ZAKZNDHC": "KwaZulu-Natal High Court, Durban",
+    "ZAKZDHC": "KwaZulu-Natal High Court, Durban",
+    "ZAKZHC": "KwaZulu-Natal High Court",
+    "ZALMPPHC": "Limpopo High Court, Polokwane",
+    "ZALMPTHC": "Limpopo High Court, Thohoyandou",
+    "ZAMPMBHC": "Mpumalanga High Court, Mbombela",
+    "ZAMPMHC": "Mpumalanga High Court, Middelburg",
+    "ZANWHC": "North West High Court, Mahikeng",
+    "ZANCHC": "Northern Cape High Court, Kimberley",
+    "SABINET_CCMA": "CCMA Awards",
+}
+
+
+def normalize_court_name(court_input: str | None, target_name: str | None = None) -> str:
+    """
+    Standardize South African court names into their canonical form.
+    Matches direct target codes (e.g. ZACC), full names, or divisional descriptive phrases.
+    Falls back to target_name mapping when court_input is missing or generic.
+    """
+    if court_input:
+        c_clean = court_input.strip()
+        c_upper = c_clean.upper()
+        c_lower = c_clean.lower()
+
+        # 1. Direct match on Target Code
+        if c_upper in TARGET_TO_COURT:
+            return TARGET_TO_COURT[c_upper]
+
+        # 2. Exact match in canonical list (case-insensitive)
+        for court in SOUTH_AFRICAN_COURT_LIST:
+            if c_lower == court.lower():
+                return court
+
+        # 3. Canonical mapping by key court signatures
+        if "constitutional court" in c_lower:
+            return "Constitutional Court of South Africa"
+        if "supreme court of appeal" in c_lower:
+            return "Supreme Court of Appeal of South Africa"
+        if "competition appeal" in c_lower:
+            return "Competition Appeal Court of South Africa"
+        if "electoral court" in c_lower:
+            return "Electoral Court of South Africa"
+        if "equality court" in c_lower:
+            return "Equality Court of South Africa"
+        if "land claims" in c_lower:
+            return "Land Claims Court of South Africa"
+        if "tax court" in c_lower:
+            return "Tax Court of South Africa"
+        if "labour appeal" in c_lower:
+            return "Labour Appeal Court of South Africa"
+        if "labour court" in c_lower:
+            if "johannesburg" in c_lower:
+                return "Labour Court, Johannesburg"
+            if "cape town" in c_lower:
+                return "Labour Court, Cape Town"
+            if "durban" in c_lower:
+                return "Labour Court, Durban"
+            if "port elizabeth" in c_lower or "gqeberha" in c_lower:
+                return "Labour Court, Port Elizabeth"
+            return "Labour Court of South Africa"
+        if "ccma" in c_lower:
+            return "CCMA Awards"
+
+        # High Court Regional Divisions
+        if "gauteng" in c_lower or "pretoria" in c_lower or "johannesburg" in c_lower:
+            if "pretoria" in c_lower:
+                return "Gauteng High Court, Pretoria"
+            if "johannesburg" in c_lower or "vereeniging" in c_lower:
+                return "Gauteng High Court, Johannesburg"
+            return "Gauteng High Court"
+
+        if "western cape" in c_lower or "cape town" in c_lower:
+            return "Western Cape High Court, Cape Town"
+
+        if "free state" in c_lower or "bloemfontein" in c_lower:
+            return "Free State High Court, Bloemfontein"
+
+        if "kwazulu" in c_lower or "kzn" in c_lower or "natal" in c_lower or "durban" in c_lower or "pietermaritzburg" in c_lower:
+            if "durban" in c_lower:
+                return "KwaZulu-Natal High Court, Durban"
+            if "pietermaritzburg" in c_lower:
+                return "KwaZulu-Natal High Court, Pietermaritzburg"
+            return "KwaZulu-Natal High Court"
+
+        if "eastern cape" in c_lower or "grahamstown" in c_lower or "makhanda" in c_lower or "port elizabeth" in c_lower or "gqeberha" in c_lower or "east london" in c_lower or "bhisho" in c_lower:
+            if "grahamstown" in c_lower or "makhanda" in c_lower:
+                return "Eastern Cape High Court, Grahamstown"
+            if "port elizabeth" in c_lower or "gqeberha" in c_lower:
+                return "Eastern Cape High Court, Port Elizabeth"
+            if "east london" in c_lower:
+                return "Eastern Cape High Court, East London"
+            if "bhisho" in c_lower:
+                return "Eastern Cape High Court, Bhisho"
+            return "Eastern Cape High Court"
+
+        if "limpopo" in c_lower or "polokwane" in c_lower or "thohoyandou" in c_lower:
+            if "thohoyandou" in c_lower:
+                return "Limpopo High Court, Thohoyandou"
+            return "Limpopo High Court, Polokwane"
+
+        if "mpumalanga" in c_lower or "mbombela" in c_lower or "middelburg" in c_lower or "nelspruit" in c_lower:
+            if "middelburg" in c_lower:
+                return "Mpumalanga High Court, Middelburg"
+            return "Mpumalanga High Court, Mbombela"
+
+        if "north west" in c_lower or "mahikeng" in c_lower or "mafikeng" in c_lower:
+            return "North West High Court, Mahikeng"
+
+        if "northern cape" in c_lower or "kimberley" in c_lower:
+            return "Northern Cape High Court, Kimberley"
+
+        # If it was not recognized but has a non-generic name, return as-is
+        if c_clean and c_clean.lower() not in ("high court", "court", "superior court"):
+            return c_clean
+
+    # Fallback to target_name code if available
+    if target_name and target_name.upper() in TARGET_TO_COURT:
+        return TARGET_TO_COURT[target_name.upper()]
+
+    return court_input.strip() if court_input else "High Court"
+
+
+def format_judge_name(raw_name: str) -> str:
+    """
+    Format South African judicial names into standard Title Case while preserving
+    uppercase judicial titles and acronyms (e.g., 'MAHLANGA AJ' -> 'Mahlanga AJ',
+    'NUKU AJ' -> 'Nuku AJ', 'MLAMBO DCJ' -> 'Mlambo DCJ', 'VAN DER WESTHUIZEN J' -> 'Van der Westhuizen J').
+    """
+    if not raw_name or not isinstance(raw_name, str):
+        return ""
+
+    # Clean whitespace and strip outer quotes
+    name = raw_name.strip().strip("\"'").strip()
+
+    # Strip trailing parenthetical notes like (unanimous), (concurring), (written by)
+    name = re.sub(r"\s*\([^)]*\)", "", name).strip()
+
+    # Strip leading honorifics / professional prefixes and judicial titles
+    name = re.sub(
+        r"^(?:(?:Advocate|Adv\.|Mr|Ms|Mrs|Dr|Justice|Judge|Acting|President|Deputy|Chief)\s+)+",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    if not name:
+        return ""
+
+    # Suffixes for South African Judicial Titles:
+    # ACJ: Acting Chief Justice, AJP: Acting Judge President, DJP: Deputy Judge President,
+    # DCJ: Deputy Chief Justice, AJA: Acting Judge of Appeal, CJ: Chief Justice,
+    # JP: Judge President, DP: Deputy President, JA: Judge of Appeal, AJ: Acting Judge,
+    # AP: Acting President, AD: Appellate Division, J: Judge, P: President
+    suffix_pattern = re.compile(
+        r"^(.*?)(?:\s+|\b)(ACJ|AJP|DJP|DCJ|AJA|CJ|JP|DP|JA|AJ|AP|AD|J|P)\.?$",
+        re.IGNORECASE,
+    )
+    suffix_match = suffix_pattern.match(name)
+
+    if suffix_match:
+        base_part = suffix_match.group(1).strip()
+        suffix = suffix_match.group(2).upper()
+    else:
+        base_part = name
+        suffix = ""
+
+    particles = {"van", "der", "de", "du", "von", "ter", "ten", "le", "la", "da", "di"}
+    words = base_part.split()
+    formatted_words = []
+
+    for idx, word in enumerate(words):
+        # Handle dotted initials (e.g. C.K., J.D.)
+        if re.match(r"^(?:[A-Za-z]\.){1,4}$", word):
+            formatted_words.append(word.upper())
+        elif word.lower() in particles:
+            if idx == 0:
+                formatted_words.append(word.capitalize())
+            else:
+                formatted_words.append(word.lower())
+        elif re.match(r"^[A-Z]{2,3}$", word) and word.lower() not in ("and", "the"):
+            if idx == 0 and len(words) > 1 and len(word) <= 2:
+                formatted_words.append(word.upper())
+            else:
+                formatted_words.append(word.capitalize())
+        else:
+            if "-" in word:
+                formatted_words.append("-".join(p.capitalize() for p in word.split("-")))
+            elif "'" in word:
+                parts = word.split("'")
+                formatted_words.append(parts[0].capitalize() + "'" + parts[1].capitalize())
+            else:
+                formatted_words.append(word.capitalize())
+
+    formatted_base = " ".join(formatted_words).strip()
+
+    if suffix:
+        return f"{formatted_base} {suffix}".strip()
+    return formatted_base
 
 
 def get_llm_client() -> OpenAI:
@@ -726,12 +989,14 @@ async def process_records(
             category = get_record_category(record_data, source_url)
             
             if category in ("gaz", "journals"):
-                formatted_text = str(record_data.get("full_text") or record_data.get("center_content") or "").strip()
-                if not formatted_text:
+                raw_text = str(record_data.get("full_text") or record_data.get("center_content") or "").strip()
+                if not raw_text:
                     logger.warning("  [!] Empty content for journal/gazette %s, skipping.", record_id)
                     failure_count += 1
                     failed_ids.append(record_id)
                     continue
+
+                formatted_text = clean_saflii_text(raw_text)
 
                 schema_instance = SafliiJournalGazetteExtraction(
                     title=str(record_data.get("title") or record_data.get("case_name") or "Untitled Document"),
@@ -838,9 +1103,46 @@ async def process_records(
                     header_context = entire_doc_context
 
                 header_instructions = extraction_instructions + (
+                    "\nCOURT NAME EXTRACTION INSTRUCTIONS:\n"
+                    "- You MUST select and output the exact standardized court name from the following recognized South African courts list:\n"
+                    "  * Constitutional Court of South Africa (ZACC)\n"
+                    "  * Supreme Court of Appeal of South Africa (ZASCA)\n"
+                    "  * Competition Appeal Court of South Africa (ZACAC)\n"
+                    "  * Electoral Court of South Africa (ZAECC)\n"
+                    "  * Equality Court of South Africa (ZAEQC)\n"
+                    "  * Land Claims Court of South Africa (ZALCC)\n"
+                    "  * Tax Court of South Africa (ZATC)\n"
+                    "  * Labour Appeal Court of South Africa (ZALAC)\n"
+                    "  * Labour Court of South Africa (ZALC)\n"
+                    "  * Labour Court, Johannesburg (ZALCJHB)\n"
+                    "  * Labour Court, Cape Town (ZALCCT)\n"
+                    "  * Labour Court, Durban (ZALCD)\n"
+                    "  * Labour Court, Port Elizabeth (ZALCPE)\n"
+                    "  * Gauteng High Court, Pretoria (ZAGPPHC)\n"
+                    "  * Gauteng High Court, Johannesburg (ZAGPJHC)\n"
+                    "  * Gauteng High Court (ZAGPHC)\n"
+                    "  * Western Cape High Court, Cape Town (ZAWCHC)\n"
+                    "  * Eastern Cape High Court, Grahamstown (ZAECGHC)\n"
+                    "  * Eastern Cape High Court, Port Elizabeth (ZAECPEHC)\n"
+                    "  * Eastern Cape High Court, East London (ZAECELHC)\n"
+                    "  * Eastern Cape High Court, Bhisho (ZAECBHC)\n"
+                    "  * Eastern Cape High Court (ZAECHC)\n"
+                    "  * Free State High Court, Bloemfontein (ZAFSHC)\n"
+                    "  * KwaZulu-Natal High Court, Pietermaritzburg (ZAKZNHC)\n"
+                    "  * KwaZulu-Natal High Court, Durban (ZAKZNDHC)\n"
+                    "  * KwaZulu-Natal High Court (ZAKZHC)\n"
+                    "  * Limpopo High Court, Polokwane (ZALMPPHC)\n"
+                    "  * Limpopo High Court, Thohoyandou (ZALMPTHC)\n"
+                    "  * Mpumalanga High Court, Mbombela (ZAMPMBHC)\n"
+                    "  * Mpumalanga High Court, Middelburg (ZAMPMHC)\n"
+                    "  * North West High Court, Mahikeng (ZANWHC)\n"
+                    "  * Northern Cape High Court, Kimberley (ZANCHC)\n"
+                    "  * CCMA Awards (sabinet_ccma)\n"
+                    "- Do NOT output shortened or non-standard variations (e.g. use 'Constitutional Court of South Africa' instead of 'Constitutional Court').\n"
                     "\nJUDICIAL BENCH EXTRACTION INSTRUCTIONS:\n"
                     "- Extract ALL presiding judges and justices from the Header, Coram, or Judgment Intro (e.g., 'Davis JP', 'Cameron J', 'Chaskalson P', 'Langa DP', 'Moseneke DCJ', 'Rogers AJA', 'Froneman J', 'Madlanga J', 'Jafta J', 'Khampepe J', 'Mogoeng CJ', 'Zondo J').\n"
                     "- Include the authoring judge/justices as well as all concurring members of the court.\n"
+                    "- Use Title Case for surnames and uppercase abbreviations for judicial titles (e.g., 'Madlanga J', 'Nuku AJ', 'Mlambo DCJ', 'Dambuza J', 'Van der Westhuizen J'). Do NOT output all caps (e.g. 'MADLANGA J' is invalid).\n"
                     "- Do NOT extract names of litigants (applicants/respondents), attorneys, advocates, or registrars as judges."
                 )
                 header_prompt = build_system_prompt(SafliiHeaderData, header_instructions)
@@ -951,10 +1253,9 @@ async def process_records(
                     raw_result["judgment_date"] = raw_result.get("hearing_date") or date.today().isoformat()
                 if raw_result.get("reportable") is None:
                     raw_result["reportable"] = False
-                if not raw_result.get("court"):
-                    raw_result["court"] = "High Court"
+                raw_result["court"] = normalize_court_name(raw_result.get("court"), db_target_name)
                 
-                # Sanitize and clean extracted judges list
+                # Sanitize, clean, and format extracted judges list
                 raw_judges = raw_result.get("judges") or []
                 if not isinstance(raw_judges, list):
                     raw_judges = [str(raw_judges)]
@@ -966,14 +1267,16 @@ async def process_records(
                 for j in raw_judges:
                     if not j or not isinstance(j, str):
                         continue
-                    j_str = j.strip().strip("\"'").strip()
-                    j_lower = j_str.lower()
-                    if any(ind in j_lower for ind in invalid_judge_indicators):
-                        continue
-                    # Strip leading professional/honorific prefixes
-                    j_str = re.sub(r'^(?:Advocate|Adv\.|Mr|Ms|Mrs|Dr|Justice)\s+', '', j_str, flags=re.IGNORECASE).strip()
-                    if len(j_str) >= 2 and j_str not in cleaned_judges:
-                        cleaned_judges.append(j_str)
+                    # Split if multiple judges are contained in a single comma or 'and' delimited string
+                    sub_judges = re.split(r",\s*(?=[A-Za-z])|\s+and\s+", j) if ("," in j or " and " in j) else [j]
+                    for sub_j in sub_judges:
+                        sub_j_str = sub_j.strip().strip("\"'").strip()
+                        sub_j_lower = sub_j_str.lower()
+                        if any(ind in sub_j_lower for ind in invalid_judge_indicators):
+                            continue
+                        formatted_j = format_judge_name(sub_j_str)
+                        if len(formatted_j) >= 2 and formatted_j not in cleaned_judges:
+                            cleaned_judges.append(formatted_j)
                 raw_result["judges"] = cleaned_judges
 
                 if not raw_result.get("court_location"):
@@ -994,6 +1297,14 @@ async def process_records(
                 # 4. Standard single-pass extraction
                 current_system_prompt = build_system_prompt(current_schema_cls, extraction_instructions)
                 raw_result = call_ollama(client, ai_model, current_system_prompt, doc_text, current_schema_cls)
+                if isinstance(raw_result, dict):
+                    if "court" in raw_result:
+                        raw_result["court"] = normalize_court_name(raw_result.get("court"), db_target_name)
+                    if "judges" in raw_result and isinstance(raw_result["judges"], list):
+                        raw_result["judges"] = [
+                            format_judge_name(j) for j in raw_result["judges"]
+                            if isinstance(j, str) and len(format_judge_name(j)) >= 2
+                        ]
 
             if raw_result is None:
                 logger.error("  [!] LLM returned no result for record: %s", record_id)

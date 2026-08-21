@@ -1,4 +1,5 @@
 import os
+import asyncio
 import asyncpg
 from dotenv import load_dotenv
 
@@ -42,6 +43,15 @@ def resolve_db_host(host: str | None) -> str:
         return "localhost"
 
 
+def is_port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    """Checks if a TCP port is actively reachable."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (OSError, TimeoutError):
+        return False
+
+
 async def get_db_connection() -> asyncpg.Connection:
     """
     Establishes an asynchronous connection to the PostgreSQL instance via the proxy.
@@ -56,26 +66,14 @@ async def get_db_connection() -> asyncpg.Connection:
     if not all([raw_host, db_user, db_pass, db_name]):
         raise ValueError("Database environment variables are not fully set.")
 
-    try:
-        return await asyncpg.connect(
-            host=db_host,
-            user=db_user,
-            password=db_pass,
-            database=db_name,
-            port=db_port,
-            command_timeout=60.0,
-        )
-    except (OSError, asyncpg.CannotConnectNowError):
-        if db_host in ("localhost", "127.0.0.1") and db_port == 5432:
-            return await asyncpg.connect(
-                host=db_host,
-                user=db_user,
-                password=db_pass,
-                database=db_name,
-                port=5433,
-                command_timeout=60.0,
-            )
-        raise
+    return await asyncpg.connect(
+        host=db_host,
+        user=db_user,
+        password=db_pass,
+        database=db_name,
+        port=db_port,
+        command_timeout=60.0,
+    )
 
 
 async def get_db_pool():
@@ -89,25 +87,13 @@ async def get_db_pool():
     db_name = clean_env_var(os.environ.get("POSTGRES_DB"))
     db_port = int(clean_env_var(os.environ.get("POSTGRES_PORT") or "5432"))
 
-    try:
-        return await asyncpg.create_pool(
-            host=db_host,
-            user=db_user,
-            password=db_pass,
-            database=db_name,
-            port=db_port,
-            command_timeout=60.0,
-        )
-    except (OSError, asyncpg.CannotConnectNowError):
-        if db_host in ("localhost", "127.0.0.1") and db_port == 5432:
-            return await asyncpg.create_pool(
-                host=db_host,
-                user=db_user,
-                password=db_pass,
-                database=db_name,
-                port=5433,
-                command_timeout=60.0,
-            )
-        raise
+    return await asyncpg.create_pool(
+        host=db_host,
+        user=db_user,
+        password=db_pass,
+        database=db_name,
+        port=db_port,
+        command_timeout=60.0,
+    )
 
 
