@@ -256,6 +256,7 @@ def format_judge_name(raw_name: str) -> str:
     """
     Format South African judicial names into standard Title Case while preserving
     uppercase judicial titles and acronyms (e.g., 'MAHLANGA AJ' -> 'Mahlanga AJ',
+    'DAMBUZA, AJA' -> 'Dambuza AJA', 'DAVIS, JP' -> 'Davis JP',
     'NUKU AJ' -> 'Nuku AJ', 'MLAMBO DCJ' -> 'Mlambo DCJ', 'VAN DER WESTHUIZEN J' -> 'Van der Westhuizen J').
     """
     if not raw_name or not isinstance(raw_name, str):
@@ -278,13 +279,24 @@ def format_judge_name(raw_name: str) -> str:
     if not name:
         return ""
 
+    # Normalize comma before judicial title (e.g. 'DAMBUZA, AJA' -> 'DAMBUZA AJA')
+    title_pattern_str = r"(?:ACJ|AJP|DJP|DCJ|AJA|CJ|JP|DP|JA|AJ|AP|AD|J|P)"
+    name = re.sub(
+        rf",\s*(?={title_pattern_str}\.?(?:\s|$|,|\)))",
+        " ",
+        name,
+        flags=re.IGNORECASE,
+    )
+    # Remove any remaining stray commas
+    name = name.replace(",", " ").strip()
+
     # Suffixes for South African Judicial Titles:
     # ACJ: Acting Chief Justice, AJP: Acting Judge President, DJP: Deputy Judge President,
     # DCJ: Deputy Chief Justice, AJA: Acting Judge of Appeal, CJ: Chief Justice,
     # JP: Judge President, DP: Deputy President, JA: Judge of Appeal, AJ: Acting Judge,
     # AP: Acting President, AD: Appellate Division, J: Judge, P: President
     suffix_pattern = re.compile(
-        r"^(.*?)(?:\s+|\b)(ACJ|AJP|DJP|DCJ|AJA|CJ|JP|DP|JA|AJ|AP|AD|J|P)\.?$",
+        rf"^(.*?)(?:\s+|\b)({title_pattern_str})\.?$",
         re.IGNORECASE,
     )
     suffix_match = suffix_pattern.match(name)
@@ -292,6 +304,9 @@ def format_judge_name(raw_name: str) -> str:
     if suffix_match:
         base_part = suffix_match.group(1).strip()
         suffix = suffix_match.group(2).upper()
+        # If there is no base name (e.g. input was just "AJA" or "J"), do not treat title as full name
+        if not base_part:
+            return ""
     else:
         base_part = name
         suffix = ""
@@ -325,9 +340,62 @@ def format_judge_name(raw_name: str) -> str:
 
     formatted_base = " ".join(formatted_words).strip()
 
+    if not formatted_base:
+        return ""
+
     if suffix:
         return f"{formatted_base} {suffix}".strip()
     return formatted_base
+
+
+def sanitize_and_format_judges(raw_judges: list | str) -> list[str]:
+    """
+    Sanitize, split, filter out placeholders, and format judicial names.
+    Prevents splitting 'DAMBUZA, AJA' into ['Dambuza', 'AJA'] while properly splitting
+    distinct judges in composite strings (e.g., 'DAVIS JP, DAMBUZA AJA and PATEL JA').
+    """
+    if not raw_judges:
+        return []
+    if not isinstance(raw_judges, list):
+        raw_judges = [str(raw_judges)]
+
+    cleaned_judges = []
+    invalid_judge_indicators = [
+        "[not", "not explicitly", "not stated", "not specified", "unspecified",
+        "unknown", "n/a", "none", "cct", "case no", "applicant", "respondent"
+    ]
+
+    title_pattern = r"(?:ACJ|AJP|DJP|DCJ|AJA|CJ|JP|DP|JA|AJ|AP|AD|J|P)"
+
+    for j in raw_judges:
+        if not j or not isinstance(j, str):
+            continue
+
+        j_clean = j.strip().strip("\"'").strip()
+        if not j_clean:
+            continue
+
+        # Convert comma before judicial title suffix (e.g. 'DAMBUZA, AJA' -> 'DAMBUZA AJA')
+        j_preprocessed = re.sub(
+            rf",\s*(?={title_pattern}\.?(?:\s|$|,|\)))",
+            " ",
+            j_clean,
+            flags=re.IGNORECASE,
+        )
+
+        # Split multiple judges if separated by comma or 'and'/'&'
+        sub_judges = re.split(r",\s*(?=[A-Za-z])|\s+(?:and|&)\s+", j_preprocessed)
+
+        for sub_j in sub_judges:
+            sub_j_str = sub_j.strip().strip("\"'").strip()
+            sub_j_lower = sub_j_str.lower()
+            if not sub_j_str or any(ind in sub_j_lower for ind in invalid_judge_indicators):
+                continue
+            formatted_j = format_judge_name(sub_j_str)
+            if len(formatted_j) >= 2 and formatted_j not in cleaned_judges:
+                cleaned_judges.append(formatted_j)
+
+    return cleaned_judges
 
 
 def get_llm_client() -> OpenAI:
@@ -1256,28 +1324,7 @@ async def process_records(
                 raw_result["court"] = normalize_court_name(raw_result.get("court"), db_target_name)
                 
                 # Sanitize, clean, and format extracted judges list
-                raw_judges = raw_result.get("judges") or []
-                if not isinstance(raw_judges, list):
-                    raw_judges = [str(raw_judges)]
-                cleaned_judges = []
-                invalid_judge_indicators = [
-                    "[not", "not explicitly", "not stated", "not specified", "unspecified",
-                    "unknown", "n/a", "none", "cct", "case no", "applicant", "respondent"
-                ]
-                for j in raw_judges:
-                    if not j or not isinstance(j, str):
-                        continue
-                    # Split if multiple judges are contained in a single comma or 'and' delimited string
-                    sub_judges = re.split(r",\s*(?=[A-Za-z])|\s+and\s+", j) if ("," in j or " and " in j) else [j]
-                    for sub_j in sub_judges:
-                        sub_j_str = sub_j.strip().strip("\"'").strip()
-                        sub_j_lower = sub_j_str.lower()
-                        if any(ind in sub_j_lower for ind in invalid_judge_indicators):
-                            continue
-                        formatted_j = format_judge_name(sub_j_str)
-                        if len(formatted_j) >= 2 and formatted_j not in cleaned_judges:
-                            cleaned_judges.append(formatted_j)
-                raw_result["judges"] = cleaned_judges
+                raw_result["judges"] = sanitize_and_format_judges(raw_result.get("judges") or [])
 
                 if not raw_result.get("court_location"):
                     raw_result["court_location"] = "South Africa"
@@ -1300,11 +1347,8 @@ async def process_records(
                 if isinstance(raw_result, dict):
                     if "court" in raw_result:
                         raw_result["court"] = normalize_court_name(raw_result.get("court"), db_target_name)
-                    if "judges" in raw_result and isinstance(raw_result["judges"], list):
-                        raw_result["judges"] = [
-                            format_judge_name(j) for j in raw_result["judges"]
-                            if isinstance(j, str) and len(format_judge_name(j)) >= 2
-                        ]
+                    if "judges" in raw_result:
+                        raw_result["judges"] = sanitize_and_format_judges(raw_result.get("judges") or [])
 
             if raw_result is None:
                 logger.error("  [!] LLM returned no result for record: %s", record_id)

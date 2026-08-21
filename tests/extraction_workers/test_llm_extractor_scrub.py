@@ -242,9 +242,41 @@ def test_format_judge_name():
     assert format_judge_name("NUKU AJ (unanimous)") == "Nuku AJ"
     assert format_judge_name("MLAMBO DCJ (concurring)") == "Mlambo DCJ"
 
+    # Comma before title suffix
+    assert format_judge_name("DAMBUZA, AJA") == "Dambuza AJA"
+    assert format_judge_name("DAVIS, JP") == "Davis JP"
+    assert format_judge_name("CAMERON, J") == "Cameron J"
+    assert format_judge_name("NUKU, AJ") == "Nuku AJ"
+    assert format_judge_name("VAN DER WESTHUIZEN, J") == "Van der Westhuizen J"
+
+    # Reject standalone title with no name base
+    assert format_judge_name("AJA") == ""
+    assert format_judge_name("JP") == ""
+    assert format_judge_name("J") == ""
+
     # Initials
     assert format_judge_name("CK MATSHITSE") == "CK Matshitse"
     assert format_judge_name("C.K. MATSHITSE AJ") == "C.K. Matshitse AJ"
+
+
+def test_sanitize_and_format_judges():
+    from llm_extractor import sanitize_and_format_judges
+
+    # Single judge with comma before title
+    assert sanitize_and_format_judges(["DAMBUZA, AJA"]) == ["Dambuza AJA"]
+    assert sanitize_and_format_judges(["DAVIS, JP"]) == ["Davis JP"]
+    assert sanitize_and_format_judges(["SELIKOWITZ J"]) == ["Selikowitz J"]
+
+    # Composite string with multiple judges
+    assert sanitize_and_format_judges(["DAVIS, JP, DAMBUZA, AJA and PATEL, JA"]) == [
+        "Davis JP", "Dambuza AJA", "Patel JA"
+    ]
+    assert sanitize_and_format_judges(["MAHLANGA AJ", "NUKU AJ (concurring)", "MLAMBO DCJ"]) == [
+        "Mahlanga AJ", "Nuku AJ", "Mlambo DCJ"
+    ]
+
+    # Filtering out placeholders / noise
+    assert sanitize_and_format_judges(["[not stated]", "unknown", "CAMERON J"]) == ["Cameron J"]
 
 
 def test_normalize_court_name():
@@ -277,6 +309,72 @@ def test_normalize_court_name():
     # Fallback to target_name
     assert normalize_court_name("High Court", target_name="ZAGPJHC") == "Gauteng High Court, Johannesburg"
     assert normalize_court_name(None, target_name="ZACC") == "Constitutional Court of South Africa"
+
+
+@pytest.mark.asyncio
+async def test_fix_saflii_case_records(mocker):
+    import json
+    import uuid
+    from scripts.fix_saflii_case_records import fix_case_records
+
+    fake_scrubbed_id = uuid.uuid4()
+    fake_rec_id = uuid.uuid4()
+    mock_conn = mocker.AsyncMock()
+
+    raw_case_data = {
+        "metadata": {
+            "entity_name": "South African Courts",
+            "target_name": "ZACC",
+            "document_date": "2026-07-27",
+            "record_type": "saflii_courts",
+        },
+        "title": "Tshabangu v S",
+        "extracted_data": {
+            "court": "Constitutional Court",
+            "judges": ["MAHLANGA AJ", "NUKU AJ (concurring)", "MLAMBO DCJ"],
+            "applicant_plaintiff": "Goodman Tshabangu",
+            "respondent_defendant": ["The State"],
+            "hearing_date": "2026-07-27",
+            "judgment_date": "2026-07-27",
+            "reportable": False,
+            "court_location": "South Africa",
+            "ratio_decidendi": "Ratio here.",
+            "obiter_dicta": "No notable obiter dicta.",
+            "order": "Order here.",
+            "summary": "Summary here.",
+            "keywords": ["Criminal Procedure"],
+            "precedents_cited": [],
+        },
+    }
+
+    mock_conn.fetch.return_value = [
+        {
+            "scrubbed_id": fake_scrubbed_id,
+            "extracted_record_id": fake_rec_id,
+            "scrubbed_data": raw_case_data,
+            "source_url": "https://www.saflii.org/za/cases/ZACC/2026/32.html",
+            "target_name": "ZACC",
+        }
+    ]
+
+    mock_conn.transaction = mocker.MagicMock()
+    mock_conn.transaction.return_value.__aenter__ = mocker.AsyncMock()
+    mock_conn.transaction.return_value.__aexit__ = mocker.AsyncMock()
+    mocker.patch("scripts.fix_saflii_case_records.get_db_connection", return_value=mock_conn)
+
+    # Test dry run (no execute)
+    await fix_case_records(dry_run=True)
+    assert mock_conn.execute.call_count == 0
+
+    # Test force execute (performs update)
+    await fix_case_records(force=True)
+    assert mock_conn.execute.call_count == 1
+    call_args = mock_conn.execute.call_args[0]
+    assert "UPDATE scrubbed_records" in call_args[0]
+    updated_data = json.loads(call_args[1])
+    assert updated_data["extracted_data"]["court"] == "Constitutional Court of South Africa"
+    assert updated_data["extracted_data"]["judges"] == ["Mahlanga AJ", "Nuku AJ", "Mlambo DCJ"]
+
 
 
 

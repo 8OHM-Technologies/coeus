@@ -108,8 +108,9 @@ The data extraction and record cleaning pipeline transforms raw scraped document
     * **Target Matcher Post-Processing**: Compares LLM output against HTML `targets` list, injects exact URLs, and appends missing link targets to guarantee **100% citation target coverage**.
   * **Pass 3 (Judgment Body Fields 9–14)**: Evaluates `SafliiBodyData` (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) using **Judgment + Order section context**.
 
-* **Step 4: Payload Merging & System Metadata Wrapping**
-  * Combines sub-results, applies fallback defaults for missing optional text fields, validates against `SafliiExtractedData`, and programmatically attaches system `BaseExtractedRecord` metadata (`entity_name`, `target_name`, `document_date`, `record_type`, `case_number`).
+* **Step 4: Payload Merging, Standardization & System Metadata Wrapping**
+  * Combines sub-results, applies fallback defaults for missing optional text fields, and standardizes court names (`normalize_court_name`) to canonical South African court names and formats judge names (`format_judge_name`) to Title Case with uppercase judicial title acronyms.
+  * Validates against `SafliiExtractedData` and programmatically attaches system `BaseExtractedRecord` metadata (`entity_name`, `target_name`, `document_date`, `record_type`, `case_number`).
 
 * **Step 5: Compliance PII Scrubbing (`pii_scrub.py`)**
   * Recursively scrubs sensitive South African personal identifiers using regex patterns:
@@ -121,9 +122,11 @@ The data extraction and record cleaning pipeline transforms raw scraped document
   * Upserts the cleaned, scrubbed, and validated JSON payload into `scrubbed_records` (JSONB `data` column, with `created_at` and `updated_at`).
   * Updates `extracted_records.scrubbed_at = NOW()` and `extracted_records.updated_at = NOW()`, marking the record processing lifecycle as complete.
 
-### **8. DuckDB Data Analysis Tool (`scripts/analyze_duckdb.py`)**
-* **In-Memory Analytics Engine**: Uses DuckDB's native PostgreSQL scanner extension to perform high-performance analytical queries, JSON payload extraction, and full-text searches directly on the `coeus` database.
-* **CLI & Interactive Features**: Includes `--summary` reports, `--search-heading` text searches, custom `--query` execution, interactive REPL (`--interactive`), and export options to CSV, Parquet, or JSON formats.
+### **8. Pipeline Maintenance & Normalization Scripts**
+* **Case Records Court & Judge Normalizer** (`scripts/fix_saflii_case_records.py`): Standardizes existing court names and Title Case judge name formatting across `scrubbed_records`.
+* **Journal Records Cleaner** (`scripts/fix_saflii_journal_records.py`): Strips website navigation breadcrumbs and UI noise lines from existing journal entries in `scrubbed_records`.
+* **Case Reset Tool** (`scripts/reset_saflii_cases.py`): Resets case extraction states across database tables to re-trigger parsing and multi-pass extraction.
+* **DuckDB Data Analysis Tool** (`scripts/analyze_duckdb.py`): In-memory analytical engine and interactive REPL over `coeus` PostgreSQL data.
 
 ---
 

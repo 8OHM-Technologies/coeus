@@ -357,6 +357,19 @@ The extractor dynamically resolves the schema class from the `schemas` package b
   python scripts/fix_saflii_journal_records.py --force
   ```
 
+- **Case Records Court & Judge Normalizer Utility** ([`scripts/fix_saflii_case_records.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_case_records.py)):
+  Standardizes court names (to canonical names) and formats judge names (to Title Case with uppercase judicial title acronyms) across existing case entries in `scrubbed_records`:
+  ```bash
+  # Preview case records to normalize without modifying data:
+  python scripts/fix_saflii_case_records.py --dry-run
+
+  # Normalize and update case entries:
+  python scripts/fix_saflii_case_records.py --force
+
+  # Target specific court (e.g. ZACC, ZASCA, ZAGPJHC):
+  python scripts/fix_saflii_case_records.py --target ZACC --force
+  ```
+
 ---
 
 > [!TIP]
