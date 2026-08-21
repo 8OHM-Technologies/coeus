@@ -149,6 +149,17 @@ def normalize_court_name(court_input: str | None, target_name: str | None = None
     Matches direct target codes (e.g. ZACC), full names, or divisional descriptive phrases.
     Falls back to target_name mapping when court_input is missing or generic.
     """
+    generic_court_phrases = {
+        "court",
+        "high court",
+        "superior court",
+        "court of south africa",
+        "the court of south africa",
+        "superior court of south africa",
+        "the supreme court",
+        "supreme court",
+    }
+
     if court_input:
         c_clean = court_input.strip()
         c_upper = c_clean.upper()
@@ -241,8 +252,18 @@ def normalize_court_name(court_input: str | None, target_name: str | None = None
         if "northern cape" in c_lower or "kimberley" in c_lower:
             return "Northern Cape High Court, Kimberley"
 
+        # Truncated or generic court mentions (e.g. "COURT OF SOUTH AFRICA")
+        if c_lower in generic_court_phrases:
+            if target_name and target_name.upper() in TARGET_TO_COURT:
+                return TARGET_TO_COURT[target_name.upper()]
+            if c_lower in ("court of south africa", "the court of south africa"):
+                return "Constitutional Court of South Africa"
+            if c_lower in ("supreme court", "the supreme court"):
+                return "Supreme Court of Appeal of South Africa"
+            return "High Court"
+
         # If it was not recognized but has a non-generic name, return as-is
-        if c_clean and c_clean.lower() not in ("high court", "court", "superior court"):
+        if c_clean and c_lower not in generic_court_phrases:
             return c_clean
 
     # Fallback to target_name code if available

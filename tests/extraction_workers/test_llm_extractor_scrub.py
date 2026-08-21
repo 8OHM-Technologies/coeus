@@ -306,7 +306,11 @@ def test_normalize_court_name():
     assert normalize_court_name("Labour Court, Johannesburg") == "Labour Court, Johannesburg"
     assert normalize_court_name("Labour Appeal Court") == "Labour Appeal Court of South Africa"
 
-    # Fallback to target_name
+    # Fallback to target_name and generic/truncated court phrases
+    assert normalize_court_name("COURT OF SOUTH AFRICA") == "Constitutional Court of South Africa"
+    assert normalize_court_name("THE COURT OF SOUTH AFRICA") == "Constitutional Court of South Africa"
+    assert normalize_court_name("COURT OF SOUTH AFRICA", target_name="ZACC") == "Constitutional Court of South Africa"
+    assert normalize_court_name("COURT OF SOUTH AFRICA", target_name="ZASCA") == "Supreme Court of Appeal of South Africa"
     assert normalize_court_name("High Court", target_name="ZAGPJHC") == "Gauteng High Court, Johannesburg"
     assert normalize_court_name(None, target_name="ZACC") == "Constitutional Court of South Africa"
 
