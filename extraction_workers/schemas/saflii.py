@@ -11,21 +11,41 @@ from .generic import BaseExtractedRecord, DataQualityFlags
 
 
 class PrecedentCategory(BaseModel):
-    case_name_citation: str = Field(
+    raw_citation: str = Field(
         ...,
-        description="The full name and citation of the past case referenced."
+        description="The full name and citation of the past case referenced in the footnote."
+    )
+    case_name: Optional[str] = Field(
+        None,
+        description="The names of the parties involved / style of cause (e.g. 'VVC v JRM and Others')."
+    )
+    case_number: Optional[str] = Field(
+        None,
+        description="The court's internal file management number (e.g. 'CCT202/24' or 'CCT 25/24; CCT 27/24')."
+    )
+    neutral_citation: Optional[str] = Field(
+        None,
+        description="The official electronic medium-neutral citation (e.g. '[2026] ZACC 2')."
+    )
+    commercial_citations: List[str] = Field(
+        default_factory=list,
+        description="List of printed commercial law report citations (e.g. ['2026 (3) BCLR 234 (CC)', '2026 (3) SA 1 (CC)']).",
+    )
+    decision_date: Optional[date] = Field(
+        None,
+        description="The date the cited judgment was officially delivered (YYYY-MM-DD)."
     )
     treatment: str = Field(
         ...,
-        description="How the court treated this case. Must be either 'Applied/Followed' or 'Distinguished/Overruled'."
+        description="How the court treated this case. Must be either 'Applied/Followed', 'Distinguished/Overruled', or 'Referred'."
     )
     reasoning: str = Field(
         ...,
         description="A brief explanation of why the court applied or distinguished this specific precedent."
     )
-    url: str = Field(
-        ...,    
-        description="URL pointing to the full text or HTML of the precedent."
+    url: Optional[str] = Field(
+        None,    
+        description="URL pointing to the full text or LawCite/SAFLII entry of the precedent."
     )
 
 
@@ -67,7 +87,7 @@ class SafliiHeaderData(BaseModel):
 class SafliiPrecedentsData(BaseModel):
     precedents_cited: List[PrecedentCategory] = Field(
         default_factory=list,
-        description="A list of key past cases referenced by the court, categorized by how the court treated or distinguished them."
+        description="A list of key past cases and precedents referenced in the footnotes, categorized by how the court treated or distinguished them."
     )
 
 
@@ -133,7 +153,7 @@ class SafliiExtractedData(BaseModel):
     )
     precedents_cited: List[PrecedentCategory] = Field(
         ...,
-        description="A list of key past cases referenced by the court, categorized by how the court treated or distinguished them."
+        description="A list of key past cases and precedents referenced in the footnotes, categorized by how the court treated or distinguished them."
     )
     obiter_dicta: str = Field(
         ...,

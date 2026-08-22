@@ -39,6 +39,7 @@ if __package__ in (None, ""):
 from extraction_workers.db import get_db_connection
 from extraction_workers.utils.utils import fetch_pipeline_config
 from extraction_workers.utils.saflii_document_parser import clean_saflii_text
+from extraction_workers.utils.citation_parser import parse_legal_citation_string
 from extraction_workers.schemas.generic import BaseExtractedRecord, DataQualityFlags
 from extraction_workers.schemas.saflii import (
     SafliiCaseExtraction,
@@ -1153,10 +1154,10 @@ async def process_records(
                 judgment_text = (parsed_data.get("judgment") or "").strip()
                 order_text = (parsed_data.get("order") or "").strip()
                 appearances_text = (parsed_data.get("appearances") or "").strip()
-                raw_citations = parsed_data.get("citations")
+                raw_footnotes = parsed_data.get("footnotes") or parsed_data.get("citations")
                 targets_list = []
-                if isinstance(raw_citations, dict):
-                    targets = raw_citations.get("targets") or []
+                if isinstance(raw_footnotes, dict):
+                    targets = raw_footnotes.get("targets") or []
                     targets_list = [t for t in targets if isinstance(t, dict)]
                     targets_formatted = []
                     for t in targets_list:
@@ -1164,16 +1165,16 @@ async def process_records(
                         text = t.get("text") or ""
                         targets_formatted.append(f"- Text: {text} | URL: {url}")
                     
-                    raw_text = raw_citations.get("raw_text") or ""
-                    citations_text = "CITATION TARGETS:\n" + ("\n".join(targets_formatted) if targets_formatted else "None") + "\n\nRAW CITATION TEXT:\n" + str(raw_text)
-                elif isinstance(raw_citations, list):
-                    citations_text = "\n".join(str(c) for c in raw_citations if c).strip()
-                elif isinstance(raw_citations, str):
-                    citations_text = raw_citations.strip()
+                    raw_text = raw_footnotes.get("raw_text") or ""
+                    footnotes_text = "FOOTNOTE / CITATION TARGETS:\n" + ("\n".join(targets_formatted) if targets_formatted else "None") + "\n\nRAW FOOTNOTE TEXT:\n" + str(raw_text)
+                elif isinstance(raw_footnotes, list):
+                    footnotes_text = "\n".join(str(c) for c in raw_footnotes if c).strip()
+                elif isinstance(raw_footnotes, str):
+                    footnotes_text = raw_footnotes.strip()
                 else:
-                    citations_text = ""
+                    footnotes_text = ""
 
-                entire_doc_context = f"{header_text}\n\n=== JUDGMENT ===\n{judgment_text}\n\n=== ORDER ===\n{order_text}\n\n=== CITATIONS ===\n{citations_text}".strip()
+                entire_doc_context = f"{header_text}\n\n=== JUDGMENT ===\n{judgment_text}\n\n=== ORDER ===\n{order_text}\n\n=== FOOTNOTES ===\n{footnotes_text}".strip()
                 if not entire_doc_context:
                     entire_doc_context = doc_text
 
@@ -1257,11 +1258,11 @@ async def process_records(
                     failed_ids.append(record_id)
                     continue
 
-                # Pass 2: precedents_cited using ONLY Citations section context
-                citations_context = citations_text if citations_text else entire_doc_context
-                precedents_instructions = extraction_instructions + "\nExtract EVERY citation target provided in the CITATION TARGETS list into precedents_cited, matching each target's exact URL and text."
+                # Pass 2: precedents_cited using Footnotes section context
+                footnotes_context = footnotes_text if footnotes_text else entire_doc_context
+                precedents_instructions = extraction_instructions + "\nExtract EVERY footnote and citation target provided in the FOOTNOTE / CITATION TARGETS list into precedents_cited, matching each target's exact URL, raw citation string, and structured breakdown."
                 precedents_prompt = build_system_prompt(SafliiPrecedentsData, precedents_instructions)
-                precedents_res = call_ollama(client, ai_model, precedents_prompt, citations_context, SafliiPrecedentsData) or {}
+                precedents_res = call_ollama(client, ai_model, precedents_prompt, footnotes_context, SafliiPrecedentsData) or {}
 
                 extracted_precedents = precedents_res.get("precedents_cited") or []
                 if not isinstance(extracted_precedents, list):
@@ -1270,28 +1271,41 @@ async def process_records(
                 cleaned_precedents = []
                 for p in extracted_precedents:
                     if isinstance(p, dict):
-                        name = p.get("case_name_citation") or p.get("precedent_name") or ""
+                        raw_cit = p.get("raw_citation") or p.get("case_name_citation") or p.get("precedent_name") or ""
+                        parsed_struct = parse_legal_citation_string(raw_cit)
+                        
+                        case_name = p.get("case_name") or parsed_struct.get("case_name")
+                        case_number = p.get("case_number") or parsed_struct.get("case_number")
+                        neutral_citation = p.get("neutral_citation") or parsed_struct.get("neutral_citation")
+                        commercial_citations = p.get("commercial_citations") or parsed_struct.get("commercial_citations") or []
+                        decision_date = p.get("decision_date") or parsed_struct.get("decision_date")
+                        
                         treatment = p.get("treatment") or "Referred"
-                        reasoning = p.get("reasoning") or p.get("relevance_summary") or f"Cited in judgment ({name})."
+                        reasoning = p.get("reasoning") or p.get("relevance_summary") or f"Cited in judgment ({raw_cit or 'precedent'})."
                         url = (p.get("url") or "").strip()
 
                         if not url and targets_list:
                             for t in targets_list:
                                 t_text = (t.get("text") or "").lower()
                                 t_url = (t.get("url") or "").strip()
-                                if t_text and (t_text in name.lower() or name.lower() in t_text):
+                                if t_text and (t_text in raw_cit.lower() or raw_cit.lower() in t_text):
                                     url = t_url
                                     break
 
                         cleaned_precedents.append({
-                            "case_name_citation": name if name else "Unspecified Citation",
+                            "raw_citation": raw_cit if raw_cit else (case_name or "Unspecified Reference"),
+                            "case_name": case_name,
+                            "case_number": case_number,
+                            "neutral_citation": neutral_citation,
+                            "commercial_citations": commercial_citations,
+                            "decision_date": decision_date,
                             "treatment": treatment,
                             "reasoning": reasoning,
                             "url": url,
                         })
 
                 existing_urls = { (p["url"] or "").strip().lower() for p in cleaned_precedents if p.get("url") }
-                existing_names = { (p["case_name_citation"] or "").strip().lower() for p in cleaned_precedents if p.get("case_name_citation") }
+                existing_names = { (p["raw_citation"] or p["case_name"] or "").strip().lower() for p in cleaned_precedents if p.get("raw_citation") or p.get("case_name") }
 
                 for t in targets_list:
                     t_url = (t.get("url") or "").strip()
@@ -1301,8 +1315,14 @@ async def process_records(
 
                     is_covered = (t_url and t_url.lower() in existing_urls) or (t_text and any(t_text.lower() in name for name in existing_names))
                     if not is_covered:
+                        parsed_tgt = parse_legal_citation_string(t_text)
                         cleaned_precedents.append({
-                            "case_name_citation": t_text if t_text else t_url,
+                            "raw_citation": t_text if t_text else t_url,
+                            "case_name": parsed_tgt.get("case_name"),
+                            "case_number": parsed_tgt.get("case_number"),
+                            "neutral_citation": parsed_tgt.get("neutral_citation"),
+                            "commercial_citations": parsed_tgt.get("commercial_citations") or [],
+                            "decision_date": parsed_tgt.get("decision_date"),
                             "treatment": "Referred",
                             "reasoning": f"Cited in judgment ({t_text or t_url}).",
                             "url": t_url,

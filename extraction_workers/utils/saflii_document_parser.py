@@ -5,7 +5,8 @@ Utility to split raw SAFLII court judgment text into structured sections:
 - `header`: Court name, case number, neutral citation, parties, dates, reportability.
 - `judgment`: Main body containing facts, evidence, legal analysis, and reasoning.
 - `order`: Final court order, verdict, or appeal disposition.
-- `citations`: Case references, statutory links, and footnote citations extracted from HTML & text.
+- `appearances`: Representation and counsel details.
+- `footnotes`: Footnotes, case references, statutory links, and citations extracted from HTML & text.
 """
 
 import re
@@ -35,8 +36,8 @@ def clean_saflii_text(text: str, collapse_to_single_newline: bool = False) -> st
 
     Args:
         text (str): Input text to clean.
-        collapse_to_single_newline (bool): If True, collapses runs of blank lines to '\\n'
-            (ideal for headers). If False, normalizes multiple blank lines to '\\n\\n'
+        collapse_to_single_newline (bool): If True, collapses runs of blank lines to '\n'
+            (ideal for headers). If False, normalizes multiple blank lines to '\n\n'
             (ideal for body documents/journals).
 
     Returns:
@@ -67,19 +68,20 @@ def clean_saflii_text(text: str, collapse_to_single_newline: bool = False) -> st
 
 def split_saflii_document(text: str, center_content: Optional[str] = None) -> Dict[str, Any]:
     """
-    Splits a SAFLII court judgment string into header, judgment, order, and citations.
+    Splits a SAFLII court judgment string into header, judgment, order, appearances, and footnotes.
 
     Args:
         text (str): Full text of the SAFLII document (e.g. data['full_text']).
         center_content (Optional[str]): HTML content of the document (e.g. data['center_content'])
-            used to extract citation target URLs and footnote structure.
+            used to extract footnote target URLs and structure.
 
     Returns:
         Dict[str, Any]: Dictionary containing:
             - 'header': Introductory section text
             - 'judgment': Main judgment body text
             - 'order': Court order / verdict text
-            - 'citations': Dict with 'raw_text' (footnote text) and 'targets' (link URL targets)
+            - 'appearances': Representation details
+            - 'footnotes': Dict with 'raw_text' (footnote text) and 'targets' (link URL targets)
     """
     if not text or not isinstance(text, str):
         return {
@@ -88,7 +90,7 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
             "judgment": "",
             "order": "",
             "appearances": "",
-            "citations": {"raw_text": "", "targets": []}
+            "footnotes": {"raw_text": "", "targets": []}
         }
 
     cleaned_text = text.strip()
@@ -138,10 +140,10 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
         body_and_tail = body_and_tail[:match_app.start()].strip()
 
     # =========================================================================
-    # 3. CITATIONS & FOOTNOTES EXTRACTION
+    # 3. FOOTNOTES EXTRACTION
     # Extract link targets from HTML center_content and strip bottom footnotes.
     # =========================================================================
-    citations_raw_text = ""
+    footnotes_raw_text = ""
     targets = []
     seen_urls = set()
 
@@ -162,10 +164,10 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
                     ftn_line_m = re.search(fr'(?m)^[ \t]*\[{tag_num}\][ \t\n]+[A-Z0-9]', tail_text)
                     if ftn_line_m:
                         pos = search_start + ftn_line_m.start()
-                        citations_raw_text = body_and_tail[pos:].strip()
+                        footnotes_raw_text = body_and_tail[pos:].strip()
                         body_and_tail = body_and_tail[:pos].strip()
 
-            # B. Extract citation link targets from HTML <a> tags
+            # B. Extract citation / footnote link targets from HTML <a> tags
             for a in soup.find_all('a'):
                 href = a.get('href', '')
                 if not href:
@@ -184,12 +186,12 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
             pass
 
     # Fallback for plain-text footnotes if HTML parsing did not extract footnotes
-    if not citations_raw_text:
+    if not footnotes_raw_text:
         # Search for footnote block near tail after judge signature / representation
         m_ftn_tail = re.search(r'(?m)^[ \t]*(\[1\]|\(1\))\s+[A-Z0-9]', body_and_tail[int(len(body_and_tail)*0.7):])
         if m_ftn_tail:
             actual_pos = int(len(body_and_tail) * 0.7) + m_ftn_tail.start()
-            citations_raw_text = body_and_tail[actual_pos:].strip()
+            footnotes_raw_text = body_and_tail[actual_pos:].strip()
             body_and_tail = body_and_tail[:actual_pos].strip()
 
     # =========================================================================
@@ -208,13 +210,6 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
         r'I\s+(?:ACCORDINGLY\s+|THEREFORE\s+)?(?:MAKE|GRANT|GRANTED)\s+AN?\s+ORDER\s+IN\s+THE\s+FOLLOWING\s+TERMS|'
         r'I\s+(?:THEREFORE\s+|ACCORDINGLY\s+)?(?:MAKE|GRANT|GRANTED)\s+(?:AN?|THE)\s+FOLLOWING\s+ORDER|'
         r'ACCORDINGLY,?\s+(?:THE\s+ACCUSED\s+IS\s+SENTENCED|THE\s+FOLLOWING\s+ORDER\s+(?:SHALL|WILL)\s+ISSUE)|'
-        r'THE\s+FOLLOWING\s+ORDER\s+(?:IS\s+MADE|SHALL\s+ISSUE|WILL\s+ISSUE)|'
-        r'MY\s+ORDER\s+IS\s+(?:THEREFORE\s+|ACCORDINGLY\s+)?AS\s+FOLLOWS|'
-        r'IT\s+IS\s+ORDERED\s+THAT|'
-        r'IT\s+IS\s+HEREBY\s+ORDERED|'
-        r'IN\s+THE\s+PREMISES,?\s+THE\s+FOLLOWING\s+ORDER|'
-        r'DIE\s+VOLGENDE\s+BEVEL\s+WORD\s+GEMAAK|'
-        r'BYGEVOLG\s+WORD|'
         r'DIE\s+(?:AANSOEK|APPÈL)\s+WORD\s+(?:VAN\s+DIE\s+ROL\s+GESKRAP|VAN\s+DIE\s+HAND\s+GEWYS|TOEGESTAAN)|'
         r'^\s*(?:[A-Z0-9\.\-\[\]\(\)]+[ \t]+)?(?:ORDER|THE ORDER|THE RESULT|RULING|CONCLUSION|VERDICT|BEVEL|DIE RESULTAAT|VONNIS|COSTS|KOSTE|SUMMARY OF ORDER|FINAL ORDER|VARIATION ORDER|INTERLOCUTORY ORDER)\s*:?\s*$'
         r')',
@@ -260,7 +255,7 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
         if struck_pattern.search(body_and_tail):
             order = "Struck from the roll"
 
-    # Determine null / empty core section fields (citations excluded as citations can naturally be null)
+    # Determine null / empty core section fields (footnotes excluded as footnotes can naturally be null)
     null_values = []
     if not header or not header.strip():
         null_values.append("header")
@@ -275,8 +270,8 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
         "judgment": judgment,
         "order": order,
         "appearances": appearances,
-        "citations": {
-            "raw_text": citations_raw_text,
+        "footnotes": {
+            "raw_text": footnotes_raw_text,
             "targets": targets
         }
     }
@@ -314,8 +309,8 @@ if __name__ == "__main__":
         print(f"HEADER ({len(parsed['header'])} chars):\n{parsed['header'][:300]}...\n")
         print(f"JUDGMENT ({len(parsed['judgment'])} chars):\n{parsed['judgment'][:300]}...\n")
         print(f"ORDER ({len(parsed['order'])} chars):\n{parsed['order'][:300]}...\n")
-        print(f"CITATIONS RAW ({len(parsed['citations']['raw_text'])} chars):\n{parsed['citations']['raw_text'][:200]}...\n")
-        print(f"CITATIONS TARGETS ({len(parsed['citations']['targets'])} links)")
+        print(f"FOOTNOTES RAW ({len(parsed['footnotes']['raw_text'])} chars):\n{parsed['footnotes']['raw_text'][:200]}...\n")
+        print(f"FOOTNOTES TARGETS ({len(parsed['footnotes']['targets'])} links)")
     else:
         try:
             from dotenv import load_dotenv
@@ -373,12 +368,12 @@ if __name__ == "__main__":
                 print(f"HEADER ({len(parsed['header'])} chars):\n{parsed['header'][:250]}...\n")
                 print(f"JUDGMENT ({len(parsed['judgment'])} chars):\n{parsed['judgment'][:250]}...\n")
                 print(f"ORDER ({len(parsed['order'])} chars):\n{parsed['order'][:250]}...\n")
-                print(f"CITATIONS RAW ({len(parsed['citations']['raw_text'])} chars):\n{parsed['citations']['raw_text'][:200]}...\n")
-                print(f"CITATIONS TARGETS ({len(parsed['citations']['targets'])} links):")
-                for tgt in parsed['citations']['targets'][:5]:
+                print(f"FOOTNOTES RAW ({len(parsed['footnotes']['raw_text'])} chars):\n{parsed['footnotes']['raw_text'][:200]}...\n")
+                print(f"FOOTNOTES TARGETS ({len(parsed['footnotes']['targets'])} links):")
+                for tgt in parsed['footnotes']['targets'][:5]:
                     print(f"  - [{tgt['text']}] -> {tgt['url']}")
-                if len(parsed['citations']['targets']) > 5:
-                    print(f"  ... (+{len(parsed['citations']['targets']) - 5} more links)")
+                if len(parsed['footnotes']['targets']) > 5:
+                    print(f"  ... (+{len(parsed['footnotes']['targets']) - 5} more links)")
                 print("-" * 60)
 
             print(f"\n=== RECORDS WITH NULL/EMPTY FIELDS ({len(null_record_ids)} / {len(results)}) ===")

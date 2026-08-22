@@ -300,7 +300,7 @@ entities          (id UUID PK, name TEXT UNIQUE, created_at TIMESTAMPTZ)
 | :--- | :--- | :--- | :--- |
 | **Discovery** | `extracted_records` | `scraped_at` | Initial scrape / index pass when URL is discovered (`status = 'indexed'`) |
 | **Enrichment** | `extracted_records` | `detailed_at` | Full document text and detail scraping pass (`status = 'detailed'`) |
-| **Segmentation** | `extracted_records`<br>`parsed_records` | `parsed_at`<br>`created_at`, `updated_at` | Section parser splits text into header, judgment, order, citations |
+| **Segmentation** | `extracted_records`<br>`parsed_records` | `parsed_at`<br>`created_at`, `updated_at` | Section parser splits text into header, judgment, order, footnotes |
 | **PII Scrubbing** | `extracted_records`<br>`scrubbed_records` | `scrubbed_at`<br>`created_at`, `updated_at` | LLM schema validation & regex PII scrubbing into structured output |
 | **Modification** | All tables | `updated_at` | Auto-updated on any row change via PostgreSQL `BEFORE UPDATE` triggers |
 
@@ -308,11 +308,11 @@ entities          (id UUID PK, name TEXT UNIQUE, created_at TIMESTAMPTZ)
 
 When `parser` is configured in `extraction_params` (e.g. `"parser": "saflii_document_parser"`):
 1. **Parsing Phase**: `llm_extractor.py` runs `run_parser_phase()` prior to LLM extraction. On SAFLII pipelines, it strictly filters and processes records in the `"cases"` category (skipping journals, gazettes, and court rolls which are handled programmatically). It executes the resolved section parser (e.g. `split_saflii_document()`) in configurable batches (default 250 records/batch) to maintain low memory usage and prevent database timeouts.
-2. **Section Storage**: Parsed document sections (`header`, `judgment`, `order`, `appearances`, `citations`) are saved in the `parsed_records` table (1:1 relation with `extracted_records`).
+2. **Section Storage**: Parsed document sections (`header`, `judgment`, `order`, `appearances`, `footnotes`) are saved in the `parsed_records` table (1:1 relation with `extracted_records`).
 3. **Automated Review Flagging**: If section parsing fails to extract core required sections (returning `null_values`), the parent `extracted_record` is automatically updated with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`. Records marked for human review are automatically skipped by both the section parser and downstream LLM extraction.
 4. **Section-Targeted Extraction Dataflow**: The downstream LLM extraction step routes context dynamically per field range:
     - **Pass 1 (Header, Coram & Bench Context)**: Fields 1–8 (`applicant_plaintiff` to `court_location`) receive the structured `Header` text together with the initial `Judgment Intro` (containing authoring judge and concurring panel coram) and `Appearances`. This ensures 100% visibility for presiding judges while preventing litigant/counsel hallucinations. The AI model is provided with the standardized catalog of South African courts (e.g., `ZACC` = Constitutional Court of South Africa, `ZASCA` = Supreme Court of Appeal of South Africa) and strict instructions to output judge names in Title Case with uppercase judicial title abbreviations. If any required identifying field returns null/empty, the record is flagged with `requires_human_review = TRUE` with the missing fields documented in `review_reason` and skipped, avoiding full-document context overflows.
-    - **Pass 2 (Citations Context)**: `precedents_cited` receives ONLY the `citations` section text context (via `SafliiPrecedentsData`).
+    - **Pass 2 (Footnotes & Precedents Context)**: `precedents_cited` receives ONLY the `footnotes` section text context (via `SafliiPrecedentsData`) and parses citations into the structured 5-part schema (`case_name`, `case_number`, `neutral_citation`, `commercial_citations`, `decision_date`, `treatment`, `reasoning`, `url`).
     - **Pass 3 (Judgment & Order Context)**: Body fields (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) receive `Judgment` + `Order` section text, with enforced 5–10 legal topic keyword extraction.
     - **Post-Processing Normalization**: Outputs are automatically normalized via `normalize_court_name()` (mapping target codes and regional descriptions to canonical court names) and `format_judge_name()` (converting all-caps judge names like `MAHLANGA AJ` to `Mahlanga AJ` while retaining acronyms and particles), validated against `SafliiExtractedData`, PII-scrubbed, and saved into `scrubbed_records`.
 
@@ -395,6 +395,20 @@ The extractor dynamically resolves the schema class from the `schemas` package b
   # Target specific court (e.g. ZACT, ZACC, ZAGPJHC):
   python scripts/fix_saflii_pdf_case_titles.py --target ZACT --force
   ```
+
+- **Footnotes & Structured Precedents Normalizer Utility** ([`scripts/fix_saflii_footnotes_records.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_footnotes_records.py)):
+  Migrates legacy `citations` in `parsed_records` to `footnotes`, and standardizes `precedents_cited` in `scrubbed_records` into the 5-part structured citation schema (`case_name`, `case_number`, `neutral_citation`, `commercial_citations`, `decision_date`, `treatment`, `reasoning`, `url`, `raw_citation`):
+  ```bash
+  # Preview footnotes and precedent migrations without modifying data:
+  python scripts/fix_saflii_footnotes_records.py --dry-run
+
+  # Normalize and update all records:
+  python scripts/fix_saflii_footnotes_records.py --force
+
+  # Target specific court (e.g. ZACC, ZASCA):
+  python scripts/fix_saflii_footnotes_records.py --target ZACC --force
+  ```
+
 
 ---
 

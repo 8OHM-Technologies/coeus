@@ -184,8 +184,8 @@ def get_dataset_category_from_url(url: str) -> str:
     return "other"
 
 
-def extract_dataset_number_from_text(text: str) -> Optional[str]:
-    """Extract standard SAFLII dataset numbers or formal citations from strings."""
+def extract_case_number_from_text(text: str) -> Optional[str]:
+    """Extract standard SAFLII case numbers or formal citations from strings."""
     if not text:
         return None
 
@@ -208,6 +208,10 @@ def extract_dataset_number_from_text(text: str) -> Optional[str]:
         return match.group(0).strip()
 
     return None
+
+
+# Backward-compatible alias
+extract_dataset_number_from_text = extract_case_number_from_text
 
 
 def extract_date_from_title(title: str) -> Optional[dt_date]:
@@ -266,14 +270,14 @@ def extract_metadata_by_category(category: str, title: str, text: str) -> Dict[s
 
     if category == "cases":
         # Extract case number
-        case_no = extract_dataset_number_from_text(text)
+        case_no = extract_case_number_from_text(text)
         if case_no:
             metadata["case_number"] = case_no
 
-        # Extract citation
-        citation_match = re.search(r'\[\d{4}\]\s+[A-Z]+\s+\d+', text)
+        # Extract medium-neutral citation (e.g. [2026] ZACC 2)
+        citation_match = re.search(r'\[\d{4}\]\s+[A-Z]+\s+\d+', text or title)
         if citation_match:
-            metadata["citation"] = citation_match.group(0).strip()
+            metadata["neutral_citation"] = citation_match.group(0).strip()
 
     elif category == "gaz":
         # Extract gazette number
@@ -911,7 +915,7 @@ class SafliiScraper(BaseScraper):
                             ):
                                 if not ("toc-" in filename or filename == "index.html"):
                                     if not self._is_duplicate_url(abs_url) and abs_url not in indexed_this_run:
-                                        dataset_no = extract_dataset_number_from_text(a_tag.get_text(strip=True))
+                                        dataset_no = extract_case_number_from_text(a_tag.get_text(strip=True))
                                         if dataset_no:
                                             url_to_dataset_map[abs_url] = dataset_no
                                         dataset_new_urls.append(abs_url)
@@ -1342,7 +1346,7 @@ class SafliiScraper(BaseScraper):
                 )
 
                 if not dataset_no:
-                    dataset_no = extract_dataset_number_from_text(title)
+                    dataset_no = extract_case_number_from_text(title)
 
                 if dataset_no and self._is_duplicate_dataset_number(dataset_no):
                     logger.info(f"[Worker {worker_id}][{idx}/{total_datasets}] Duplicate signature isolated via late mapping: {dataset_no}")

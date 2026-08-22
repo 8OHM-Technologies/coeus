@@ -92,11 +92,11 @@ The data extraction and record cleaning pipeline transforms raw scraped document
 
 * **Step 2: Mandatory Document Section Parsing (`saflii_document_parser.py` ➔ `parsed_records`)**
   * A document section parser is required in Django `extraction_params` (e.g. `"parser": "saflii_document_parser"`).
-  * `llm_extractor.py` executes the section parser first in batches (default 250 records/batch) strictly on records in the `"cases"` category (skipping journals, gazettes, and court rolls), splitting raw court documents into structured sections (`header`, `judgment`, `order`, `citations`) while avoiding memory spikes and query timeouts.
+  * `llm_extractor.py` executes the section parser first in batches (default 250 records/batch) strictly on records in the `"cases"` category (skipping journals, gazettes, and court rolls), splitting raw court documents into structured sections (`header`, `judgment`, `order`, `footnotes`) while avoiding memory spikes and query timeouts.
   * **Text Cleaning (`clean_saflii_text`)**: Automatically strips website navigation breadcrumbs (`"LawCite"` and preceding text), SAFLII website UI noise lines (e.g. `"Download original files"`, `"PDF format"`, `"RTF format"`, `"Links to summary"`, `"Heads of argument"`), and excessive blank line runs from headers, full text, and journal articles.
   * **Regex & HTML Parsing**:
     * **Header**: Isolates court jurisdiction, judges, parties, and dates using cleaned header text.
-    * **Citations & Link Targets**: Uses BeautifulSoup to extract HTML `<a>` link targets into structured URL objects (`[{"text": "...", "url": "..."}]`) and footnote text into `raw_text`.
+    * **Footnotes & Link Targets**: Uses BeautifulSoup to extract HTML `<a>` link targets into structured URL objects (`[{"text": "...", "url": "..."}]`) and footnote text into `raw_text`.
     * **Judgment vs. Order Split**: Splits text into Judgment Body and Final Order using order header regexes, inline ruling patterns, or judge signature boundaries.
   * **Automated Data Quality & Human Review Flagging**: If any core section (`header`, `judgment`, `order`) is missing (`null_values`), the parent `extracted_record` is automatically updated in PostgreSQL with `requires_human_review = TRUE` and `review_reason = 'Document parsing failed'`. Clean sections are saved into `parsed_records` (1:1 with `extracted_records`).
 
@@ -104,8 +104,8 @@ The data extraction and record cleaning pipeline transforms raw scraped document
   * **Programmatic Non-Case Extraction**: Non-case categories (e.g. `journals`, `gaz`) bypass LLM extraction; their raw content is cleaned with `clean_saflii_text` (stripping LawCite navigation breadcrumbs and UI noise lines) and structured directly into `SafliiJournalGazetteExtraction`.
   * **3-Pass Court Case Extraction**: To prevent local LLM context overflow on long court judgments (50k+ chars), case extraction is routed in **3 targeted passes** using isolated schema subsets:
   * **Pass 1 (Header Fields 1–8)**: Evaluates `SafliiHeaderData` (`applicant_plaintiff` to `court_location`) using **Header section context only**. If any header field returns null/empty, the record is flagged for human review (`requires_human_review = TRUE`) with missing fields recorded in `review_reason` and skipped, avoiding full-document context overflows.
-  * **Pass 2 (Precedents & Citations)**: Evaluates `SafliiPrecedentsData` (`precedents_cited` list of `PrecedentCategory` objects: `case_name_citation`, `treatment`, `reasoning`, `url`) using **Citations section context only**.
-    * **Target Matcher Post-Processing**: Compares LLM output against HTML `targets` list, injects exact URLs, and appends missing link targets to guarantee **100% citation target coverage**.
+  * **Pass 2 (Footnotes & Precedents)**: Evaluates `SafliiPrecedentsData` (`precedents_cited` list of structured `PrecedentCategory` objects: `case_name`, `case_number`, `neutral_citation`, `commercial_citations`, `decision_date`, `treatment`, `reasoning`, `url`, `raw_citation`) using **Footnotes section context only**.
+    * **Target Matcher & Citation Parser Post-Processing**: Runs `parse_legal_citation_string()` on all citations, compares output against HTML `targets` list, injects exact URLs, and appends missing link targets to guarantee **100% citation target coverage**.
   * **Pass 3 (Judgment Body Fields 9–14)**: Evaluates `SafliiBodyData` (`ratio_decidendi`, `obiter_dicta`, `order`, `summary`, `keywords`) using **Judgment + Order section context**.
 
 * **Step 4: Payload Merging, Standardization & System Metadata Wrapping**
@@ -123,6 +123,7 @@ The data extraction and record cleaning pipeline transforms raw scraped document
   * Updates `extracted_records.scrubbed_at = NOW()` and `extracted_records.updated_at = NOW()`, marking the record processing lifecycle as complete.
 
 ### **8. Pipeline Maintenance & Normalization Scripts**
+* **Footnotes & Structured Precedents Normalizer** (`scripts/fix_saflii_footnotes_records.py`): Migrates legacy `citations` in `parsed_records` to `footnotes`, and standardizes `precedents_cited` in `scrubbed_records` into the 5-part structured citation schema (`case_name`, `case_number`, `neutral_citation`, `commercial_citations`, `decision_date`, `treatment`, `reasoning`, `url`, `raw_citation`).
 * **Case Records Court & Judge Normalizer** (`scripts/fix_saflii_case_records.py`): Standardizes existing court names and Title Case judge name formatting across `scrubbed_records`.
 * **Case Records Document Date Normalizer** (`scripts/fix_saflii_document_dates.py`): Extracts and normalizes exact document dates from case record titles across `scrubbed_records` metadata and `extracted_records`.
 * **PDF Case Titles & Dates Normalizer** (`scripts/fix_saflii_pdf_case_titles.py`): Fetches companion SAFLII `.html` pages to resolve true case titles and decision dates for PDF-sourced cases across `extracted_records` and `scrubbed_records`.

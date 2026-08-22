@@ -80,7 +80,7 @@ def test_extract_metadata_by_category():
     text_cases = "Case No: 123/2025\nCitation: [2025] ZACC 10"
     meta_cases = extract_metadata_by_category("cases", "S v Zuma", text_cases)
     assert meta_cases.get("case_number") == "123/2025"
-    assert meta_cases.get("citation") == "[2025] ZACC 10"
+    assert meta_cases.get("neutral_citation") == "[2025] ZACC 10"
 
     # 2. Gazettes
     text_gaz = "Government Gazette No: 45678"

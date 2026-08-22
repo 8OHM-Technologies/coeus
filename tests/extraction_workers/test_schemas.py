@@ -109,7 +109,12 @@ def test_saflii_case_extraction_validation():
         ratio_decidendi="Core legal principle applied.",
         precedents_cited=[
             PrecedentCategory(
-                case_name_citation="State v Example [2020] ZACC 1",
+                raw_citation="State v Example (CCT 01/20) [2020] ZACC 1 (15 February 2020)",
+                case_name="State v Example",
+                case_number="CCT 01/20",
+                neutral_citation="[2020] ZACC 1",
+                commercial_citations=[],
+                decision_date=date(2020, 2, 15),
                 treatment="Applied/Followed",
                 reasoning="Directly applicable precedent.",
                 url="https://saflii.org/case/1",
