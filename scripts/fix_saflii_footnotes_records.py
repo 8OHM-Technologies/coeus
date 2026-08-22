@@ -5,7 +5,7 @@ Fix SAFLII Footnotes & Structured Precedents Script
 Retroactively migrates existing database records in `parsed_records` and `scrubbed_records`:
 
 1. `parsed_records`:
-   - Renames section key `citations` -> `footnotes`.
+   - Renames section key `citations` -> `footnotes` via high-performance batch SQL updates.
    - Ensures `data['footnotes']` contains `raw_text` and `targets`.
    - Updates `parsed_records.data` and `updated_at`.
 
@@ -44,7 +44,6 @@ import json
 import os
 import re
 import sys
-from collections import Counter
 from typing import Any, Dict, List, Optional
 
 # Ensure repo root is on sys.path
@@ -152,77 +151,85 @@ async def fix_footnotes_records(
             print("=" * 50)
 
             parsed_params = []
-            parsed_target_clause = ""
+            parsed_join = ""
+            parsed_where = "WHERE p.data ? 'citations'"
             if target_name:
                 parsed_params.append(target_name)
-                parsed_target_clause = f"AND t.target_name = ${len(parsed_params)}"
+                parsed_join = """
+                    JOIN extracted_records e ON p.extracted_record_id = e.id
+                    JOIN targets t ON e.target_id = t.id
+                """
+                parsed_where += f" AND t.target_name = ${len(parsed_params)}"
 
-            parsed_limit_clause = f"LIMIT {limit}" if limit else ""
+            count_query = f"SELECT count(*) FROM parsed_records p {parsed_join} {parsed_where}"
+            total_legacy_parsed = await conn.fetchval(count_query, *parsed_params, timeout=120)
+            print(f"Found {total_legacy_parsed} parsed_records with legacy 'citations' key.")
 
-            parsed_query = f"""
-                SELECT p.id AS parsed_id,
-                       p.extracted_record_id,
-                       p.data AS parsed_data,
-                       COALESCE(t.target_name, 'Unknown') AS target_name
-                FROM parsed_records p
-                JOIN extracted_records e ON p.extracted_record_id = e.id
-                LEFT JOIN targets t ON e.target_id = t.id
-                WHERE p.data ? 'citations'
-                {parsed_target_clause}
-                ORDER BY p.created_at ASC
-                {parsed_limit_clause}
-            """
-
-            parsed_rows = await conn.fetch(parsed_query, *parsed_params)
-            print(f"Found {len(parsed_rows)} parsed_records with legacy 'citations' key.")
-
-            parsed_to_update = []
-            for row in parsed_rows:
-                p_id = row["parsed_id"]
-                raw_data = row["parsed_data"]
-                if isinstance(raw_data, str):
-                    try:
-                        data = json.loads(raw_data)
-                    except Exception:
-                        continue
-                elif isinstance(raw_data, dict):
-                    data = copy.deepcopy(raw_data)
+            if total_legacy_parsed > 0:
+                if dry_run:
+                    print(f"🔍 [DRY RUN] Would migrate {total_legacy_parsed} parsed_records key from 'citations' -> 'footnotes'.")
                 else:
-                    continue
+                    if not force:
+                        confirm = input(f"\nMigrate {total_legacy_parsed} parsed_records in DB? [y/N]: ").strip().lower()
+                        if confirm not in ("y", "yes"):
+                            print("Skipped parsed_records migration.")
+                            total_legacy_parsed = 0
 
-                if "citations" in data:
-                    citations_content = data.pop("citations")
-                    if "footnotes" not in data:
-                        data["footnotes"] = citations_content
-                    parsed_to_update.append((p_id, json.dumps(data, ensure_ascii=False)))
+                    if total_legacy_parsed > 0:
+                        batch_chunk_size = 5000
+                        if limit:
+                            batch_chunk_size = min(batch_chunk_size, limit)
 
-            print(f"Prepared {len(parsed_to_update)} parsed_records for update.")
+                        remaining = limit if limit else total_legacy_parsed
+                        total_updated = 0
 
-            if parsed_to_update and not dry_run:
-                if not force:
-                    confirm = input(f"\nUpdate {len(parsed_to_update)} parsed_records in DB? [y/N]: ").strip().lower()
-                    if confirm not in ("y", "yes"):
-                        print("Skipped parsed_records update.")
-                        parsed_to_update = []
+                        print("Executing direct in-engine PostgreSQL JSONB batch migrations...")
+                        while remaining > 0:
+                            current_batch = min(batch_chunk_size, remaining)
+                            if target_name:
+                                update_sql = f"""
+                                    WITH batch AS (
+                                        SELECT p.id FROM parsed_records p
+                                        JOIN extracted_records e ON p.extracted_record_id = e.id
+                                        JOIN targets t ON e.target_id = t.id
+                                        WHERE p.data ? 'citations' AND t.target_name = $1
+                                        LIMIT {current_batch}
+                                    )
+                                    UPDATE parsed_records p
+                                    SET data = (p.data - 'citations') || jsonb_build_object('footnotes', p.data->'citations'),
+                                        updated_at = NOW()
+                                    FROM batch
+                                    WHERE p.id = batch.id
+                                """
+                                res = await conn.execute(update_sql, target_name, timeout=180)
+                            else:
+                                update_sql = f"""
+                                    WITH batch AS (
+                                        SELECT id FROM parsed_records
+                                        WHERE data ? 'citations'
+                                        LIMIT {current_batch}
+                                    )
+                                    UPDATE parsed_records p
+                                    SET data = (p.data - 'citations') || jsonb_build_object('footnotes', p.data->'citations'),
+                                        updated_at = NOW()
+                                    FROM batch
+                                    WHERE p.id = batch.id
+                                """
+                                res = await conn.execute(update_sql, timeout=180)
 
-                if parsed_to_update:
-                    batch_size = 200
-                    updated_parsed = 0
-                    for i in range(0, len(parsed_to_update), batch_size):
-                        batch = parsed_to_update[i:i + batch_size]
-                        async with conn.transaction():
-                            for p_id, new_json in batch:
-                                await conn.execute(
-                                    "UPDATE parsed_records SET data = $1::jsonb, updated_at = NOW() WHERE id = $2",
-                                    new_json,
-                                    p_id,
-                                )
-                        updated_parsed += len(batch)
-                        print(f"  • Updated {updated_parsed}/{len(parsed_to_update)} parsed_records...")
-                    print(f"✅ Successfully updated {updated_parsed} parsed_records.")
+                            # Parse 'UPDATE count'
+                            updated_count = int(res.split(" ")[-1]) if "UPDATE" in res else 0
+                            if updated_count == 0:
+                                break
+
+                            total_updated += updated_count
+                            remaining -= updated_count
+                            print(f"  • Migrated {total_updated} parsed_records...")
+
+                        print(f"✅ Successfully migrated {total_updated} parsed_records.")
 
         # =====================================================================
-        # Step 2: Migrate scrubbed_records (precedents_cited -> structured)
+        # Step 2: Migrate scrubbed_records (precedents_cited structure)
         # =====================================================================
         if not only_parsed:
             print("\n" + "=" * 50)
@@ -251,12 +258,11 @@ async def fix_footnotes_records(
                     OR s.data ? 'precedents_cited'
                 )
                 {scrub_target_clause}
-                ORDER BY s.created_at ASC
                 {scrub_limit_clause}
             """
 
-            scrub_rows = await conn.fetch(scrub_query, *scrub_params)
-            print(f"Found {len(scrub_rows)} candidate scrubbed_records.")
+            scrub_rows = await conn.fetch(scrub_query, *scrub_params, timeout=300)
+            print(f"Found {len(scrub_rows)} candidate scrubbed_records with precedents.")
 
             scrub_to_update = []
             precedents_migrated = 0
