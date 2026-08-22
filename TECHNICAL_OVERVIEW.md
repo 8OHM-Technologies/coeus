@@ -370,6 +370,32 @@ The extractor dynamically resolves the schema class from the `schemas` package b
   python scripts/fix_saflii_case_records.py --target ZACC --force
   ```
 
+- **Case Records Document Date Normalizer Utility** ([`scripts/fix_saflii_document_dates.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_document_dates.py)):
+  Extracts and resolves exact decision dates from case record title strings (e.g., matching trailing brackets `... (13 April 2004)`), updating `scrubbed_records` metadata and optionally synchronizing `extracted_records.document_date` across the database:
+  ```bash
+  # Preview case records with date mismatches without modifying data:
+  python scripts/fix_saflii_document_dates.py --dry-run
+
+  # Normalize and update case document dates:
+  python scripts/fix_saflii_document_dates.py --force
+
+  # Target specific court (e.g. ZACC, ZACT, ZASCA):
+  python scripts/fix_saflii_document_dates.py --target ZACC --force
+  ```
+
+- **PDF Case Titles & Dates Normalizer Utility** ([`scripts/fix_saflii_pdf_case_titles.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_pdf_case_titles.py)):
+  Identifies cases sourced from PDFs where titles were stored as PDF filenames or internal metadata, fetches companion SAFLII `.html` pages to resolve true `<h2>` case titles and decision dates, updating `extracted_records` and `scrubbed_records`:
+  ```bash
+  # Preview PDF case titles to fix without modifying data:
+  python scripts/fix_saflii_pdf_case_titles.py --dry-run --limit 10
+
+  # Normalize and update all PDF case titles & dates:
+  python scripts/fix_saflii_pdf_case_titles.py --force
+
+  # Target specific court (e.g. ZACT, ZACC, ZAGPJHC):
+  python scripts/fix_saflii_pdf_case_titles.py --target ZACT --force
+  ```
+
 ---
 
 > [!TIP]

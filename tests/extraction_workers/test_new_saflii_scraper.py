@@ -13,8 +13,10 @@ from coeus.extraction_workers.new_saflii_scraper import (
     extract_dataset_number_from_text,
     extract_dataset_code_from_url,
     extract_metadata_by_category,
+    extract_date_from_title,
     DATABASES_INDEX_URL,
 )
+from datetime import date
 
 
 def test_check_page_state():
@@ -90,6 +92,26 @@ def test_extract_metadata_by_category():
     meta_journal = extract_metadata_by_category("journals", "Journal Title", text_journal)
     assert meta_journal.get("volume") == "50"
     assert meta_journal.get("issue") == "2"
+
+
+def test_extract_date_from_title():
+    # Primary user specified format: brackets at the end of the title string
+    title_primary = (
+        "Caxton CTP Publishers and Printers Limited and Naspers Ltd / Electronic Media "
+        "Network Ltd / Supersport International Holdings Ltd / Competition Commission "
+        "(16/FN/Mar04) [2004] ZACT 25; [2004] 1 CPLR 217 (CT) (13 April 2004)"
+    )
+    assert extract_date_from_title(title_primary) == date(2004, 4, 13)
+
+    # Various date variations and trailing characters
+    assert extract_date_from_title("S v Dlamini (CC12/2020) [2021] ZAGPPHC 1 (15 January 2021)") == date(2021, 1, 15)
+    assert extract_date_from_title("Minister of Police v Smith (123/2019) [2020] ZASCA 50 (28 May 2020)   ") == date(2020, 5, 28)
+    assert extract_date_from_title("Some Case [2022] ZAWCHC 10 (12/03/2022)") == date(2022, 3, 12)
+    assert extract_date_from_title("Some Case [2022] ZAWCHC 10 (2022-03-12)") == date(2022, 3, 12)
+    assert extract_date_from_title("Some Case (01 Dec 2023).") == date(2023, 12, 1)
+    assert extract_date_from_title("Some Case without date brackets") is None
+    assert extract_date_from_title("") is None
+    assert extract_date_from_title(None) is None
 
 
 def test_basic_scraper_connectivity():

@@ -26,6 +26,11 @@ except ImportError:
 from bs4 import BeautifulSoup
 from seleniumbase import SB
 
+try:
+    from dateutil import parser as date_parser
+except ImportError:
+    date_parser = None
+
 
 try:
     from .base_scraper import BaseScraper, setup_logger
@@ -201,6 +206,56 @@ def extract_dataset_number_from_text(text: str) -> Optional[str]:
     match = re.search(r'\b\w+/\d+\b', text)
     if match:
         return match.group(0).strip()
+
+    return None
+
+
+def extract_date_from_title(title: str) -> Optional[dt_date]:
+    """Extract and parse the document date from the end of the title string.
+
+    Expected format ends with parentheses containing the date, e.g.:
+    ``... (16/FN/Mar04) [2004] ZACT 25; [2004] 1 CPLR 217 (CT) (13 April 2004)`` -> date(2004, 4, 13)
+    """
+    if not title or not isinstance(title, str):
+        return None
+
+    # Match the last set of parentheses: e.g. '(13 April 2004)'
+    match = re.search(r'\(([^()]+)\)[\s.;]*$', title.strip())
+    if not match:
+        return None
+
+    raw_date_str = match.group(1).strip()
+    raw_date_clean = re.sub(r'\s+', ' ', raw_date_str)
+
+    # 1. Try ISO format
+    try:
+        return dt_date.fromisoformat(raw_date_clean)
+    except ValueError:
+        pass
+
+    # 2. Try common formats (SAFLII standard is '%d %B %Y')
+    common_formats = (
+        '%d %B %Y',
+        '%d %b %Y',
+        '%d/%m/%Y',
+        '%d-%m-%Y',
+        '%B %d, %Y',
+        '%b %d, %Y',
+        '%d %B %y',
+        '%d %b %y',
+    )
+    for fmt in common_formats:
+        try:
+            return datetime.strptime(raw_date_clean, fmt).date()
+        except ValueError:
+            pass
+
+    # 3. Fallback to dateutil parser if available
+    if date_parser:
+        try:
+            return date_parser.parse(raw_date_clean).date()
+        except Exception:
+            pass
 
     return None
 
@@ -1008,19 +1063,13 @@ class SafliiScraper(BaseScraper):
         )
         logger.info(f"[Stage 1A complete] Total downstream asset indexes harvested: {len(self.dataset_urls)}")
 
-    async def _save_record_to_db(self, dataset_url: str, record: dict, doc_date: Optional[dt_date]) -> None:
+    async def _save_record_to_db(self, dataset_url: str, record: dict) -> None:
         """Thread-safe helper to write detailed scraped records to the database."""
         dataset_code = record.get("dataset") or "SAFLII"
         dataset_target_id = await self._get_target_id_for_dataset(dataset_code, dataset_url)
         
-        # Determine fallback document date if none provided
-        resolved_date = doc_date
-        if not resolved_date:
-            year = record.get("year")
-            try:
-                resolved_date = dt_date(int(year), 1, 1)
-            except Exception:
-                resolved_date = dt_date.today()
+        category = record.get("category") or get_dataset_category_from_url(dataset_url)
+        resolved_date = extract_date_from_title(record.get("title", "")) if category == "cases" else None
 
         async with self.db_lock:
             await db_storage.upsert_scraped_record(
@@ -1136,8 +1185,33 @@ class SafliiScraper(BaseScraper):
         elif pymupdf is None:
             logger.warning(f"[Worker {worker_id}] PyMuPDF/fitz not installed; skipping PDF text extraction.")
 
-        title = pdf_title or sb.get_page_title() or entry_id
+        # Attempt extracting the true case title from the companion .html page
+        companion_title = self._extract_title_from_companion_html(sb, dataset_url, entry_id)
+        title = companion_title or pdf_title or sb.get_page_title() or entry_id
         return title, pdf_text
+
+    def _extract_title_from_companion_html(self, sb: SB, dataset_url: str, entry_id: str) -> Optional[str]:
+        """Fetch companion .html page to extract true case title from h2 before redirect occurs."""
+        html_url = re.sub(r'\.pdf$', '.html', dataset_url, flags=re.IGNORECASE)
+        try:
+            sb.open(html_url)
+            for _ in range(12):
+                soup = BeautifulSoup(sb.get_page_source(), "lxml")
+                h2_el = soup.find("h2")
+                if h2_el:
+                    txt = h2_el.get_text(strip=True)
+                    if txt and not any(k in txt.lower() for k in ["verification", "moment", "security", "cloudflare", "saflii"]):
+                        return txt
+                title_txt = sb.get_page_title()
+                if (
+                    title_txt
+                    and not any(k in title_txt.lower() for k in ["verification", "moment", "security", "cloudflare", "saflii", "404"])
+                ):
+                    return title_txt
+                sb.sleep(0.3)
+        except Exception as err:
+            logger.debug(f"Failed companion HTML fetch for {dataset_url}: {err}")
+        return None
 
     def _extract_content_from_html(self, sb: SB, entry_id: str) -> Tuple[str, str, str]:
         """Locate text containers and extract HTML/CleanText details for HTML records."""
@@ -1169,7 +1243,7 @@ class SafliiScraper(BaseScraper):
         """Call async storage interfaces thread-safely via the event loop."""
         # Dispatch async DB save (with 30s timeout)
         future = asyncio.run_coroutine_threadsafe(
-            self._save_record_to_db(dataset_url, record, None),
+            self._save_record_to_db(dataset_url, record),
             loop
         )
         future.result(timeout=30)

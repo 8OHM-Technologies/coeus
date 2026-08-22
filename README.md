@@ -124,6 +124,8 @@ The data extraction and record cleaning pipeline transforms raw scraped document
 
 ### **8. Pipeline Maintenance & Normalization Scripts**
 * **Case Records Court & Judge Normalizer** (`scripts/fix_saflii_case_records.py`): Standardizes existing court names and Title Case judge name formatting across `scrubbed_records`.
+* **Case Records Document Date Normalizer** (`scripts/fix_saflii_document_dates.py`): Extracts and normalizes exact document dates from case record titles across `scrubbed_records` metadata and `extracted_records`.
+* **PDF Case Titles & Dates Normalizer** (`scripts/fix_saflii_pdf_case_titles.py`): Fetches companion SAFLII `.html` pages to resolve true case titles and decision dates for PDF-sourced cases across `extracted_records` and `scrubbed_records`.
 * **Journal Records Cleaner** (`scripts/fix_saflii_journal_records.py`): Strips website navigation breadcrumbs and UI noise lines from existing journal entries in `scrubbed_records`.
 * **Case Reset Tool** (`scripts/reset_saflii_cases.py`): Resets case extraction states across database tables to re-trigger parsing and multi-pass extraction.
 * **DuckDB Data Analysis Tool** (`scripts/analyze_duckdb.py`): In-memory analytical engine and interactive REPL over `coeus` PostgreSQL data.
