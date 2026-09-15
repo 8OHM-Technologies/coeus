@@ -409,8 +409,24 @@ The extractor dynamically resolves the schema class from the `schemas` package b
   python scripts/fix_saflii_footnotes_records.py --target ZACC --force
   ```
 
+- **Image OCR Text Extraction Utility** ([`scripts/extract_image_ocr.py`](file:///home/tiaanf/Dev/coeus/scripts/extract_image_ocr.py)):
+  Extracts text, bounding boxes, and confidence scores from document images using high-performance ONNX-based RapidOCR (pure-Python execution with zero external C++ dependencies) or Tesseract, with optional image preprocessing filters:
+  ```bash
+  # Basic text extraction from an image:
+  python scripts/extract_image_ocr.py document_page.png
+
+  # Structured JSON output with bounding boxes and line confidences:
+  python scripts/extract_image_ocr.py document_page.png --format json
+
+  # Save output to a file with binarization preprocessing:
+  python scripts/extract_image_ocr.py document_page.png --preprocess binarize -o extracted.txt
+
+  # Pipe friendly (quiet mode for Unix shell workflows):
+  python scripts/extract_image_ocr.py document_page.png --quiet
+  ```
 
 ---
+
 
 > [!TIP]
 > **Performance Recommendation**:

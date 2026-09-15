@@ -260,6 +260,7 @@ Production is deployed on a VPS with automated builds and deployment via GitHub 
 ├── extraction_workers/      # Python scrapers, LLM extractors, schemas, and DB storage
 │   └── utils/               # Browser helper, debug helper, PII scrub, proxy verification
 ├── misstcha/                # Local CAPTCHA solver package (hCaptcha, Turnstile, Captcha Factory)
+├── scripts/                 # Maintenance, data analysis, and OCR extraction utility scripts
 ├── traefik-config/          # Reverse proxy routing configuration
 ├── Makefile                 # Development and portable stack management commands
 ├── Dockerfile.app           # Django control plane container image
@@ -270,6 +271,27 @@ Production is deployed on a VPS with automated builds and deployment via GitHub 
 ├── docker-compose.yml       # Standard local multi-container composition
 └── docker-compose.portable.yml # Portable multi-container stack composition
 ```
+
+---
+
+## 🛠️ Utility Scripts
+
+The `scripts/` folder provides standalone CLI tools for database analysis, maintenance, and document processing:
+
+* **Image OCR Text Extraction** ([`scripts/extract_image_ocr.py`](file:///home/tiaanf/Dev/coeus/scripts/extract_image_ocr.py)):
+  Extracts text from images using RapidOCR (ONNX Runtime, pure-Python) or Tesseract with optional image preprocessing (`binarize`, `grayscale`, `denoise`) and JSON output with bounding boxes:
+  ```bash
+  # Plain text extraction:
+  python scripts/extract_image_ocr.py document.png
+
+  # Structured JSON with bounding boxes and line confidences:
+  python scripts/extract_image_ocr.py document.png --format json
+
+  # Save to file with preprocessing:
+  python scripts/extract_image_ocr.py document.png --preprocess binarize -o output.txt
+  ```
+* **DuckDB Data Analysis** ([`scripts/analyze_duckdb.py`](file:///home/tiaanf/Dev/coeus/scripts/analyze_duckdb.py)): High-performance analytical queries and text search on PostgreSQL state database.
+* **SAFLII Record Maintenance**: Utilities for resetting extraction states and normalizing case records, dates, and footnotes (`reset_saflii_cases.py`, `fix_saflii_case_records.py`, etc.).
 
 ---
 
