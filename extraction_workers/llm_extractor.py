@@ -1068,8 +1068,12 @@ async def process_records(
             continue
 
         case_number = record_data.get("case_number") or record_data.get("case_no") or None
-
-        # 2. Determine schema class and process non-cases directly
+        if not case_number and record_data.get("title"):
+            m_title_case = re.search(r'\(([^()]+)\)\s*\[\d{4}\]\s*ZA', record_data["title"])
+            if m_title_case:
+                candidate = m_title_case.group(1).strip()
+                if re.search(r'\d', candidate) and not any(w in candidate.lower() for w in ["judgment", "appeal", "heard", "delivered", "unreported", "coram"]):
+                    case_number = candidate
         current_schema_cls = schema_cls
         category = None
         is_programmatic = False
@@ -1273,8 +1277,6 @@ async def process_records(
                             header_res["respondent_defendant"] = fallback_respondent
                         if not header_res.get("judgment_date") and fallback_date:
                             header_res["judgment_date"] = fallback_date
-                        if not header_res.get("case_number") and rec_num:
-                            header_res["case_number"] = rec_num
                         logger.info(
                             "  [+] Recovered header fields via heuristics for record %s: court=%s, parties=%s v %s, date=%s",
                             record_id, header_res.get("court"), header_res.get("applicant_plaintiff"),
@@ -1317,7 +1319,7 @@ async def process_records(
                         parsed_struct = parse_legal_citation_string(raw_cit)
                         
                         case_name = p.get("case_name") or parsed_struct.get("case_name")
-                        case_number = p.get("case_number") or parsed_struct.get("case_number")
+                        prec_case_number = p.get("case_number") or parsed_struct.get("case_number")
                         neutral_citation = p.get("neutral_citation") or parsed_struct.get("neutral_citation")
                         commercial_citations = p.get("commercial_citations") or parsed_struct.get("commercial_citations") or []
                         decision_date = p.get("decision_date") or parsed_struct.get("decision_date")
@@ -1337,7 +1339,7 @@ async def process_records(
                         cleaned_precedents.append({
                             "raw_citation": raw_cit if raw_cit else (case_name or "Unspecified Reference"),
                             "case_name": case_name,
-                            "case_number": case_number,
+                            "case_number": prec_case_number,
                             "neutral_citation": neutral_citation,
                             "commercial_citations": commercial_citations,
                             "decision_date": decision_date,
@@ -1452,7 +1454,24 @@ async def process_records(
             if current_schema_cls.__name__ == "SafliiExtractedData":
                 try:
                     doc_date = schema_instance.hearing_date or db_doc_date
-                    case_num = case_number or (schema_instance.dict().get("case_number") if hasattr(schema_instance, "dict") else None)
+                    case_num = case_number
+                    if not case_num and record_data.get("title"):
+                        m_title_case = re.search(r'\(([^()]+)\)\s*\[\d{4}\]\s*ZA', str(record_data.get("title") or ""))
+                        if m_title_case:
+                            candidate = m_title_case.group(1).strip()
+                            if re.search(r'\d', candidate) and not any(w in candidate.lower() for w in ["judgment", "appeal", "heard", "delivered", "unreported", "coram"]):
+                                case_num = candidate
+                    if not case_num and record_data.get("header"):
+                        m_hdr = re.search(r'case\s*(?:no|number|nos)?[:.\s]+([^\n\r]+)', str(record_data.get("header") or ""), re.IGNORECASE)
+                        if m_hdr:
+                            cand = m_hdr.group(1).strip()
+                            if re.search(r'\d', cand) and len(cand) < 60 and not re.match(r'^\[?\d{4}\]?\s*ZA', cand, re.IGNORECASE):
+                                case_num = cand
+
+                    # Discard if case_num is just a neutral citation like [2021] ZACC 34
+                    if case_num and re.match(r'^\[?\d{4}\]?\s*ZA', case_num.strip(), re.IGNORECASE):
+                        case_num = None
+
                     metadata = BaseExtractedRecord(
                         entity_name=str(db_entity_name),
                         target_name=str(db_target_name),

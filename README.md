@@ -292,7 +292,18 @@ The `scripts/` folder provides standalone CLI tools for database analysis, maint
   python scripts/extract_image_ocr.py document.png --preprocess binarize -o output.txt
   ```
 * **DuckDB Data Analysis** ([`scripts/analyze_duckdb.py`](file:///home/tiaanf/Dev/coeus/scripts/analyze_duckdb.py)): High-performance analytical queries and text search on PostgreSQL state database.
-* **SAFLII Record Maintenance**: Utilities for resetting extraction states and normalizing case records, dates, and footnotes (`reset_saflii_cases.py`, `fix_saflii_case_records.py`, etc.).
+* **SAFLII Case Numbers Normalizer** ([`scripts/fix_saflii_case_numbers.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_case_numbers.py)): Extracts authoritative case numbers from title strings (matching `(CASE_NUM) [YEAR] ZA...`) and judgment headers, replaces corrupt neutral citations and leaked precedent citations, and normalizes `case_number` across `scrubbed_records` and `extracted_records`:
+  ```bash
+  # Preview case numbers to normalize without modifying data:
+  python scripts/fix_saflii_case_numbers.py --dry-run
+
+  # Normalize and update case numbers across all targets:
+  python scripts/fix_saflii_case_numbers.py --force
+
+  # Target specific court (e.g. ZACC, ZACT, ZASCA):
+  python scripts/fix_saflii_case_numbers.py --target ZACC --force
+  ```
+* **SAFLII Record Maintenance**: Utilities for resetting extraction states and normalizing case records, dates, and footnotes (`reset_saflii_cases.py`, `fix_saflii_case_records.py`, `fix_saflii_document_dates.py`, etc.).
 
 ---
 

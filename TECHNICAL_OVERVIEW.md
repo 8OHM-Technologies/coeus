@@ -395,6 +395,19 @@ The extractor dynamically resolves the schema class from the `schemas` package b
   python scripts/fix_saflii_document_dates.py --target ZACC --force
   ```
 
+- **Case Records Case Number Normalizer Utility** ([`scripts/fix_saflii_case_numbers.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_case_numbers.py)):
+  Extracts and normalizes authoritative case numbers from title strings (matching `... (CASE_NUM) [YEAR] ZA...`) and judgment headers, replaces corrupt neutral citations and leaked precedent citations, and synchronizes `case_number` across `scrubbed_records` metadata and `extracted_records`:
+  ```bash
+  # Preview case number changes without modifying data:
+  python scripts/fix_saflii_case_numbers.py --dry-run
+
+  # Normalize and update case numbers across all targets:
+  python scripts/fix_saflii_case_numbers.py --force
+
+  # Target specific court (e.g. ZACC, ZACT, ZASCA):
+  python scripts/fix_saflii_case_numbers.py --target ZACC --force
+  ```
+
 - **PDF Case Titles & Dates Normalizer Utility** ([`scripts/fix_saflii_pdf_case_titles.py`](file:///home/tiaanf/Dev/coeus/scripts/fix_saflii_pdf_case_titles.py)):
   Identifies cases sourced from PDFs where titles were stored as PDF filenames or internal metadata, fetches companion SAFLII `.html` pages to resolve true `<h2>` case titles and decision dates, updating `extracted_records` and `scrubbed_records`:
   ```bash
