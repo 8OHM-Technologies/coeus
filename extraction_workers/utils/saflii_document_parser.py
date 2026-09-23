@@ -126,18 +126,66 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
     header = clean_saflii_text(header, collapse_to_single_newline=True)
 
     # =========================================================================
-    # 2. APPEARANCES EXTRACTION
-    # Check for representation / counsel section near the bottom.
+    # 2. PATTERNS: APPEARANCES, EXPLICIT ORDER, INLINE ORDER, JUDGE SIGNATURES
     # =========================================================================
-    appearances = ""
     app_pattern = re.compile(
-        r'(?m)^[ \t]*(?:A\s*P\s*P\s*E\s*A\s*R\s*A\s*N\s*C\s*E\s*S|Appearances|Representation|Counsel\s*:)[ \t\:\-]*$',
+        r'(?m)^[ \t]*(?:'
+        r'A\s*P\s*P\s*E\s*A\s*R\s*A\s*N\s*C\s*E\s*S\b|'
+        r'Appearances?\b|'
+        r'Representation\b|'
+        r'Legal\s+Representation\b|'
+        r'VERSKYNINGS\b|'
+        r'Counsel\s*:|'
+        r'COUNSEL\s*(?:\n|\s)+FOR\s+[A-Z\s]+:|'
+        r'For\s+(?:the\s+)?(?:Applicants?|Respondents?|Appellants?|Plaintiffs?|Defendants?|State|Accused)\s*:|'
+        r'ON\s*(?:\n|\s)+BEHALF\s+OF\s+[A-Z\s]+:|'
+        r'REPRESENTATION\s*:'
+        r')',
         re.IGNORECASE
     )
-    match_app = app_pattern.search(body_and_tail)
-    if match_app and match_app.start() > len(body_and_tail) * 0.4:
-        appearances = body_and_tail[match_app.start():].strip()
-        body_and_tail = body_and_tail[:match_app.start()].strip()
+
+    order_pattern = re.compile(
+        r'(?i)(?:'
+        r'IN\s+THE\s+RESULT,?\s*(?:THE\s+FOLLOWING\s+ORDERS?\s+(?:IS|ARE)\s+MADE|IT\s+IS\s+ORDERED|THE\s+APPEAL\s+IS|THE\s+ORDER|ORDER|THE\s+CONDONATION)?|'
+        r'IN\s+THE\s+PREMISES,?\s*(?:THE\s+FOLLOWING\s+ORDERS?\s+(?:IS|ARE)\s+MADE|IT\s+IS\s+ORDERED|I\s+MAKE\s+THE\s+FOLLOWING\s+ORDER)?|'
+        r'IN\s+THE\s+RESULT\s+[^.\n]+ORDER[^.\n]*|'
+        r'THE\s+APPEAL\s+(?:AGAINST\s+[^.\n]+)?(?:IS|WAS)\s+(?:DISMISSED|UPHELD)|'
+        r'(?:ACCORDINGLY,?\s+)?(?:THE\s+FOLLOWING\s+ORDERS?\s+(?:IS|ARE)\s+(?:THEREFORE\s+|ACCORDINGLY\s+)?(?:MADE|GRANTED)[;:\.]?)|'
+        r'(?:ACCORDINGLY,?\s+)?(?:THE\s+FOLLOWING\s+ORDERS?\s+(?:SHALL|WILL)\s+ISSUE[;:\.]?)|'
+        r'(?:ACCORDINGLY,?\s+)?(?:I|WE)\s+(?:FIND|ORDER|MAKE|ISSUE)\s+THE\s+FOLLOWING[;:\.]?|'
+        r'(?:I|WE)\s+(?:WOULD\s+)?(?:ACCORDINGLY\s+|THEREFORE\s+)?(?:PROPOSE|ISSUE|MAKE|GRANT)\s+THE\s+FOLLOWING\s+ORDER[;:\.]?|'
+        r'THE\s+SENTENCES?\s+IMPOSED\s+(?:IS|ARE)\s+SET\s+ASIDE\s+AND\s+REPLACED\s+WITH\s+THE\s+FOLLOWING[;:\.]?|'
+        r'FOR\s+THESE\s+REASONS\s+(?:WE|I)\s+(?:MAKE|MADE)\s+THE\s+ORDER|'
+        r'(?:I|WE)\s+(?:ACCORDINGLY\s+|THEREFORE\s+)?(?:MAKE|GRANT|GRANTED|ISSUE)\s+AN?\s+ORDER\s+IN\s+THE\s+FOLLOWING\s+TERMS|'
+        r'(?:I|WE)\s+(?:THEREFORE\s+|ACCORDINGLY\s+)?(?:MAKE|GRANT|GRANTED|ISSUE)\s+(?:AN?|THE)\s+FOLLOWING\s+ORDER|'
+        r'ACCORDINGLY,?\s+(?:THE\s+ACCUSED\s+IS\s+SENTENCED|THE\s+FOLLOWING\s+ORDER\s+(?:SHALL|WILL)\s+ISSUE)|'
+        r'DIE\s+(?:AANSOEK|APP[EÈ\u010d]L)\s+WORD\s+(?:MET\s+KOSTE\s+)?(?:VAN\s+DIE\s+ROL\s+GESKRAP|VAN\s+DIE\s+HAND\s+GEWYS|TOEGESTAAN)|'
+        r'^\s*(?:[A-Z0-9\.\-\[\]\(\)]+[ \t]+)?(?:ORDER|THE ORDER|THE RESULT|RULING|CONCLUSION|VERDICT|BEVEL|DIE RESULTAAT|VONNIS|COSTS|KOSTE|SUMMARY OF ORDER|FINAL ORDER|VARIATION ORDER|INTERLOCUTORY ORDER)\s*:?\s*$'
+        r')',
+        re.MULTILINE
+    )
+
+    inline_order_pattern = re.compile(
+        r'(?i)(?:'
+        r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:In\s+the\s+result|By\s+virtue\s+of\s+the\s+aforegoing|In\s+the\s+premises|Accordingly),?\s+(?:I\s+(?:make|grant|issue|order)|the\s+accused\s+is\s+sentenced|the\s+application|the\s+condonation|the\s+appeal|the\s+claim|the\s+review|the\s+matter|it\s+is\s+ordered)|'
+        r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:The\s+application|The\s+condonation\s+application|The\s+appeal|The\s+claim|The\s+action|The\s+matter|Application\s+for\s+leave\s+to\s+appeal|The\s+notice\s+of\s+motion)\s+(?:for\s+[^.\n]+|brought\s+by\s+[^.\n]+)?(?:is|was)\s+(?:therefore\s+|accordingly\s+)?(?:dismissed|granted|upheld|refused|struck|varied|adjourned|postponed|remitted|settled)(?:\s+with\s+costs|\s+sine\s+die)?|'
+        r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:I|we)\s+(?:accordingly\s+|therefore\s+|consequently\s+)?(?:dismissed|granted|ordered|refused|upheld|issue)\b|'
+        r'it\s+is\s+so\s+ordered|'
+        r'(?:reflected\s+in\s+)?the\s+order\s+(?:that\s+)?(?:I|we)\s+(?:grant|make)(?:,\s*which\s+is\s+as\s+follows)?|'
+        r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:Die\s+aansoek|Die\s+app[eè\u010d]l|Aansoek\s+om\s+verlof\s+tot\s+app[eè\u010d]l|Die\s+saak|Die\s+respondent)\s+word\s+(?:met\s+koste\s+)?(?:afgewys|van\s+die\s+rol\s+geskrap|toegestaan|bekragtig|gelas|van\s+die\s+hand\s+gewys)|'
+        r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:There\s+is\s+no|no)\s+order\s+as\s+to\s+costs|Costs\s+must\s+follow|Costs\s+to\s+stand\s+over|application\s+was\s+dismissed|appeal\s+to\s+this\s+Court\s+is\s+dismissed|relief\s+contained\s+in\s+the\s+order|application\s+must\s+succeed|we\s+accordingly\s+(?:refuse|decline|grant)|(?:leave\s+to\s+appeal|direct\s+access|application)\s+(?:directly\s+to\s+this\s+Court\s+)?is\s+(?:accordingly\s+)?(?:refused|declined)'
+        r')'
+    )
+
+    judge_sig_pattern = re.compile(
+        r'(?m)^[ \t]*(?:'
+        r'(?:_+|–{3,}|—{3,})\s*\n.*(?:JUDGE|ACTING JUDGE|JUSTICE|R\s*/|AJ\b|J\b).*$|'
+        r'(?:(?:JUDGE|ACTING JUDGE|JUSTICE)\s+OF\s+THE\s+(?:HIGH\s+COURT|SUPREME\s+COURT)|JUDGE PRESIDENT|DEPUTY JUDGE PRESIDENT)\b.*$|'
+        r'(?:JUDGE|ACTING JUDGE|JUSTICE|MAGISTRATE|REGIONAL MAGISTRATE|ASSESSOR)\b[ \t]*$|'
+        r'[A-Z][A-Za-z\.\s\-\']{1,35}\s+(?:AJ|J|JP|DJP|DCJ|CJ|ARP|RP|AR)\b[ \t\:]*$'
+        r')',
+        re.MULTILINE
+    )
 
     # =========================================================================
     # 3. FOOTNOTES EXTRACTION
@@ -151,17 +199,18 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
         try:
             soup = BeautifulSoup(center_content, 'html.parser')
 
-            # A. Extract footnote divs (<div id="ftn1">, <div id="fn1">, etc.)
-            ftn_divs = soup.find_all('div', id=lambda x: x and (x.startswith('ftn') or x.startswith('fn')))
+            # A. Extract footnote containers (<div id="ftn1">, <div id="fn1">, <p class="footnote">, etc.)
+            ftn_divs = soup.find_all('div', id=lambda x: x and (x.startswith('ftn') or x.startswith('fn') or 'footnote' in x.lower()))
+            if not ftn_divs:
+                ftn_divs = soup.find_all(lambda tag: tag.name in ('div', 'p') and tag.get('class') and any('footnote' in c.lower() or 'ftn' in c.lower() for c in tag.get('class')))
             if ftn_divs:
                 first_ftn = ftn_divs[0].get_text(strip=True)
                 m_tag = re.search(r'\[\d+\]', first_ftn)
                 if m_tag:
                     tag_num = re.search(r'\d+', m_tag.group(0)).group(0)
-                    # Search for line-start footnote tag near end (> 0.7) of body_and_tail, followed by word/uppercase letter
-                    search_start = int(len(body_and_tail) * 0.7)
+                    search_start = int(len(body_and_tail) * 0.5)
                     tail_text = body_and_tail[search_start:]
-                    ftn_line_m = re.search(fr'(?m)^[ \t]*\[{tag_num}\][ \t\n]+[A-Z0-9]', tail_text)
+                    ftn_line_m = re.search(fr'(?m)^[ \t]*\[{tag_num}\][ \t\n]+["\'‘“\w]', tail_text)
                     if ftn_line_m:
                         pos = search_start + ftn_line_m.start()
                         footnotes_raw_text = body_and_tail[pos:].strip()
@@ -185,75 +234,111 @@ def split_saflii_document(text: str, center_content: Optional[str] = None) -> Di
         except Exception:
             pass
 
-    # Fallback for plain-text footnotes if HTML parsing did not extract footnotes
+    # Fallback for plain-text footnotes if HTML parsing did not extract footnotes.
+    # Note: Paragraphs in SA judgments are numbered [1], [2]... A footnote block at the end
+    # restarts numbering at [1] in the tail of the document, followed by [2].
     if not footnotes_raw_text:
-        # Search for footnote block near tail after judge signature / representation
-        m_ftn_tail = re.search(r'(?m)^[ \t]*(\[1\]|\(1\))\s+[A-Z0-9]', body_and_tail[int(len(body_and_tail)*0.7):])
-        if m_ftn_tail:
-            actual_pos = int(len(body_and_tail) * 0.7) + m_ftn_tail.start()
-            footnotes_raw_text = body_and_tail[actual_pos:].strip()
-            body_and_tail = body_and_tail[:actual_pos].strip()
+        m_ftn_start = re.search(r'(?m)^[ \t]*\[1\][ \t\n]+[A-Z0-9"\'‘“]', body_and_tail[int(len(body_and_tail) * 0.5):])
+        if m_ftn_start:
+            rel_pos = int(len(body_and_tail) * 0.5) + m_ftn_start.start()
+            after_start = body_and_tail[rel_pos + m_ftn_start.end():]
+            if re.search(r'(?m)^[ \t]*\[2\][ \t\n]+', after_start[:5000]):
+                footnotes_raw_text = body_and_tail[rel_pos:].strip()
+                body_and_tail = body_and_tail[:rel_pos].strip()
+
+    # Guard: Ensure footnotes did not swallow an Order that occurs after them
+    if footnotes_raw_text:
+        m_ord_in_fn = order_pattern.search(footnotes_raw_text) or inline_order_pattern.search(footnotes_raw_text)
+        if m_ord_in_fn:
+            trailing_order_part = footnotes_raw_text[m_ord_in_fn.start():]
+            footnotes_raw_text = footnotes_raw_text[:m_ord_in_fn.start()].strip()
+            body_and_tail = (body_and_tail + "\n\n" + trailing_order_part).strip()
 
     # =========================================================================
-    # 4. ORDER / VERDICT SPLIT
-    # Search for order header or judge signature boundary near end of body.
+    # 4. ORDER / VERDICT & APPEARANCES EXTRACTION
     # =========================================================================
     judgment = body_and_tail
     order = ""
+    appearances = ""
 
-    # Primary Explicit Order Header Regex
-    order_pattern = re.compile(
-        r'(?i)(?:'
-        r'IN\s+THE\s+RESULT,?\s*(?:THE\s+FOLLOWING\s+ORDER\s+IS\s+MADE|IT\s+IS\s+ORDERED|THE\s+APPEAL\s+IS|THE\s+ORDER|ORDER|THE\s+CONDONATION)?|'
-        r'IN\s+THE\s+RESULT\s+[^.\n]+ORDER[^.\n]*|'
-        r'THE\s+APPEAL\s+(?:AGAINST\s+[^.\n]+)?IS\s+(?:DISMISSED|UPHELD)|'
-        r'I\s+(?:ACCORDINGLY\s+|THEREFORE\s+)?(?:MAKE|GRANT|GRANTED)\s+AN?\s+ORDER\s+IN\s+THE\s+FOLLOWING\s+TERMS|'
-        r'I\s+(?:THEREFORE\s+|ACCORDINGLY\s+)?(?:MAKE|GRANT|GRANTED)\s+(?:AN?|THE)\s+FOLLOWING\s+ORDER|'
-        r'ACCORDINGLY,?\s+(?:THE\s+ACCUSED\s+IS\s+SENTENCED|THE\s+FOLLOWING\s+ORDER\s+(?:SHALL|WILL)\s+ISSUE)|'
-        r'DIE\s+(?:AANSOEK|APPÈL)\s+WORD\s+(?:VAN\s+DIE\s+ROL\s+GESKRAP|VAN\s+DIE\s+HAND\s+GEWYS|TOEGESTAAN)|'
-        r'^\s*(?:[A-Z0-9\.\-\[\]\(\)]+[ \t]+)?(?:ORDER|THE ORDER|THE RESULT|RULING|CONCLUSION|VERDICT|BEVEL|DIE RESULTAAT|VONNIS|COSTS|KOSTE|SUMMARY OF ORDER|FINAL ORDER|VARIATION ORDER|INTERLOCUTORY ORDER)\s*:?\s*$'
-        r')',
-        re.MULTILINE
-    )
-
+    # Primary: Explicit Order Header Match
     matches = list(order_pattern.finditer(body_and_tail))
-    if matches:
+    if matches and matches[-1].start() > len(body_and_tail) * 0.3:
         last_m = matches[-1]
         judgment = body_and_tail[:last_m.start()].strip()
-        order = body_and_tail[last_m.start():].strip()
+        tail = body_and_tail[last_m.start():].strip()
+
+        # Check if appearances exist inside the tail
+        m_app = app_pattern.search(tail)
+        if m_app and m_app.start() > len(tail) * 0.1:
+            appearances = tail[m_app.start():].strip()
+            order = tail[:m_app.start()].strip()
+        else:
+            order = tail
     else:
-        # Fallback 1: Search for Inline Ruling Sentences in the final portion of the text
-        inline_order_pattern = re.compile(
-            r'(?i)(?:'
-            r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:In\s+the\s+result|By\s+virtue\s+of\s+the\s+aforegoing|In\s+the\s+premises|Accordingly),?\s+(?:I\s+order\s+that|the\s+accused\s+is\s+sentenced|the\s+application|the\s+condonation|the\s+appeal|the\s+claim|the\s+review|the\s+matter|it\s+is\s+ordered)|'
-            r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:The\s+application|The\s+condonation\s+application|The\s+appeal|The\s+claim|The\s+action|The\s+matter|Application\s+for\s+leave\s+to\s+appeal|The\s+notice\s+of\s+motion)\s+(?:for\s+[^.\n]+|brought\s+by\s+[^.\n]+)?is\s+(?:therefore\s+|accordingly\s+)?(?:dismissed|granted|upheld|refused|struck|varied)(?:\s+with\s+costs)?|'
-            r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:Die\s+aansoek|Die\s+appèl|Aansoek\s+om\s+verlof\s+tot\s+appèl|Die\s+saak|Die\s+respondent)\s+word\s+(?:afgewys|van\s+die\s+rol\s+geskrap|toegestaan|bekragtig|gelas)|'
-            r'(?:[0-9]+\.|\([0-9]+\)|\[[0-9]+\])?\s*(?:There\s+is\s+no|no)\s+order\s+as\s+to\s+costs|Costs\s+must\s+follow|Costs\s+to\s+stand\s+over|application\s+was\s+dismissed|appeal\s+to\s+this\s+Court\s+is\s+dismissed|relief\s+contained\s+in\s+the\s+order|application\s+must\s+succeed|we\s+accordingly\s+(?:refuse|decline|grant)|(?:leave\s+to\s+appeal|direct\s+access|application)\s+(?:directly\s+to\s+this\s+Court\s+)?is\s+(?:accordingly\s+)?(?:refused|declined)'
-            r')'
-        )
+        # Fallback 1: Search for Inline Ruling Sentences in the final portion
         inline_matches = list(inline_order_pattern.finditer(body_and_tail))
         if inline_matches and inline_matches[-1].start() > len(body_and_tail) * 0.3:
             last_im = inline_matches[-1]
             judgment = body_and_tail[:last_im.start()].strip()
-            order = body_and_tail[last_im.start():].strip()
-        else:
-            # Fallback 2: Check for Judge Signature Block near the end (e.g. "JUDGE OF THE HIGH COURT")
-            judge_sig_pattern = re.compile(
-                r'(?m)^[ \t]*(?:_+|–{3,}|—{3,})\s*\n.*(?:JUDGE|ACTING JUDGE|JUSTICE|R\s*/|AJ\b|J\b).*$',
-                re.IGNORECASE
-            )
-            match_sig = judge_sig_pattern.search(body_and_tail)
-            if match_sig and match_sig.start() > len(body_and_tail) * 0.4:
-                judgment = body_and_tail[:match_sig.start()].strip()
-                order = body_and_tail[match_sig.start():].strip()
+            tail = body_and_tail[last_im.start():].strip()
 
-    # Final Fallback: If no explicit order was found, search for "struck from/off the roll" variations
+            m_app = app_pattern.search(tail)
+            if m_app and m_app.start() > len(tail) * 0.1:
+                appearances = tail[m_app.start():].strip()
+                order = tail[:m_app.start()].strip()
+            else:
+                order = tail
+        else:
+            # Fallback 2: Look for judge signature or appearances near the tail
+            m_app = app_pattern.search(body_and_tail)
+            boundary_pos = None
+            if m_app and m_app.start() > len(body_and_tail) * 0.5:
+                boundary_pos = m_app.start()
+                appearances = body_and_tail[m_app.start():].strip()
+                pre_app = body_and_tail[:m_app.start()].strip()
+            else:
+                pre_app = body_and_tail
+
+            search_start_sig = int(len(pre_app) * 0.5)
+            sig_matches = list(judge_sig_pattern.finditer(pre_app[search_start_sig:]))
+            if sig_matches:
+                sig_pos = search_start_sig + sig_matches[0].start()
+                pre_sig = pre_app[:sig_pos].rstrip()
+                para_match = re.search(r'(?:\n\s*\n|\n(?=[0-9]+[\.\)]|\[[0-9]+\]|[a-z]\)))([^\n]+)$', pre_sig)
+                if para_match:
+                    order_start = para_match.start()
+                    judgment = pre_app[:order_start].strip()
+                    order = pre_app[order_start:].strip()
+                else:
+                    judgment = pre_app[:sig_pos].strip()
+                    order = pre_app[sig_pos:].strip()
+            elif boundary_pos:
+                para_match = re.search(r'(?:\n\s*\n|\n(?=[0-9]+[\.\)]|\[[0-9]+\]|[a-z]\)))([^\n]+)$', pre_app)
+                if para_match:
+                    order_start = para_match.start()
+                    judgment = pre_app[:order_start].strip()
+                    order = pre_app[order_start:].strip()
+                else:
+                    order = pre_app[-500:].strip()
+                    judgment = pre_app[:-500].strip()
+
+    # Final Fallback: "struck from/off the roll"
     if not order or not order.strip():
         struck_pattern = re.compile(
             r'(?i)\b(?:struck\s+(?:off|from)|striking\s+(?:off|from))\s+(?:the\s+roll|the\s+court\s+roll)\b'
         )
         if struck_pattern.search(body_and_tail):
             order = "Struck from the roll"
+
+    # Separate any trailing footnotes that might have been included in appearances
+    if appearances:
+        m_app_ftn = re.search(r'(?m)^[ \t]*\[\d+\][ \t\n]+', appearances)
+        if m_app_ftn:
+            ftn_part = appearances[m_app_ftn.start():].strip()
+            appearances = appearances[:m_app_ftn.start()].strip()
+            if not footnotes_raw_text:
+                footnotes_raw_text = ftn_part
 
     # Determine null / empty core section fields (footnotes excluded as footnotes can naturally be null)
     null_values = []

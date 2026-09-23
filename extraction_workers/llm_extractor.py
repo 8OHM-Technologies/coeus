@@ -1241,6 +1241,48 @@ async def process_records(
                 # If LLM completely failed on the header or returned empty result with no essential identifying data
                 if not header_res or (not header_res.get("court") and not header_res.get("applicant_plaintiff") and not header_res.get("judgment_date")):
                     logger.warning(
+                        "  [!] LLM failed to extract valid Header fields for record %s. Attempting heuristic fallback...",
+                        record_id,
+                    )
+                    rec_title = record_data.get("title") or ""
+                    rec_dataset = record_data.get("dataset") or ""
+                    rec_num = record_data.get("dataset_number") or ""
+
+                    fallback_court = rec_dataset if rec_dataset else None
+                    fallback_applicant = None
+                    fallback_respondent = None
+                    if rec_title:
+                        m_parties = re.match(r'^(.*?)\s+v(?:s)?\.?\s+(.*?)(?:\s*\([^\)]+\)|\s*\[\d{4}\]|$)', rec_title)
+                        if m_parties:
+                            fallback_applicant = m_parties.group(1).strip()
+                            fallback_respondent = m_parties.group(2).strip()
+
+                    fallback_date = None
+                    if rec_title:
+                        m_date = re.search(r'\(([^()]+)\)[\s.;]*$', rec_title.strip())
+                        if m_date:
+                            fallback_date = m_date.group(1).strip()
+
+                    if fallback_court or fallback_applicant or fallback_date:
+                        header_res = header_res or {}
+                        if not header_res.get("court") and fallback_court:
+                            header_res["court"] = fallback_court
+                        if not header_res.get("applicant_plaintiff") and fallback_applicant:
+                            header_res["applicant_plaintiff"] = fallback_applicant
+                        if not header_res.get("respondent_defendant") and fallback_respondent:
+                            header_res["respondent_defendant"] = fallback_respondent
+                        if not header_res.get("judgment_date") and fallback_date:
+                            header_res["judgment_date"] = fallback_date
+                        if not header_res.get("case_number") and rec_num:
+                            header_res["case_number"] = rec_num
+                        logger.info(
+                            "  [+] Recovered header fields via heuristics for record %s: court=%s, parties=%s v %s, date=%s",
+                            record_id, header_res.get("court"), header_res.get("applicant_plaintiff"),
+                            header_res.get("respondent_defendant"), header_res.get("judgment_date"),
+                        )
+
+                if not header_res or (not header_res.get("court") and not header_res.get("applicant_plaintiff") and not header_res.get("judgment_date")):
+                    logger.warning(
                         "  [!] Failed to extract valid Header fields for record %s. Flagging for human review and skipping.",
                         record_id,
                     )

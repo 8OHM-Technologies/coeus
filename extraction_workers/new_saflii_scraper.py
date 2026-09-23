@@ -112,6 +112,17 @@ def check_page_state(page_title: str = "", h1_title: str = "", body_text: str = 
         or "403 forbidden" in h_lower
         or "forbidden" in h_lower
         or "you don't have permission to access this resource" in b_lower
+        or "what happened?" in t_lower
+        or "ssl handshake failed" in b_lower
+        or "error code 525" in b_lower
+        or "error code 520" in b_lower
+        or "error code 521" in b_lower
+        or "error code 522" in b_lower
+        or "error code 523" in b_lower
+        or "error code 524" in b_lower
+        or "502 bad gateway" in t_lower
+        or "504 gateway time-out" in t_lower
+        or "cloudflare ray id" in b_lower
     ):
         return "BLOCKED"
 
@@ -1107,6 +1118,12 @@ class SafliiScraper(BaseScraper):
                 )
         else:
             title, center_html, full_text = self._extract_content_from_html(sb, entry_id)
+            if not full_text.strip():
+                logger.warning(
+                    f"[Worker {worker_id}][{idx}/{total_datasets}] Empty HTML body detected "
+                    f"for {dataset_url}. Raising exception to trigger retry."
+                )
+                raise Exception(f"Empty HTML content extracted from {dataset_url}")
 
         return title, center_html, full_text, requires_human_review
 
